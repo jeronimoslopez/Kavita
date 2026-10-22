@@ -1,0 +1,93 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <p>{{t('description')}}</p>
+
+  <app-loading [loading]="loading()" />
+
+  @if (!loading()) {
+    @if (loadError(); as error) {
+      <div class="alert alert-danger" role="alert">
+        <p class="mb-2">{{t('load-error')}}</p>
+        <p class="mb-2 small">{{error}}</p>
+        <button type="button" class="btn btn-secondary btn-sm" (click)="load()">{{t('retry')}}</button>
+      </div>
+    } @else {
+      <div class="yomitan-layout">
+        <nav class="yomitan-nav" [attr.aria-label]="t('nav-label')">
+          <ul class="nav flex-xl-column">
+            @for (section of sections(); track section.id) {
+              <li class="nav-item">
+                <button type="button" class="nav-link" [class.active]="activeSection() === section.id"
+                        [attr.aria-current]="activeSection() === section.id ? 'true' : null" (click)="scrollTo(section.id)">
+                  {{t('section-' + section.id)}}
+                </button>
+              </li>
+            }
+          </ul>
+        </nav>
+
+        <div class="yomitan-content">
+          <div class="row g-0 mb-4 yomitan-advanced">
+            <app-setting-switch [title]="t('show-advanced-label')" [subtitle]="t('show-advanced-tooltip')">
+              <ng-template>
+                <app-yomitan-control [control]="advancedControl" class="float-end" />
+              </ng-template>
+            </app-setting-switch>
+          </div>
+
+          @for (section of sections(); track section.id) {
+            <section class="yomitan-section" [attr.data-section]="section.id" [attr.aria-labelledby]="'yomitan-heading-' + section.id">
+              <h4 [id]="'yomitan-heading-' + section.id">{{t('section-' + section.id)}}</h4>
+              @switch (section.id) {
+                @case (SectionId.Profile) {
+                  <app-yomitan-profile-section />
+                }
+                @case (SectionId.General) {
+                  <app-yomitan-general-section />
+                }
+                @case (SectionId.Dictionaries) {
+                  <app-yomitan-dictionaries-section />
+                }
+                @case (SectionId.Scanning) {
+                  <app-yomitan-scanning-section />
+                }
+                @case (SectionId.Popup) {
+                  <app-yomitan-popup-section />
+                }
+                @case (SectionId.Appearance) {
+                  <app-yomitan-appearance-section />
+                }
+                @case (SectionId.ResultDisplay) {
+                  <app-yomitan-result-display-section />
+                }
+                @case (SectionId.PopupSize) {
+                  <app-yomitan-popup-size-section />
+                }
+                @case (SectionId.Audio) {
+                  <app-yomitan-audio-section />
+                }
+                @case (SectionId.TextParsing) {
+                  <app-yomitan-text-parsing-section />
+                }
+                @case (SectionId.Translation) {
+                  <app-yomitan-translation-section />
+                }
+                @case (SectionId.Anki) {
+                  <app-yomitan-anki-section />
+                }
+                @case (SectionId.Shortcuts) {
+                  <app-yomitan-shortcuts-section />
+                }
+                @case (SectionId.Backup) {
+                  <app-yomitan-backup-section />
+                }
+              }
+            </section>
+            @if (!$last) {
+              <div class="setting-section-break"></div>
+            }
+          }
+        </div>
+      </div>
+    }
+  }
+</ng-container>

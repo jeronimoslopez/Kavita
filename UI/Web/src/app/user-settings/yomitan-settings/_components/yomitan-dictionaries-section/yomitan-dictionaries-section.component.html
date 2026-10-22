@@ -1,0 +1,193 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <p class="text-muted">{{t('dictionaries-count', {installed: installedCount(), enabled: enabledCount()})}}</p>
+
+  @if (importStatus(); as status) {
+    @if (importing()) {
+      <div class="alert alert-info" role="status">
+        <div>{{t('dictionaries-importing', {title: status.currentTitle || status.currentDictionary || '', done: (status.dictionariesDone ?? 0) + 1, total: status.dictionariesTotal ?? 0})}}</div>
+        <div class="progress mt-2" role="progressbar" [attr.aria-valuenow]="importProgress()" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar" [style.width.%]="importProgress()"></div>
+        </div>
+      </div>
+    } @else if (status.errors?.length) {
+      <div class="alert alert-warning" role="alert">
+        <div>{{t('dictionaries-import-errors')}}</div>
+        <ul class="mb-0">
+          @for (error of status.errors; track $index) {
+            <li>{{error}}</li>
+          }
+        </ul>
+      </div>
+    }
+  }
+
+  @if (installedCount() === 0 && !importing()) {
+    <p class="text-warning">{{t('dictionaries-none-installed')}}</p>
+  }
+
+  <ul class="list-group yomitan-list yomitan-dictionary-list">
+    @if (entries().length > 0) {
+      <li class="list-group-item d-flex align-items-center gap-3">
+        <span class="yomitan-dictionary-index"></span>
+        <div class="form-check form-switch mb-0">
+          <input type="checkbox" role="switch" class="form-check-input" id="yomitan-dictionaries-all" [checked]="allEnabled()" (change)="setAllEnabled($event)">
+        </div>
+        <label class="fw-bold" for="yomitan-dictionaries-all">{{t('dictionaries-all')}}</label>
+      </li>
+    }
+
+    @for (item of entryControls(); track item.entry.settings.name; let first = $first; let last = $last) {
+      @let entry = item.entry;
+      @let isExpanded = expanded().has(entry.settings.name);
+      <li class="list-group-item">
+        <div class="d-flex align-items-center gap-3">
+          <span class="yomitan-dictionary-index text-muted">{{entry.index + 1}}</span>
+          <div class="form-check form-switch mb-0">
+            <input type="checkbox" role="switch" class="form-check-input" [id]="'yomitan-dictionary-enabled-' + entry.index"
+                   [checked]="entry.settings.enabled" (change)="setEnabled(entry, $event)"
+                   [attr.aria-label]="t('dictionary-enabled', {name: entry.settings.alias || entry.settings.name})">
+          </div>
+          <div class="flex-grow-1 yomitan-dictionary-title" [class.text-muted]="!entry.settings.enabled">
+            <strong>{{entry.settings.alias || entry.settings.name}}</strong>
+            @if (entry.info) {
+              <span class="text-muted ms-1">rev.{{entry.info.revision}}</span>
+              @if (entry.info.version < 3) {
+                <i class="fa-solid fa-triangle-exclamation text-warning ms-1" [title]="t('dictionary-outdated')" aria-hidden="true"></i>
+              }
+              @if (entry.info.importSuccess === false) {
+                <i class="fa-solid fa-circle-exclamation text-danger ms-1" [title]="t('dictionary-import-failed')" aria-hidden="true"></i>
+              }
+            } @else {
+              <span class="badge bg-secondary ms-1">{{t('dictionary-not-installed')}}</span>
+            }
+          </div>
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-icon" [title]="t('move-up')" (click)="move(entry, -1)" [disabled]="first">
+              <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('move-up')}}</span>
+            </button>
+            <button type="button" class="btn btn-icon" [title]="t('move-down')" (click)="move(entry, 1)" [disabled]="last">
+              <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('move-down')}}</span>
+            </button>
+            <button type="button" class="btn btn-icon" (click)="toggleExpanded(entry.settings.name)" [attr.aria-expanded]="isExpanded">
+              {{isExpanded ? t('dictionary-hide-details') : t('dictionary-show-details')}}
+            </button>
+          </div>
+        </div>
+
+        @if (isExpanded) {
+          <div class="yomitan-dictionary-details">
+            @if (entry.info && entry.info.version < 3) {
+              <p class="text-danger">{{t('dictionary-outdated')}}</p>
+            }
+
+            <div class="yomitan-dictionary-option">
+              <label class="form-label mb-1" [for]="'yomitan-dictionary-alias-' + entry.index">{{t('dictionary-alias-label')}}</label>
+              <div class="d-flex gap-2">
+                <app-yomitan-control class="flex-grow-1" [control]="item.aliasControl" [compact]="true" [inputId]="'yomitan-dictionary-alias-' + entry.index" />
+                <button type="button" class="btn btn-secondary btn-sm" (click)="resetAlias(entry)">{{t('reset')}}</button>
+              </div>
+              <div class="form-text">{{t('dictionary-alias-tooltip')}}</div>
+            </div>
+
+            <div class="yomitan-dictionary-option d-flex align-items-start gap-2">
+              <app-yomitan-control [control]="item.secondaryControl" [inputId]="'yomitan-dictionary-secondary-' + entry.index" />
+              <div>
+                <label [for]="'yomitan-dictionary-secondary-' + entry.index">{{t('dictionary-secondary-label')}}</label>
+                <div class="form-text mt-0" [innerHTML]="t('secondary-dictionaries-tooltip')"></div>
+              </div>
+            </div>
+
+            <div class="yomitan-dictionary-option">
+              <label class="form-label mb-1" [for]="'yomitan-dictionary-collapsible-' + entry.index">{{t('collapsible-dictionaries-label')}}</label>
+              <app-yomitan-control class="yomitan-list-select" [control]="item.collapsibleControl" [compact]="true" [inputId]="'yomitan-dictionary-collapsible-' + entry.index" />
+            </div>
+
+            @if (item.hasTerms) {
+              <div class="yomitan-dictionary-option">
+                <div class="d-flex align-items-center gap-2">
+                  <app-yomitan-control [control]="item.partsOfSpeechControl" [inputId]="'yomitan-dictionary-pos-' + entry.index" />
+                  <label [for]="'yomitan-dictionary-pos-' + entry.index">{{t('dictionary-pos-filter-label')}}</label>
+                </div>
+                <app-yomitan-help [html]="t('dictionary-pos-filter-help')" />
+              </div>
+
+              <div class="yomitan-dictionary-option">
+                <div class="d-flex align-items-center gap-2">
+                  <app-yomitan-control [control]="item.deinflectionsControl" [inputId]="'yomitan-dictionary-deinflections-' + entry.index" />
+                  <label [for]="'yomitan-dictionary-deinflections-' + entry.index">{{t('dictionary-use-deinflections-label')}}</label>
+                </div>
+                <app-yomitan-help [html]="t('dictionary-use-deinflections-help')" />
+              </div>
+            }
+
+            @if (entry.info) {
+              <div class="yomitan-dictionary-option">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="form-check form-switch mb-0">
+                    <input type="checkbox" role="switch" class="form-check-input" disabled [checked]="entry.info.prefixWildcardsSupported"
+                           [id]="'yomitan-dictionary-wildcards-' + entry.index">
+                  </div>
+                  <label [for]="'yomitan-dictionary-wildcards-' + entry.index">{{t('dictionary-prefix-wildcards-label')}}</label>
+                </div>
+                <app-yomitan-help [html]="t('dictionary-prefix-wildcards-help')" />
+              </div>
+
+              <hr>
+              <dl class="yomitan-dictionary-table">
+                @for (row of item.details; track row.key) {
+                  <dt>{{t(row.key)}}</dt>
+                  <dd>
+                    @if (row.isUrl) {
+                      <a [href]="row.value" target="_blank" rel="noopener noreferrer">{{row.value}}</a>
+                    } @else {
+                      {{row.value}}
+                    }
+                  </dd>
+                }
+              </dl>
+            }
+          </div>
+        }
+      </li>
+    }
+  </ul>
+
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-item [title]="t('sort-frequency-dictionary-label')" [subtitle]="t('sort-frequency-dictionary-tooltip')">
+      <ng-template #view>
+        {{sortFrequencyDictionary() ?? t('sort-frequency-dictionary-none')}}
+      </ng-template>
+      <ng-template #edit>
+        <select class="form-select" (change)="setSortFrequencyDictionary($event)">
+          <option value="" [selected]="sortFrequencyDictionary() === null">{{t('sort-frequency-dictionary-none')}}</option>
+          @for (dictionary of frequencyDictionaries(); track dictionary.title) {
+            <option [value]="dictionary.title" [selected]="dictionary.title === sortFrequencyDictionary()">{{dictionary.title}}</option>
+          }
+        </select>
+      </ng-template>
+    </app-setting-item>
+    <app-yomitan-help [html]="t('sort-frequency-dictionary-help')" />
+  </div>
+
+  @if (settingsService.showAdvanced() && sortFrequencyDictionary() !== null) {
+    <div class="row g-0 mt-4 mb-4 yomitan-child">
+      <app-setting-item [title]="t('sort-frequency-dictionary-order-label')">
+        <ng-template #view>
+          {{sortFrequencyDictionaryOrder() === 'ascending' ? t('sort-frequency-dictionary-order-ascending') : t('sort-frequency-dictionary-order-descending')}}
+        </ng-template>
+        <ng-template #edit>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-secondary" (click)="autoUpdateOrder()">{{t('sort-frequency-dictionary-order-auto')}}</button>
+            <select class="form-select" (change)="setSortFrequencyDictionaryOrder($event)">
+              <option value="descending" [selected]="sortFrequencyDictionaryOrder() === 'descending'">{{t('sort-frequency-dictionary-order-descending')}}</option>
+              <option value="ascending" [selected]="sortFrequencyDictionaryOrder() === 'ascending'">{{t('sort-frequency-dictionary-order-ascending')}}</option>
+            </select>
+          </div>
+        </ng-template>
+      </app-setting-item>
+      <app-yomitan-help [html]="t('sort-frequency-dictionary-order-help')" />
+    </div>
+  }
+</ng-container>

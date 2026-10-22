@@ -1,0 +1,110 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <p class="text-muted">{{t('hotkeys-tooltip')}}</p>
+
+  @if (hotkeys().length === 0) {
+    <p class="text-muted fst-italic">{{t('hotkeys-empty')}}</p>
+  }
+
+  <div class="yomitan-hotkeys">
+    @for (item of hotkeys(); track $index; let i = $index) {
+      @let hotkey = item.hotkey;
+      <div class="card yomitan-hotkey" [class.yomitan-hotkey-disabled]="!hotkey.enabled">
+        <div class="card-body">
+          <div class="yomitan-hotkey-grid">
+            <span class="yomitan-hotkey-index text-muted">{{i + 1}}</span>
+
+            <label class="yomitan-hotkey-label" [for]="'yomitan-hotkey-input-' + i">{{t('hotkey-input')}}</label>
+            <div class="yomitan-hotkey-input">
+              <app-yomitan-input-field class="flex-grow-1" [inputId]="'yomitan-hotkey-input-' + i" [key]="hotkey.key" [modifiers]="hotkey.modifiers"
+                                       [os]="os()" [keySupported]="true" [placeholder]="t('hotkey-no-input')"
+                                       (inputChange)="setInput(i, $event)" />
+              <div class="form-check mb-0">
+                <input type="checkbox" class="form-check-input" [id]="'yomitan-hotkey-enabled-' + i" [checked]="hotkey.enabled" (change)="setEnabled(i, $event)">
+                <label class="form-check-label" [for]="'yomitan-hotkey-enabled-' + i">{{t('hotkey-enabled')}}</label>
+              </div>
+            </div>
+
+            <label class="yomitan-hotkey-label" [for]="'yomitan-hotkey-action-' + i">{{t('hotkey-action')}}</label>
+            <div class="yomitan-hotkey-action">
+              <select class="form-select form-select-sm" [id]="'yomitan-hotkey-action-' + i" (change)="setAction(hotkey, i, $event)">
+                @for (action of actions; track action) {
+                  <option [value]="action" [selected]="action === hotkey.action">{{t(actionLabelKey(action))}}</option>
+                }
+              </select>
+
+              @switch (item.argumentType) {
+                @case ('move-offset') {
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">{{t('hotkey-argument-count')}}</span>
+                    <input type="number" class="form-control" min="1" step="1" [value]="hotkey.argument" (change)="setArgument(i, $event)">
+                  </div>
+                }
+                @case ('setting-path') {
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">{{t('hotkey-argument-path')}}</span>
+                    <input type="text" class="form-control" spellcheck="false" autocomplete="off" [value]="hotkey.argument" (change)="setArgument(i, $event)">
+                  </div>
+                }
+                @case ('audio-source') {
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">{{t('hotkey-argument-source')}}</span>
+                    <select class="form-select" (change)="setArgument(i, $event)">
+                      @for (option of audioSourceOptions; track option.value) {
+                        <option [value]="option.value" [selected]="option.value === hotkey.argument">{{t(option.key!)}}</option>
+                      }
+                    </select>
+                  </div>
+                }
+                @case ('anki-card-format') {
+                  <div class="input-group input-group-sm">
+                    <span class="input-group-text">{{t('hotkey-argument-format')}}</span>
+                    <select class="form-select" (change)="setArgument(i, $event)">
+                      @for (name of cardFormatNames(); track $index) {
+                        <option [value]="'' + $index" [selected]="'' + $index === hotkey.argument">{{name}}</option>
+                      }
+                    </select>
+                  </div>
+                }
+              }
+            </div>
+
+            <div class="yomitan-hotkey-label">{{t('hotkey-scopes')}}</div>
+            <div class="yomitan-hotkey-scopes">
+              @for (scope of scopes; track scope) {
+                @if (item.validScopes.includes(scope)) {
+                  <div class="form-check form-check-inline mb-0">
+                    <input type="checkbox" class="form-check-input" [id]="'yomitan-hotkey-scope-' + i + '-' + scope"
+                           [checked]="hotkey.scopes.includes(scope)" (change)="setScope(hotkey, i, scope, $event)">
+                    <label class="form-check-label" [for]="'yomitan-hotkey-scope-' + i + '-' + scope">{{t('hotkey-scope-' + scope)}}</label>
+                  </div>
+                }
+              }
+              @if (item.validScopes.length === 0) {
+                <span class="text-muted">&mdash;</span>
+              }
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap justify-content-end gap-1 mt-2">
+            <button type="button" class="btn btn-icon btn-sm" (click)="clearInput(i)">{{t('hotkey-clear-input')}}</button>
+            <button type="button" class="btn btn-icon btn-sm" (click)="resetInput(hotkey, i)">{{t('hotkey-reset-input')}}</button>
+            @if (item.argumentType !== null) {
+              <button type="button" class="btn btn-icon btn-sm" (click)="resetArgument(hotkey, i)">{{t('hotkey-reset-argument')}}</button>
+            }
+            <button type="button" class="btn btn-icon btn-sm" [title]="t('remove')" (click)="remove(i)">
+              <i class="fa fa-trash" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('remove')}}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+
+  <div class="d-flex gap-2 mt-2">
+    <button type="button" class="btn btn-secondary btn-sm" (click)="add()">
+      <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+    </button>
+    <button type="button" class="btn btn-outline-danger btn-sm" (click)="resetAll()">{{t('reset')}}</button>
+  </div>
+</ng-container>

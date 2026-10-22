@@ -1,0 +1,34 @@
+:host {
+  display: block;
+}
+
+.yomitan-help {
+  font-size: 0.9rem;
+
+  ::ng-deep {
+    a {
+      color: var(--primary-color);
+    }
+
+    p:last-child, ul:last-child {
+      margin-bottom: 0;
+    }
+
+    pre, code {
+      color: inherit;
+    }
+
+    .warning-text {
+      color: var(--warning-color);
+    }
+
+    .danger-text {
+      color: var(--error-color);
+    }
+  }
+}
+
+.btn-link {
+  color: var(--primary-color);
+  text-decoration: none;
+}

@@ -1,0 +1,35 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  @if (settingsService.showAdvanced()) {
+    <div class="row g-0 mt-4 mb-4">
+      <h6 class="section-title">{{t('collapsible-dictionaries-label')}}</h6>
+      <div class="text-muted">{{t('collapsible-dictionaries-tooltip')}}</div>
+      <app-yomitan-help [html]="t('collapsible-dictionaries-help')" />
+
+      <ul class="list-group yomitan-list mt-2">
+        @for (item of collapsibleControls(); track item.entry.settings.name) {
+          <li class="list-group-item d-flex flex-wrap align-items-center gap-2">
+            <label class="flex-grow-1" [for]="'yomitan-collapsible-' + item.entry.index">
+              <strong>{{item.entry.settings.name}}</strong>
+              @if (item.entry.info) {
+                <span class="text-muted ms-1">rev.{{item.entry.info.revision}}</span>
+              }
+            </label>
+            <app-yomitan-control class="yomitan-list-select" [control]="item.control" [compact]="true"
+                                 [inputId]="'yomitan-collapsible-' + item.entry.index" />
+          </li>
+        }
+      </ul>
+    </div>
+
+    <div class="row g-0 mt-4 mb-2">
+      <h6 class="section-title">{{t('custom-css-label')}}</h6>
+    </div>
+    @for (setting of cssSettings; track setting.key) {
+      <app-yomitan-setting [setting]="setting" />
+    }
+  }
+</ng-container>

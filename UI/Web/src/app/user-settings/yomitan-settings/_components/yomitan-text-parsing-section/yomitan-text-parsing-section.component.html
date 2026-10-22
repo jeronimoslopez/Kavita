@@ -1,0 +1,90 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <app-yomitan-help [html]="t('text-parsing-help')" />
+
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  @if (showCharacters()) {
+    <div class="row g-0 mt-2 mb-4 yomitan-child">
+      <h6 class="section-title">{{t('termination-characters-title')}}</h6>
+      <p class="text-muted">{{t('termination-characters-tooltip')}}</p>
+
+      @if (characters().length === 0) {
+        <p class="text-muted fst-italic">{{t('termination-characters-empty')}}</p>
+      } @else {
+        <div class="table-responsive">
+          <table class="table table-sm align-middle yomitan-termination-table">
+            <thead>
+              <tr>
+                <th scope="col">#</th>
+                <th scope="col">{{t('termination-enabled')}}</th>
+                <th scope="col">{{t('termination-type')}}</th>
+                <th scope="col">{{t('termination-character-1')}}</th>
+                <th scope="col">{{t('termination-character-2')}}</th>
+                <th scope="col">{{t('termination-include')}}</th>
+                <th scope="col"><span class="visually-hidden">{{t('remove')}}</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (entry of characters(); track $index; let i = $index) {
+                <tr>
+                  <td>{{i + 1}}</td>
+                  <td>
+                    <div class="form-check form-switch mb-0">
+                      <input type="checkbox" role="switch" class="form-check-input" [checked]="entry.enabled"
+                             (change)="setChecked(i, 'enabled', $event)" [attr.aria-label]="t('termination-enabled')">
+                    </div>
+                  </td>
+                  <td>
+                    <select class="form-select form-select-sm" (change)="setType(i, $event)" [attr.aria-label]="t('termination-type')">
+                      <option value="terminator" [selected]="entry.character2 === null">{{t('termination-type-terminator')}}</option>
+                      <option value="quote" [selected]="entry.character2 !== null">{{t('termination-type-quote')}}</option>
+                    </select>
+                  </td>
+                  <td>
+                    <input type="text" class="form-control form-control-sm yomitan-character-input" maxlength="1" lang="ja"
+                           [value]="entry.character1" (change)="setCharacter(i, 'character1', $event)" [attr.aria-label]="t('termination-character-1')">
+                  </td>
+                  <td>
+                    @if (entry.character2 !== null) {
+                      <input type="text" class="form-control form-control-sm yomitan-character-input" maxlength="1" lang="ja"
+                             [value]="entry.character2" (change)="setCharacter(i, 'character2', $event)" [attr.aria-label]="t('termination-character-2')">
+                    } @else {
+                      <span class="text-muted">&mdash;</span>
+                    }
+                  </td>
+                  <td>
+                    <div class="form-check form-check-inline mb-0">
+                      <input type="checkbox" class="form-check-input" [id]="'yomitan-termination-start-' + i" [checked]="entry.includeCharacterAtStart"
+                             (change)="setChecked(i, 'includeCharacterAtStart', $event)">
+                      <label class="form-check-label" [for]="'yomitan-termination-start-' + i">{{t('termination-at-start')}}</label>
+                    </div>
+                    <div class="form-check form-check-inline mb-0">
+                      <input type="checkbox" class="form-check-input" [id]="'yomitan-termination-end-' + i" [checked]="entry.includeCharacterAtEnd"
+                             (change)="setChecked(i, 'includeCharacterAtEnd', $event)">
+                      <label class="form-check-label" [for]="'yomitan-termination-end-' + i">{{t('termination-at-end')}}</label>
+                    </div>
+                  </td>
+                  <td class="text-end">
+                    <button type="button" class="btn btn-icon btn-sm" [title]="t('remove')" (click)="remove(i)">
+                      <i class="fa fa-trash" aria-hidden="true"></i>
+                      <span class="visually-hidden">{{t('remove')}}</span>
+                    </button>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="add()">
+          <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" (click)="reset()">{{t('reset')}}</button>
+      </div>
+    </div>
+  }
+</ng-container>

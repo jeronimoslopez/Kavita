@@ -1,0 +1,32 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @for (setting of modeSettings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  @if (isMerge()) {
+    <div class="row g-0 mt-4 mb-4 yomitan-child">
+      <h6 class="section-title">{{t('secondary-dictionaries-label')}}</h6>
+      <div class="text-muted mb-2" [innerHTML]="t('secondary-dictionaries-tooltip')"></div>
+      <ul class="list-group yomitan-list">
+        @for (entry of entries(); track entry.settings.name) {
+          <li class="list-group-item d-flex align-items-center gap-3">
+            <div class="form-check form-switch mb-0">
+              <input type="checkbox" role="switch" class="form-check-input" [id]="'yomitan-secondary-' + entry.index"
+                     [checked]="entry.settings.allowSecondarySearches" (change)="setAllowSecondarySearches(entry.index, $event)">
+            </div>
+            <label class="flex-grow-1" [for]="'yomitan-secondary-' + entry.index">
+              <strong>{{entry.settings.name}}</strong>
+              @if (entry.info) {
+                <span class="text-muted ms-1">rev.{{entry.info.revision}}</span>
+              }
+            </label>
+          </li>
+        }
+      </ul>
+    </div>
+  }
+
+  @for (setting of otherSettings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+</ng-container>

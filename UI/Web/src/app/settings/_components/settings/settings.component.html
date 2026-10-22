@@ -326,6 +326,14 @@
             }
           }
 
+          @case (SettingsTabId.Yomitan) {
+            @defer {
+              <div class="scale col-md-12">
+                <app-yomitan-settings />
+              </div>
+            }
+          }
+
           @case (SettingsTabId.Devices) {
             @defer {
               <div class="scale col-md-12">

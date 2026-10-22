@@ -1,0 +1,36 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <p>{{t('backup-description')}}</p>
+
+  <div class="d-flex flex-wrap gap-2">
+    <button type="button" class="btn btn-secondary" (click)="fileInput.click()" [disabled]="busy()">{{t('backup-import')}}</button>
+    <input #fileInput type="file" class="d-none" accept=".json,application/json" (change)="onImportFile($event)">
+    <button type="button" class="btn btn-secondary" (click)="exportSettings()" [disabled]="busy()">{{t('backup-export')}}</button>
+    <button type="button" class="btn btn-outline-danger" (click)="resetSettings()" [disabled]="busy()">{{t('backup-reset')}}</button>
+  </div>
+
+  @if (importError(); as error) {
+    <div class="alert alert-danger mt-3" role="alert">
+      <div class="fw-bold">{{t('backup-import-error-title')}}</div>
+      <p class="mb-1">{{t('backup-import-error')}}</p>
+      <p class="mb-1">{{error}}</p>
+      <p class="mb-0">{{t('backup-import-error-console')}}</p>
+    </div>
+  }
+
+  @if (pendingImport(); as pending) {
+    <div class="alert alert-warning mt-3" role="alert">
+      <div class="fw-bold">{{t('backup-import-warning-title')}}</div>
+      <p class="mb-1">{{t('backup-import-warning')}}</p>
+      <ul class="text-danger">
+        @for (warning of pending.warnings; track warning) {
+          <li>{{warning}}</li>
+        }
+      </ul>
+      <div class="d-flex flex-wrap gap-2">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="cancelPendingImport()">{{t('cancel')}}</button>
+        <button type="button" class="btn btn-danger btn-sm" (click)="confirmPendingImport(false)">{{t('backup-import-warning-import')}}</button>
+        <button type="button" class="btn btn-primary btn-sm" (click)="confirmPendingImport(true)">{{t('backup-import-warning-sanitize')}}</button>
+      </div>
+    </div>
+  }
+</ng-container>

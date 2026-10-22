@@ -1,0 +1,10 @@
+.yomitan-character-input {
+  width: 3rem;
+  text-align: center;
+}
+
+.yomitan-termination-table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--body-text-color);
+  min-width: 36rem;
+}
