@@ -4,6 +4,10 @@
 #Assembly version baked into the build. The csproj lags one behind each release because upstream bumps it in CI.
 ARG KAVITA_VERSION
 
+#Seeds the Yomitan dictionary download cache. It's empty by default, so the build downloads the zips. Passing a folder
+#of them as a build context with this name (--build-context yomitan-dictionaries=<dir>) skips the download.
+FROM scratch AS yomitan-dictionaries
+
 #The UI output is the same on every architecture, so build it once on the host platform
 FROM --platform=$BUILDPLATFORM node:24-bookworm AS ui
 
@@ -22,6 +26,7 @@ ARG KAVITA_VERSION
 WORKDIR /src
 COPY . .
 COPY --from=ui /src/UI/Web/dist/browser/ Kavita.Server/wwwroot/
+COPY --from=yomitan-dictionaries . /root/.cache/kavita/yomitan-dictionaries/
 
 RUN set -eux; \
     test -n "$KAVITA_VERSION" || { echo "KAVITA_VERSION build arg is required" >&2; exit 1; }; \

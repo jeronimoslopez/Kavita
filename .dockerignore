@@ -8,9 +8,11 @@ _output
 UI/Web/node_modules
 UI/Web/dist
 UI/Web/.angular
+.angular
 Kavita.Server/wwwroot
 Kavita.Server/config/cache*
 Kavita.Server/config/logs
 Kavita.Server/config/*.db*
+Kavita.Server/config/yomitan
 Dockerfile*
 .dockerignore
