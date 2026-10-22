@@ -66,6 +66,7 @@ export enum SettingsTabId {
   CustomKeyBinds = 'custom-key-binds',
   ReadingProfiles = 'reading-profiles',
   Font = 'font',
+  Yomitan = 'yomitan',
   Clients = 'clients',
   Theme = 'theme',
   Devices = 'devices',
@@ -254,6 +255,7 @@ export class PreferenceNavComponent implements AfterViewInit {
           new SideNavItem(SettingsTabId.Clients),
           new SideNavItem(SettingsTabId.Theme),
           new SideNavItem(SettingsTabId.Font),
+          new SideNavItem(SettingsTabId.Yomitan),
           new SideNavItem(SettingsTabId.Devices),
           new SideNavItem(SettingsTabId.RemapRules, [], undefined, [Role.ReadOnly]),
         ]

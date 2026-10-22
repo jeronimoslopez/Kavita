@@ -1,0 +1,46 @@
+.yomitan-cors-config {
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+  color: inherit;
+}
+
+.yomitan-anki-format {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 24rem);
+  gap: 0.5rem 1rem;
+  align-items: center;
+
+  @media (max-width: 576px) {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+.yomitan-anki-label {
+  color: var(--text-muted-color);
+}
+
+.yomitan-anki-fields {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--body-text-color);
+  min-width: 36rem;
+}
+
+.yomitan-anki-field-name {
+  white-space: nowrap;
+}
+
+.yomitan-marker-select {
+  max-width: 10rem;
+}
+
+.yomitan-templates {
+  font-family: monospace;
+  font-size: 0.8125rem;
+  white-space: pre;
+  tab-size: 4;
+}
+
+.nav-pills .nav-link {
+  padding: 0.25rem 0.75rem;
+}

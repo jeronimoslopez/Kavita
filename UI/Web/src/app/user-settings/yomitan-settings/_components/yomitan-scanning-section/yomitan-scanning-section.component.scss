@@ -1,0 +1,35 @@
+.yomitan-scan-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.yomitan-scan-input {
+  background-color: var(--elevation-layer1);
+}
+
+.yomitan-scan-input-grid {
+  display: grid;
+  grid-template-columns: minmax(8rem, max-content) 1fr;
+  gap: 0.5rem 1rem;
+  align-items: center;
+
+  @media (max-width: 576px) {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}
+
+.yomitan-scan-input-label {
+  color: var(--text-muted-color);
+}
+
+.yomitan-scan-input-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+}
+
+.yomitan-scan-input-number {
+  max-width: 14rem;
+}

@@ -1,0 +1,19 @@
+.yomitan-audio-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.yomitan-audio-source-type {
+  min-width: 12rem;
+}
+
+.yomitan-audio-source-parameter {
+  flex: 1 1 16rem;
+  flex-wrap: nowrap;
+}
+
+.yomitan-tts-test {
+  max-width: 24rem;
+}

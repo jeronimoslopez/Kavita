@@ -47,6 +47,7 @@ import {
 import {ImportMappingsComponent} from "../../../admin/import-mappings/import-mappings.component";
 import {ManageOpenIDConnectComponent} from "../../../admin/manage-open-idconnect/manage-open-idconnect.component";
 import {FontManagerComponent} from "../../../user-settings/font-manager/font-manager/font-manager.component";
+import {YomitanSettingsComponent} from "../../../user-settings/yomitan-settings/yomitan-settings.component";
 import {ServerActivityComponent} from "../../../admin/server-activity/server-activity.component";
 import {ServerDevicesComponent} from "../../../admin/server-devices/server-devices.component";
 import {ManageCustomKeyBindsComponent} from "../../../user-settings/custom-key-binds/manage-custom-key-binds.component";
@@ -98,6 +99,7 @@ import {AccountSettingsComponent} from "../../../user-settings/account-settings/
     ManagePublicMetadataSettingsComponent,
     ImportMappingsComponent,
     FontManagerComponent,
+    YomitanSettingsComponent,
     ServerActivityComponent,
     ServerDevicesComponent,
     ManageCustomKeyBindsComponent,

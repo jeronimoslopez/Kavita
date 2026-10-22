@@ -52,6 +52,7 @@ export interface ReadingProfile {
   bookReaderLayoutMode: BookPageLayoutMode;
   bookReaderImmersiveMode: boolean;
   bookReaderDisableBookmarkIcon: boolean;
+  bookReaderYomitanEnabled: boolean;
 
   // PDF Reader
   pdfTheme: PdfTheme;

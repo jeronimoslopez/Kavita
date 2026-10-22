@@ -437,6 +437,18 @@
                             </ng-template>
                           </app-setting-switch>
                         </div>
+
+                        <div class="row g-0 mt-4 mb-4">
+                          <app-setting-switch [title]="t('yomitan-enabled-label')" [subtitle]="t('yomitan-enabled-tooltip')">
+                            <ng-template>
+                              <div class="form-check form-switch float-end">
+                                <input type="checkbox" role="switch"
+                                       [formField]="formGroup.bookReaderYomitanEnabled" class="form-check-input"
+                                       aria-labelledby="yomitan-enabled-label">
+                              </div>
+                            </ng-template>
+                          </app-setting-switch>
+                        </div>
                       </div>
                     }
                   </ng-template>

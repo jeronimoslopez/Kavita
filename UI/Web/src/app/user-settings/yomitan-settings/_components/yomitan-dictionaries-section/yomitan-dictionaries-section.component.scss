@@ -1,0 +1,52 @@
+.yomitan-dictionary-index {
+  min-width: 1.5rem;
+  text-align: right;
+}
+
+.yomitan-dictionary-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.yomitan-dictionary-details {
+  margin: 0.75rem 0 0.25rem 2.25rem;
+
+  @media (max-width: 576px) {
+    margin-left: 0;
+  }
+}
+
+.yomitan-dictionary-option {
+  margin-bottom: 0.75rem;
+  max-width: 36rem;
+}
+
+.yomitan-dictionary-table {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0;
+
+  dt {
+    font-weight: normal;
+    color: var(--text-muted-color);
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+  }
+
+  a {
+    color: var(--primary-color);
+  }
+
+  @media (max-width: 576px) {
+    grid-template-columns: 1fr;
+
+    dd {
+      margin-bottom: 0.5rem;
+    }
+  }
+}

@@ -17,6 +17,7 @@ using Kavita.Services.Reading;
 using Kavita.Services.ReadingLists;
 using Kavita.Services.Scanner;
 using Kavita.Services.SignalR;
+using Kavita.Services.Yomitan;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Kavita.Services.Extensions;
@@ -118,6 +119,15 @@ public static class ApplicationServiceExtensions
         services.AddHostedService(sp => sp.GetRequiredService<ActiveUserTrackerService>());
 
         services.AddHostedService<StartupTasksHostedService>();
+
+        // Yomitan dictionaries live in their own SQLite file (config/yomitan/dictionaries.db), imported in the background
+        services.AddSingleton(_ => new YomitanDictionaryDatabase(YomitanDictionaryDatabase.DefaultDatabasePath));
+        services.AddSingleton<YomitanImportProgress>();
+        services.AddSingleton<YomitanDictionaryImporter>();
+        services.AddSingleton<IYomitanDictionaryService, YomitanDictionaryService>();
+        services.AddSingleton<IYomitanFetchService, YomitanFetchService>();
+        services.AddScoped<IYomitanOptionsService, YomitanOptionsService>();
+        services.AddHostedService<YomitanDictionaryImportHostedService>();
     }
 
 }

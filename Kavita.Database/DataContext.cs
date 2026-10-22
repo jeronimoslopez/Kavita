@@ -98,6 +98,7 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
     public DbSet<ClientDevice> ClientDevice { get; set; } = null!;
     public DbSet<ClientDeviceHistory> ClientDeviceHistory { get; set; } = null!;
     public DbSet<AppUserAuthKey> AppUserAuthKey { get; set; } = null!;
+    public DbSet<AppUserYomitanOptions> AppUserYomitanOptions { get; set; } = null!;
 
     public DbSet<ReadingListTag> ReadingListTag { get; set; } = null!;
     public DbSet<ReadingListRemapRule> ReadingListRemapRule { get; set; } = null!;
@@ -363,6 +364,9 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserReadingProfile>()
             .Property(b => b.AllowAutomaticWebtoonReaderDetection)
             .HasDefaultValue(true);
+        builder.Entity<AppUserReadingProfile>()
+            .Property(b => b.BookReaderYomitanEnabled)
+            .HasDefaultValue(false);
 
         builder.Entity<AppUserReadingProfile>()
             .PrimitiveCollection(p => p.LibraryIds)
@@ -556,6 +560,14 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserAuthKey>()
             .Property(a => a.Provider)
             .HasDefaultValue(AuthKeyProvider.User);
+        #endregion
+
+        #region AppUserYomitanOptions
+        builder.Entity<AppUserYomitanOptions>()
+            .HasOne(o => o.AppUser)
+            .WithOne(u => u.YomitanOptions)
+            .HasForeignKey<AppUserYomitanOptions>(o => o.AppUserId)
+            .OnDelete(DeleteBehavior.Cascade);
         #endregion
 
         #region AppUserBookmark

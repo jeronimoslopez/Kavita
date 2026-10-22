@@ -53,6 +53,18 @@
                         </span>
                 </div>
 
+                <div class="controls d-flex justify-content-between align-items-center">
+                  <label for="yomitan-enabled" class="form-label">{{t('yomitan-enabled-label')}}<i class="fa fa-info-circle ms-1" aria-hidden="true" placement="top" [ngbTooltip]="yomitanEnabledToolTip" role="button" tabindex="0" aria-describedby="yomitan-enabled-help"></i></label>
+                  <ng-template #yomitanEnabledToolTip>{{t('yomitan-enabled-tooltip')}}</ng-template>
+                  <span class="visually-hidden" id="yomitan-enabled-help">
+                    <ng-container [ngTemplateOutlet]="yomitanEnabledToolTip" />
+                  </span>
+                  <div class="form-check form-switch">
+                    <input type="checkbox" id="yomitan-enabled" [formField]="settingsForm.bookReaderYomitanEnabled" class="form-check-input" aria-labelledby="yomitan-enabled-help" switch>
+                    <label>{{settingsForm.bookReaderYomitanEnabled().value() ? t('on') : t('off')}} </label>
+                  </div>
+                </div>
+
                 <div class="row g-0 justify-content-between mt-2">
                   <button (click)="resetSettings()" class="btn btn-primary col">{{t('reset-to-defaults')}}</button>
                 </div>

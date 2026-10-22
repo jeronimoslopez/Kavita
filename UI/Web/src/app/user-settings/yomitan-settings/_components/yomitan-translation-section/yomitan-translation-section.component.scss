@@ -1,0 +1,14 @@
+.yomitan-replacement {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 1rem;
+}
+
+.yomitan-replacement-field {
+  flex: 1 1 14rem;
+}
+
+.yomitan-code-input ::ng-deep input {
+  font-family: monospace;
+}

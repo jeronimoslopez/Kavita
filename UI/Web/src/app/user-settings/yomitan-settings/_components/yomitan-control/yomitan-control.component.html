@@ -1,0 +1,54 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @let c = control();
+
+  @switch (c.type) {
+    @case ('toggle') {
+      <div class="form-check form-switch">
+        <input type="checkbox" role="switch" class="form-check-input" [id]="id()"
+               [formField]="booleanForm.value">
+      </div>
+    }
+
+    @case ('checkbox') {
+      <div class="form-check">
+        <!-- The label wraps the input since a parent setting item may replace the input's id -->
+        <label class="form-check-label">
+          <input type="checkbox" class="form-check-input" [id]="id()" [formField]="booleanForm.value">
+          {{label()}}
+        </label>
+      </div>
+    }
+
+    @case ('number') {
+      <input type="number" class="form-control" [class.form-control-sm]="compact()" [id]="id()"
+             [formField]="numberForm.value" [appFormField]="numberForm.value"
+             [attr.step]="c.step ?? null">
+      <app-validation-errors [control]="numberForm.value" [inputId]="id()" />
+    }
+
+    @case ('select') {
+      <select class="form-select" [class.form-select-sm]="compact()" [id]="id()" [formField]="selectForm.value">
+        @for (opt of selectOptions(); track opt.value) {
+          <option [value]="opt.value">{{opt.label ?? t(opt.key!)}}</option>
+        }
+      </select>
+    }
+
+    @case ('textarea') {
+      <textarea class="form-control yomitan-code" rows="12" [id]="id()" autocomplete="off" spellcheck="false"
+                [formField]="textForm.value"></textarea>
+    }
+
+    @case ('password') {
+      <input type="password" class="form-control" [class.form-control-sm]="compact()" [id]="id()"
+             autocomplete="off" spellcheck="false" [placeholder]="c.placeholder ?? ''"
+             [formField]="textForm.value">
+    }
+
+    @default {
+      <input type="text" class="form-control" [class.form-control-sm]="compact()" [id]="id()"
+             autocomplete="off" spellcheck="false" [placeholder]="c.placeholder ?? ''"
+             [formField]="textForm.value">
+    }
+  }
+</ng-container>

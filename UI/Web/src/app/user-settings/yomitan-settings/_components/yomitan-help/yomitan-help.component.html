@@ -1,0 +1,10 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @let isOpen = open() ?? expanded();
+
+  @if (isOpen) {
+    <div class="yomitan-help text-muted mt-2" [innerHTML]="html() | safeHtml"></div>
+  }
+  <button type="button" class="btn btn-link btn-sm p-0 mt-1" (click)="toggle()" [attr.aria-expanded]="isOpen">
+    {{isOpen ? t('less') : t('more')}}
+  </button>
+</ng-container>

@@ -1,0 +1,73 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  <div class="row g-0 mt-4 mb-2">
+    <h6 class="section-title">{{t('text-replacements-label')}}</h6>
+    <div class="text-muted" [innerHTML]="t('text-replacements-tooltip') | safeHtml"></div>
+  </div>
+
+  @for (setting of replacementSettings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  <div class="row g-0 mb-4">
+    <h6 class="section-title">{{t('text-replacement-patterns-label')}}</h6>
+
+    @if (replacements().length === 0) {
+      <p class="text-muted fst-italic">{{t('text-replacement-patterns-empty')}}</p>
+    }
+
+    <ol class="list-group list-group-numbered yomitan-list">
+      @for (item of replacements(); track $index) {
+        @let testInput = testInputs().get(item.index);
+        <li class="list-group-item">
+          <div class="yomitan-replacement">
+            <div class="yomitan-replacement-field">
+              <label class="form-label mb-1" [for]="'yomitan-replacement-pattern-' + item.index">{{t('text-replacement-pattern')}}</label>
+              <app-yomitan-control class="yomitan-code-input" [control]="item.patternControl" [compact]="true" [inputId]="'yomitan-replacement-pattern-' + item.index" />
+              <app-yomitan-control class="mt-1" [control]="item.ignoreCaseControl" [label]="t('text-replacement-ignore-case')" />
+            </div>
+            <div class="yomitan-replacement-field">
+              <label class="form-label mb-1" [for]="'yomitan-replacement-replacement-' + item.index">{{t('text-replacement-replacement')}}</label>
+              <app-yomitan-control class="yomitan-code-input" [control]="item.replacementControl" [compact]="true" [inputId]="'yomitan-replacement-replacement-' + item.index" />
+            </div>
+            <div class="btn-group btn-group-sm yomitan-list-actions" role="group">
+              @if (testInput === undefined) {
+                <button type="button" class="btn btn-icon" (click)="showTest(item.index)">{{t('test')}}</button>
+              } @else {
+                <button type="button" class="btn btn-icon" (click)="hideTest(item.index)">{{t('hide-test')}}</button>
+              }
+              <button type="button" class="btn btn-icon" [title]="t('remove')" (click)="remove(item.index)">
+                <i class="fa fa-trash" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('remove')}}</span>
+              </button>
+            </div>
+          </div>
+
+          @if (testInput !== undefined) {
+            <div class="yomitan-replacement mt-2">
+              <div class="yomitan-replacement-field">
+                <label class="form-label mb-1" [for]="'yomitan-replacement-test-' + item.index">{{t('text-replacement-test-input')}}</label>
+                <input type="text" class="form-control form-control-sm" lang="ja" [id]="'yomitan-replacement-test-' + item.index"
+                       [value]="testInput" (input)="setTestInput(item.index, $event)">
+              </div>
+              <div class="yomitan-replacement-field">
+                <label class="form-label mb-1" [for]="'yomitan-replacement-output-' + item.index">{{t('text-replacement-test-output')}}</label>
+                <input type="text" class="form-control form-control-sm" lang="ja" readonly [id]="'yomitan-replacement-output-' + item.index"
+                       [value]="testOutput(item.replacement, testInput)">
+              </div>
+            </div>
+          }
+        </li>
+      }
+    </ol>
+
+    <div class="mt-2">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="add()">
+        <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+      </button>
+    </div>
+  </div>
+</ng-container>

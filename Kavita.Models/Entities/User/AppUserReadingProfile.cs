@@ -143,6 +143,11 @@ public class AppUserReadingProfile
     /// Disables the bookmark icons in the Epub Reader
     /// </summary>
     public bool BookReaderDisableBookmarkIcon { get; set; } = false;
+    /// <summary>
+    /// Book Reader Option: Clicking text in the book opens the Yomitan dictionary popup
+    /// </summary>
+    /// <remarks>Defaults to false</remarks>
+    public bool BookReaderYomitanEnabled { get; set; } = false;
     #endregion
 
     #region PdfReader

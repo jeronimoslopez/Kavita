@@ -24,6 +24,7 @@ import {KeyBindTarget} from "../../../_models/preferences/preferences";
 import {FormFieldDirective} from "../../../_directives/form-field.directive";
 import {ValidationErrorsComponent} from "../../../shared/_components/validation-errors/validation-errors.component";
 import {form, FormField, FormRoot, required} from "@angular/forms/signals";
+import {YomitanService} from "../../../_services/yomitan.service";
 
 enum BookLineOverlayMode {
   None = 0,
@@ -50,6 +51,7 @@ export class BookLineOverlayComponent implements OnInit {
   private readonly elementRef = inject(ElementRef);
   private readonly epubMenuService = inject(EpubReaderMenuService);
   private readonly keyBindService = inject(KeyBindService);
+  private readonly yomitanService = inject(YomitanService);
 
   libraryId = input.required<number>();
   seriesId = input.required<number>();
@@ -185,6 +187,7 @@ export class BookLineOverlayComponent implements OnInit {
 
   private shouldSkipSelection(selection: Selection | null, isRightClick: boolean): boolean {
     if (this.selectionTouchesAnnotation(selection)) return true;
+    if (this.yomitanService.isScanSelection(selection)) return true;
 
     return (selection === null ||
         selection === undefined ||

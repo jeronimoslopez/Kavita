@@ -3375,6 +3375,11 @@ namespace Kavita.Database.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(0);
 
+                    b.Property<bool>("BookReaderYomitanEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<string>("BookThemeName")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
@@ -3614,6 +3619,29 @@ namespace Kavita.Database.Migrations
                     b.HasIndex("SeriesId");
 
                     b.ToTable("AppUserWantToRead");
+                });
+
+            modelBuilder.Entity("Kavita.Models.Entities.User.AppUserYomitanOptions", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AppUserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastModifiedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OptionsJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AppUserId")
+                        .IsUnique();
+
+                    b.ToTable("AppUserYomitanOptions");
                 });
 
             modelBuilder.Entity("Kavita.Models.Entities.User.ClientDevice", b =>
@@ -4877,6 +4905,17 @@ namespace Kavita.Database.Migrations
                     b.Navigation("Series");
                 });
 
+            modelBuilder.Entity("Kavita.Models.Entities.User.AppUserYomitanOptions", b =>
+                {
+                    b.HasOne("Kavita.Models.Entities.User.AppUser", "AppUser")
+                        .WithOne("YomitanOptions")
+                        .HasForeignKey("Kavita.Models.Entities.User.AppUserYomitanOptions", "AppUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AppUser");
+                });
+
             modelBuilder.Entity("Kavita.Models.Entities.User.ClientDevice", b =>
                 {
                     b.HasOne("Kavita.Models.Entities.User.AppUser", "AppUser")
@@ -5084,6 +5123,8 @@ namespace Kavita.Database.Migrations
                     b.Navigation("UserRoles");
 
                     b.Navigation("WantToRead");
+
+                    b.Navigation("YomitanOptions");
                 });
 
             modelBuilder.Entity("Kavita.Models.Entities.User.ClientDevice", b =>

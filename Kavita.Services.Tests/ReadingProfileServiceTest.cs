@@ -2025,4 +2025,24 @@ public class ReadingProfileServiceTest(ITestOutputHelper outputHelper): Abstract
             ["<Id>k__BackingField", "<UserId>k__BackingField"]));
     }
 
+    [Fact]
+    public async Task UpdateReadingProfile_PersistsYomitanEnabled()
+    {
+        var (unitOfWork, context, mapper) = await CreateDatabase();
+        var (rps, user, _, _) = await Setup(unitOfWork, context, mapper);
+
+        var profile = await context.AppUserReadingProfiles.FirstAsync(rp => rp.Kind == ReadingProfileKind.Default);
+        Assert.False(profile.BookReaderYomitanEnabled);
+
+        var dto = mapper.Map<UserReadingProfileDto>(profile);
+        Assert.False(dto.BookReaderYomitanEnabled);
+
+        var updated = await rps.UpdateReadingProfile(user.Id, dto with { BookReaderYomitanEnabled = true });
+        Assert.True(updated.BookReaderYomitanEnabled);
+
+        var reloaded = await unitOfWork.AppUserReadingProfileRepository.GetUserProfile(user.Id, profile.Id);
+        Assert.NotNull(reloaded);
+        Assert.True(reloaded.BookReaderYomitanEnabled);
+    }
+
 }

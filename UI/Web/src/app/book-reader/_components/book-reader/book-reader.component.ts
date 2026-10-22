@@ -74,6 +74,7 @@ import {MangaFormat} from "../../../_models/manga-format";
 import {PageStyle} from "../reader-settings/reader-settings.component";
 import {BookTheme} from "../../../_models/preferences/book-theme";
 import {Stack} from "../../../shared/data-structures/stack";
+import {YomitanService} from "../../../_services/yomitan.service";
 
 
 interface HistoryPoint {
@@ -170,6 +171,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
   protected readonly breakpointService = inject(BreakpointService);
   private readonly entityTitleService = inject(EntityTitleService);
   private readonly injector = inject(Injector);
+  private readonly yomitanService = inject(YomitanService);
 
   libraryId!: number;
   seriesId!: number;
@@ -690,6 +692,11 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
             this.movePage(this.readingDirection() === ReadingDirection.LeftToRight ? PAGING_DIRECTION.FORWARD : PAGING_DIRECTION.BACKWARDS);
             break;
           case KeyBindTarget.Escape: {
+            if (this.yomitanService.isPopupVisible()) {
+              this.yomitanService.hidePopup();
+              return;
+            }
+
             const isHighlighting = window.getSelection()?.toString() != '';
             if (isHighlighting && this.isLineOverlayOpen()) return;
 
@@ -897,6 +904,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     this.clearTimeout(this.delayedScrollEventTimeout);
 
     this.readerService.disableWakeLock();
+    void this.yomitanService.disableReaderScanning();
 
     // Remove any debug viewport things
     this.document.querySelector('#test')?.remove();
@@ -2175,6 +2183,16 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     effect(() => {
       this.applyBookmarkIcons(!this.readerSettingsService.getSettingsForm().bookReaderDisableBookmarkIcon().value());
     }, { injector: injector });
+    effect(() => {
+      if (this.readerSettingsService.yomitanEnabled()) {
+        this.yomitanService.enableReaderScanning('.book-content').catch(err => {
+          console.error('Yomitan failed to start', err);
+          this.toastr.error(translate('book-reader.yomitan-failed'));
+        });
+      } else {
+        void this.yomitanService.disableReaderScanning();
+      }
+    }, { injector: injector });
   }
 
   toggleDrawer() {
@@ -2426,6 +2444,9 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
   }
 
   handleReaderClick(event: MouseEvent) {
+    // Yomitan handles clicks on words itself
+    if (this.yomitanService.isLookupClick(event)) return;
+
     if (!this.clickToPaginate() && !this.immersiveMode()) {
       event.preventDefault();
       event.stopPropagation();
@@ -2446,6 +2467,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     const mouseOffset = 5;
 
     if (!this.immersiveMode()) return;
+    if (this.yomitanService.isLookupClick(event)) return;
     if (targetElement.getAttribute('onclick') !== null || targetElement.getAttribute('href') !== null || targetElement.getAttribute('role') !== null || targetElement.getAttribute('kavita-part') != null) {
       // Don't do anything, it's actionable
       return;
