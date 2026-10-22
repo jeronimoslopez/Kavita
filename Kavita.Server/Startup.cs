@@ -330,13 +330,19 @@ public class Startup
                 Mappings =
                 {
                     [".bcmap"] = "application/octet-stream",
-                    [".ftl"] = "text/plain"
+                    [".ftl"] = "text/plain",
+                    // Yomitan popup assets (Anki field templates and the resvg renderer)
+                    [".handlebars"] = "text/plain",
+                    [".wasm"] = "application/wasm"
                 }
             },
             HttpsCompression = HttpsCompressionMode.Compress,
             OnPrepareResponse = ctx =>
             {
-                ctx.Context.Response.Headers[HeaderNames.CacheControl] = ctx.File.Name == "index.html"
+                // Yomitan's vendored modules aren't content hashed, so they revalidate instead of sitting in caches for a day
+                var revalidate = ctx.File.Name == "index.html" ||
+                                 ctx.Context.Request.Path.StartsWithSegments("/assets/yomitan", StringComparison.OrdinalIgnoreCase);
+                ctx.Context.Response.Headers[HeaderNames.CacheControl] = revalidate
                     ? "no-cache"
                     : "public,max-age=" + (int) TimeSpan.FromHours(24).TotalSeconds;
                 ctx.Context.Response.Headers[Headers.RobotsTag] = "noindex,nofollow";
@@ -377,8 +383,12 @@ public class Startup
                 // Don't let the site be iframed outside the same origin (clickjacking)
                 context.Response.Headers.XFrameOptions = "SAMEORIGIN";
 
-                // Setup CSP to ensure we load assets only from these origins
-                context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none';";
+                // Setup CSP to ensure we load assets only from these origins. The Yomitan popup is a same-origin
+                // iframe hosted by the reader, so its pages may be framed by Kavita itself
+                context.Response.Headers.ContentSecurityPolicy =
+                    context.Request.Path.StartsWithSegments("/assets/yomitan", StringComparison.OrdinalIgnoreCase)
+                        ? "frame-ancestors 'self';"
+                        : "frame-ancestors 'none';";
             }
 
             await next();

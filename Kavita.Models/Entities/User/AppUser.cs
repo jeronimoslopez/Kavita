@@ -55,6 +55,10 @@ public class AppUser : IdentityUser<int>, IHasConcurrencyToken, IHasCoverImage
     public ICollection<AppUserTableOfContent> TableOfContents { get; set; } = null!;
     public ICollection<AppUserAnnotation> Annotations { get; set; } = null!;
     /// <summary>
+    /// Yomitan options document, null until the user first saves Yomitan settings
+    /// </summary>
+    public AppUserYomitanOptions? YomitanOptions { get; set; }
+    /// <summary>
     /// An API Key to interact with external services, like OPDS
     /// </summary>
     [Obsolete("Migrated to AuthKey in v0.8.9")]

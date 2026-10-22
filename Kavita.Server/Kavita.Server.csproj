@@ -159,6 +159,9 @@
     <_DeploymentManifestIconFile Remove="favicon.ico" />
   </ItemGroup>
 
+  <!-- Bundled Yomitan dictionaries, downloaded into a local cache and copied to Dictionaries/ in build and publish output -->
+  <Import Project="Dictionaries\YomitanDictionaries.targets" />
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>

@@ -129,6 +129,10 @@ public sealed record UserReadingProfileDto
     [Required]
     public bool BookReaderDisableBookmarkIcon { get; set; } = false;
 
+    /// <inheritdoc cref="Kavita.Models.Entities.User.AppUserReadingProfile.BookReaderYomitanEnabled"/>
+    [Required]
+    public bool BookReaderYomitanEnabled { get; set; } = false;
+
     #endregion
 
     #region PdfReader
