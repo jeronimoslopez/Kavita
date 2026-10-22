@@ -1,0 +1,26 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-switch [title]="t('nested-popups-label')" [subtitle]="t('nested-popups-tooltip')">
+      <ng-template>
+        <div class="form-check form-switch float-end">
+          <input type="checkbox" role="switch" class="form-check-input" [checked]="nestingDepth() > 0" (change)="setNestedPopupsEnabled($event)">
+        </div>
+      </ng-template>
+    </app-setting-switch>
+  </div>
+
+  @if (nestingDepth() > 0) {
+    <div class="row g-0 mt-4 mb-4 yomitan-child">
+      <app-setting-item [title]="t('nested-popups-count-label')" [subtitle]="t('nested-popups-count-tooltip')">
+        <ng-template #view>{{nestingDepth()}}</ng-template>
+        <ng-template #edit>
+          <app-yomitan-control [control]="nestingDepthControl" />
+        </ng-template>
+      </app-setting-item>
+    </div>
+  }
+
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+</ng-container>

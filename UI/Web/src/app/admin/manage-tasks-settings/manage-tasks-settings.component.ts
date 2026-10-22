@@ -12,12 +12,11 @@ import {UtcToLocalTimePipe} from "../../_pipes/utc-to-local-time.pipe";
 
 import {takeUntilDestroyed, toObservable} from "@angular/core/rxjs-interop";
 import {SettingButtonComponent} from "../../settings/_components/setting-button/setting-button.component";
-import {ColumnMode, NgxDatatableModule} from "@siemens/ngx-datatable";
+import {NgxDatatableModule} from "@siemens/ngx-datatable";
 import {ResponsiveTableComponent} from "../../shared/_components/responsive-table/responsive-table.component";
 import {VersionService} from "../../_services/version.service";
 import {CronFrequency} from "../../shared/_models/cron-frequency";
 import {SettingCronItemComponent} from "../../settings/_components/setting-cron-item/setting-cron-item.component";
-import {clearTransloco} from "../../../libs/transloco-util";
 import {ServerService} from "../../_services/server.service";
 import {DownloadService} from "../../shared/_services/download.service";
 import {Job} from "../../_models/job/job";
@@ -67,16 +66,6 @@ export class ManageTasksSettingsComponent implements OnInit {
       description: 'convert-media-task-desc',
       api: this.serverService.convertMedia(),
       successMessage: 'convert-media-task-success'
-    },
-    {
-      name: 'bust-locale-task',
-      description: 'bust-locale-task-desc',
-      api: defer(() => {
-        clearTransloco();
-        location.reload();
-        return of();
-      }),
-      successMessage: 'bust-locale-task-success',
     },
     {
       name: 'clear-reading-cache-task',
@@ -135,8 +124,6 @@ export class ManageTasksSettingsComponent implements OnInit {
   private readonly taskBackup$ = toObservable(this.taskBackup);
   private readonly taskCleanup$ = toObservable(this.taskCleanup);
   private readonly taskCblSync$ = toObservable(this.taskCblSync);
-
-  constructor() {}
 
   ngOnInit(): void {
     this.settingsService.getServerSettings().subscribe(settings => {
@@ -198,6 +185,4 @@ export class ManageTasksSettingsComponent implements OnInit {
       }
     });
   }
-
-  protected readonly ColumnMode = ColumnMode;
 }

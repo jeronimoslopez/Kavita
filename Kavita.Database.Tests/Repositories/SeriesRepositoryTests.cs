@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Kavita.API.Database;
@@ -8,6 +9,7 @@ using Kavita.Models.Entities;
 using Kavita.Models.Entities.Enums;
 using Kavita.Models.Entities.Metadata;
 using Kavita.Models.Parser;
+using Kavita.Services.Builders;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -18,7 +20,7 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
     private static async Task SetupSeriesData(IUnitOfWork unitOfWork)
     {
         var library = new LibraryBuilder("GetFullSeriesByAnyName Manga", LibraryType.Manga)
-            .WithFolderPath(new FolderPathBuilder("C:/data/manga/").Build())
+            .WithFolderPath(new FolderPathBuilder(Root + "data/manga/").Build())
             .WithSeries(new SeriesBuilder("The Idaten Deities Know Only Peace")
                 .WithLocalizedName("Heion Sedai no Idaten-tachi")
                 .WithFormat(MangaFormat.Archive)
@@ -122,7 +124,7 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
 
         var series = new SeriesBuilder("Batman").WithFormat(MangaFormat.Archive).Build();
         var library = new LibraryBuilder("Removal Test", LibraryType.Comic)
-            .WithFolderPath(new FolderPathBuilder("C:/data/comics/").Build())
+            .WithFolderPath(new FolderPathBuilder(Root + "data/comics/").Build())
             .WithSeries(series)
             .Build();
         unitOfWork.LibraryRepository.Add(library);
@@ -153,7 +155,7 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
         var batman = new SeriesBuilder("Batman").WithFormat(MangaFormat.Archive).Build();
         var superman = new SeriesBuilder("Superman").WithFormat(MangaFormat.Archive).Build();
         var library = new LibraryBuilder("Removal Test", LibraryType.Comic)
-            .WithFolderPath(new FolderPathBuilder("C:/data/comics/").Build())
+            .WithFolderPath(new FolderPathBuilder(Root + "data/comics/").Build())
             .WithSeries(batman)
             .WithSeries(superman)
             .Build();
@@ -178,7 +180,7 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
             .WithFormat(MangaFormat.Archive)
             .Build();
         var library = new LibraryBuilder("Removal Test", LibraryType.Manga)
-            .WithFolderPath(new FolderPathBuilder("C:/data/manga/").Build())
+            .WithFolderPath(new FolderPathBuilder(Root + "data/manga/").Build())
             .WithSeries(series)
             .Build();
         unitOfWork.LibraryRepository.Add(library);
@@ -202,7 +204,7 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
 
         var series = new SeriesBuilder("Batman").WithFormat(MangaFormat.Archive).Build();
         var library = new LibraryBuilder("Removal Test", LibraryType.Comic)
-            .WithFolderPath(new FolderPathBuilder("C:/data/comics/").Build())
+            .WithFolderPath(new FolderPathBuilder(Root + "data/comics/").Build())
             .WithSeries(series)
             .Build();
         unitOfWork.LibraryRepository.Add(library);
@@ -213,6 +215,208 @@ public class SeriesRepositoryTests(ITestOutputHelper testOutputHelper) : Abstrac
 
         Assert.Single(removed);
         Assert.Equal("Batman", removed.First().Name);
+    }
+
+    [Fact]
+    public async Task RemoveSeriesNotInListAsync_RetainsSeries_ViaExistingSeriesId()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+
+        var series = new SeriesBuilder("Spice and Wolf").WithFormat(MangaFormat.Archive).Build();
+        var library = new LibraryBuilder("Removal Test", LibraryType.Manga)
+            .WithFolderPath(new FolderPathBuilder(Root + "data/manga/").Build())
+            .WithSeries(series)
+            .Build();
+        unitOfWork.LibraryRepository.Add(library);
+        await unitOfWork.CommitAsync();
+
+        var key = ParsedKey("Ookami to Koushinryou");
+        key.ExistingSeriesId = series.Id;
+        var removed = await unitOfWork.SeriesRepository.RemoveSeriesNotInListAsync([key], library.Id);
+
+        Assert.Empty(removed);
+    }
+
+    #endregion
+
+    #region Folder lookups
+
+    private static Series SeriesInFolder(string name, string? folderPath, string? lowestFolderPath)
+    {
+        var series = new SeriesBuilder(name).WithFormat(MangaFormat.Archive).Build();
+        series.FolderPath = folderPath;
+        series.LowestFolderPath = lowestFolderPath;
+        return series;
+    }
+
+    private static async Task<Library> AddLibrary(IUnitOfWork unitOfWork, string root, params Series[] series)
+    {
+        var builder = new LibraryBuilder("Folder Lookups", LibraryType.Manga)
+            .WithFolderPath(new FolderPathBuilder(root).Build());
+        foreach (var s in series)
+        {
+            builder.WithSeries(s);
+        }
+
+        var library = builder.Build();
+        unitOfWork.LibraryRepository.Add(library);
+        await unitOfWork.CommitAsync();
+        return library;
+    }
+
+    [Fact]
+    public async Task GetFolderPathMapAsync_KeysFolderPathAndLowestFolderPath()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Accel World", Root + "Accel World", Root + "Accel World"),
+            SeriesInFolder("Higurashi Arc 1", Root + "Higurashi", Root + "Higurashi/Arc 1"),
+            SeriesInFolder("Higurashi Arc 2", Root + "Higurashi", Root + "Higurashi/Arc 2"),
+            SeriesInFolder("No Folder", null, null));
+
+        var map = await unitOfWork.SeriesRepository.GetFolderPathMapAsync(library.Id);
+
+        Assert.Equal([Root + "Accel World", Root + "Higurashi", Root + "Higurashi/Arc 1", Root + "Higurashi/Arc 2"], map.Keys.Order());
+        Assert.Single(map[Root + "Accel World"]);
+        Assert.Equal(["Higurashi Arc 1", "Higurashi Arc 2"], map[Root + "Higurashi"].Select(s => s.SeriesName).Order());
+    }
+
+
+    [Fact]
+    public async Task GetFolderPathMapAsync_IgnoresLowestFolderPathOutsideLibrary()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, "M:/",
+            SeriesInFolder("Higurashi Arc 1", "M:/Higurashi When They Cry", "M:"));
+
+        var map = await unitOfWork.SeriesRepository.GetFolderPathMapAsync(library.Id);
+
+        Assert.Equal(["M:/Higurashi When They Cry"], map.Keys);
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_FileInOwnFolder()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Accel World", Root + "Accel World", Root + "Accel World"),
+            SeriesInFolder("Accel World Dural", Root + "Accel World  Dural - Magisa Garden", Root + "Accel World  Dural - Magisa Garden"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id, Root + "Accel World/Accel World v01.cbz");
+
+        Assert.Equal(["Accel World"], series.Select(s => s.Name));
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_SiblingPrefix()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Accel World", Root + "Accel World", Root + "Accel World"),
+            SeriesInFolder("Accel World Dural", Root + "Accel World  Dural - Magisa Garden", Root + "Accel World  Dural - Magisa Garden"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id,
+            Root + "Accel World  Dural - Magisa Garden/Accel World Dural v01.cbz");
+
+        Assert.Equal(["Accel World Dural"], series.Select(s => s.Name));
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_SiblingFolderWithNoSeries_MatchesNothing()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root, SeriesInFolder("Spice and Wolf", Root + "Spice and Wolf", Root + "Spice and Wolf"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id,
+            Root + "Spice and Wolf Extras/Spice and Wolf Extras v01.cbz");
+
+        Assert.Empty(series);
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_UnderscoreIsLiteral()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root, SeriesInFolder("Foo Bar", Root + "Foo_Bar", Root + "Foo_Bar"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id, Root + "FooXBar/FooXBar v01.cbz");
+
+        Assert.Empty(series);
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_CaseMatters()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, "/manga/", SeriesInFolder("Real", "/manga/Real", "/manga/Real"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id, "/manga/REAL/REAL v01.cbz");
+
+        Assert.Empty(series);
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_DeepestMatchWins()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Higurashi", Root + "Higurashi", Root + "Higurashi"),
+            SeriesInFolder("Higurashi Arc 1", Root + "Higurashi", Root + "Higurashi/Arc 1"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id, Root + @"Higurashi\Arc 1\Vol. 1");
+
+        Assert.Equal(["Higurashi Arc 1"], series.Select(s => s.Name));
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_SharedFolder_ReturnsAll()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Twilight Princess", Root + "The Legend of Zelda", Root + "The Legend of Zelda"),
+            SeriesInFolder("Ocarina of Time", Root + "The Legend of Zelda", Root + "The Legend of Zelda"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(library.Id, Root + "The Legend of Zelda/new.cbz");
+
+        Assert.Equal(2, series.Count);
+    }
+
+    [Fact]
+    public async Task GetSeriesThatContainsLowestFolderPathAsync_FolderInTwoLibraries_OnlyThatLibrary()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        await AddLibrary(unitOfWork, Root, SeriesInFolder("Zombie Tales", Root + "Comics", Root + "Comics/Zombie Tales"));
+        var comics = await AddLibrary(unitOfWork, Root + "Comics",
+            SeriesInFolder("Zombie Tales", Root + "Comics/Zombie Tales", Root + "Comics/Zombie Tales"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesThatContainsLowestFolderPathAsync(comics.Id, Root + "Comics/Zombie Tales");
+
+        Assert.Equal(comics.Id, Assert.Single(series).LibraryId);
+    }
+
+    [Fact]
+    public async Task GetSeriesByFolderPathAsync_MatchesFolderPathOrLowestFolderPath()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Higurashi Arc 1", Root + "Higurashi", Root + "Higurashi/Arc 1"));
+
+        Assert.Single(await unitOfWork.SeriesRepository.GetSeriesByFolderPathAsync(library.Id, Root + "Higurashi"));
+        Assert.Single(await unitOfWork.SeriesRepository.GetSeriesByFolderPathAsync(library.Id, Root + @"Higurashi\Arc 1"));
+        Assert.Empty(await unitOfWork.SeriesRepository.GetSeriesByFolderPathAsync(library.Id, Root + "Higurashi/Arc 2"));
+    }
+
+    [Fact]
+    public async Task GetSeriesByFolderPathAsync_SharedPublisherFolder_ReturnsAll()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var library = await AddLibrary(unitOfWork, Root,
+            SeriesInFolder("Easy Menu", Root + "Other/Cooking", Root + "Other/Cooking/Easy Menu"),
+            SeriesInFolder("Salt Fat Acid Heat", Root + "Other/Cooking", Root + "Other/Cooking/Salt Fat Acid Heat"));
+
+        var series = await unitOfWork.SeriesRepository.GetSeriesByFolderPathAsync(library.Id, Root + "Other/Cooking");
+
+        Assert.Equal(2, series.Count);
     }
 
     #endregion

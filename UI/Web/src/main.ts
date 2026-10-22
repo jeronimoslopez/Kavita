@@ -2,8 +2,11 @@ import {
   ApplicationConfig,
   importProvidersFrom,
   inject,
+  isDevMode,
   provideAppInitializer,
-  provideZoneChangeDetection,
+  provideBrowserGlobalErrorListeners,
+  provideCheckNoChangesConfig,
+  provideZonelessChangeDetection,
 } from '@angular/core';
 import {routes} from './app/app-routing.module';
 import {bootstrapApplication, BrowserModule, Title} from '@angular/platform-browser';
@@ -18,7 +21,6 @@ import {provideTranslocoLocale} from "@jsverse/transloco-locale";
 import {LazyLoadImageModule} from "ng-lazyload-image";
 import {getSaver, SAVER} from "./app/_providers/saver.provider";
 import {APP_BASE_HREF, PlatformLocation} from "@angular/common";
-import {provideTranslocoPersistTranslations} from '@jsverse/transloco-persist-translations';
 import {HttpLoader} from "./httpLoader";
 import {clientInfoInterceptor} from "./app/_interceptors/client-info.interceptor";
 import {
@@ -34,10 +36,11 @@ import {KavitaTitleStrategy} from "./app/_services/kavita-title.strategy";
 import {routingErrorHandler} from "./app/_interceptors/routing-error.handler";
 import {NgbModalConfig, NgbRatingConfig} from "@ng-bootstrap/ng-bootstrap";
 import {DefaultModalOptions} from "./app/_models/modal/modal-options";
+import {ActivityStoreService} from './app/_services/activity-store.service';
 import {MessageHubService} from "./app/_services/message-hub.service";
 import {DownloadService} from "./app/shared/_services/download.service";
 import {LibraryService} from "./app/_services/library.service";
-import {translocoPrefixKey} from "./libs/transloco-util";
+import {manualMigrationRemovePersistedTranslations} from "./app/_migrations/v0.9.2/manual-migration-remove-persisted-translations";
 import {ToastrModule} from "@openng/ngx-toastr";
 import {AppComponent} from "./app/app.component";
 
@@ -93,6 +96,7 @@ const languageCodes = [
 ];
 
 const translocoOptions = {
+  loader: HttpLoader,
   config: {
     reRenderOnLangChange: true,
     availableLangs: transformLanguageCodes(languageCodes),
@@ -130,6 +134,11 @@ function bootstrapUser() {
   const downloadService = inject(DownloadService);
   const libraryService = inject(LibraryService);
   const transloco = inject(TranslocoService);
+  // Created before the hub connects so no message is missed
+  inject(ActivityStoreService);
+
+  // Migration: pre v0.9.2 localization cache hashing wasn't working
+  manualMigrationRemovePersistedTranslations();
 
   // Load user from localStorage so refreshAccount() and locale loading can proceed
   const localUser = accountService.getUserFromLocalStorage();
@@ -182,12 +191,6 @@ bootstrapApplication(AppComponent, {
         provideTranslocoLocale({
           defaultLocale: 'en'
         }),
-        provideTranslocoPersistTranslations({
-          loader: HttpLoader,
-          storage: { useValue: localStorage },
-          ttl: environment.production ? 129600 : 0, // 1.5 days in seconds for prod
-          storageKey: translocoPrefixKey
-        }),
         Title,
         { provide: TitleStrategy, useClass: KavitaTitleStrategy },
         { provide: SAVER, useFactory: getSaver },
@@ -198,7 +201,8 @@ bootstrapApplication(AppComponent, {
         },
         provideHttpClient(withInterceptors([jwtInterceptor, errorInterceptor, clientInfoInterceptor])),
         provideAppInitializer(() => bootstrapUser()),
-        provideZoneChangeDetection(),
+        provideZonelessChangeDetection(),
+        provideBrowserGlobalErrorListeners(),
         {
           provide: NgbModalConfig,
           useFactory: () => Object.assign(new NgbModalConfig(), DefaultModalOptions) satisfies Partial<NgbModalConfig>
@@ -209,7 +213,8 @@ bootstrapApplication(AppComponent, {
             max: 5,
             resettable: true,
           } satisfies Partial<NgbRatingConfig>)
-        }
+        },
+      ...(isDevMode() ? [provideCheckNoChangesConfig({exhaustive: true, interval: 3000})] : [])
     ]
 } as ApplicationConfig)
 .catch(err => console.error(err));

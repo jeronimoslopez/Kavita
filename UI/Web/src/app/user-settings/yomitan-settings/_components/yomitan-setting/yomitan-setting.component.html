@@ -1,0 +1,41 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @if (visible()) {
+    @let s = setting();
+
+    <div class="row g-0 mt-4 mb-4" [class.yomitan-child]="s.child">
+      @if (isSwitch()) {
+        <app-setting-switch [title]="t(s.key + '-label')" [subtitle]="s.description ? t(s.key + '-tooltip') : undefined">
+          <ng-template>
+            <app-yomitan-control [control]="s.controls[0]" class="float-end" />
+          </ng-template>
+        </app-setting-switch>
+      } @else {
+        <app-setting-item [title]="t(s.key + '-label')" [subtitle]="s.description ? t(s.key + '-tooltip') : undefined">
+          <ng-template #view>
+            {{displayValue()}}
+          </ng-template>
+          <ng-template #edit>
+            <div class="yomitan-control-group">
+              @for (control of s.controls; track $index) {
+                @if (control.type === 'checkbox') {
+                  <app-yomitan-control [control]="control" [label]="t(control.sub!)" />
+                } @else {
+                  <div class="yomitan-control-group-item" [class.w-100]="s.controls.length === 1">
+                    @if (control.sub) {
+                      <div class="form-text mb-1">{{t(control.sub)}}</div>
+                    }
+                    <app-yomitan-control [control]="control" />
+                  </div>
+                }
+              }
+            </div>
+          </ng-template>
+        </app-setting-item>
+      }
+
+      @if (s.help) {
+        <app-yomitan-help [html]="t(s.key + '-help')" />
+      }
+    </div>
+  }
+</ng-container>

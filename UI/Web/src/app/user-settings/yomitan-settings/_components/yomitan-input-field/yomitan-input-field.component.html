@@ -1,0 +1,19 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control" [id]="inputId()" autocomplete="off" spellcheck="false"
+           [value]="displayValue()" [placeholder]="placeholder()" readonly
+           (keydown)="onKeyDown($event)" (keyup)="$event.preventDefault()">
+    @if (mouseSupported()) {
+      <button type="button" class="btn btn-outline-secondary" [title]="t('input-mouse-button-tooltip')"
+              (pointerdown)="onMouseButtonDown($event)" (mousedown)="$event.preventDefault()"
+              (contextmenu)="$event.preventDefault()">
+        <i class="fa-solid fa-computer-mouse" aria-hidden="true"></i>
+        <span class="visually-hidden">{{t('input-mouse-button-tooltip')}}</span>
+      </button>
+    }
+    <button type="button" class="btn btn-outline-secondary" [title]="t('input-clear')" (click)="clear()" [disabled]="modifiers().length === 0 && key() === null">
+      <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      <span class="visually-hidden">{{t('input-clear')}}</span>
+    </button>
+  </div>
+</ng-container>

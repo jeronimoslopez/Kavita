@@ -1,0 +1,149 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <app-yomitan-help [html]="t('anki-help')" />
+
+  <div class="alert alert-info mt-3" role="note">
+    <div [innerHTML]="t('anki-cors-callout', {origin: origin})"></div>
+    <pre class="yomitan-cors-config mt-2 mb-0">{{corsConfig}}</pre>
+  </div>
+
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-switch [title]="t('anki-enable-label')" [subtitle]="t('anki-enable-tooltip')">
+      <ng-template>
+        <app-yomitan-control [control]="enableControl" class="float-end" />
+      </ng-template>
+    </app-setting-switch>
+    <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+      <span>{{t('anki-connection-status')}}</span>
+      @switch (connection().status) {
+        @case ('disabled') {
+          <span class="text-muted">{{t('anki-status-not-enabled')}}</span>
+        }
+        @case ('checking') {
+          <span class="text-muted">…</span>
+        }
+        @case ('connected') {
+          <span class="text-success">{{t('anki-status-connected')}}</span>
+        }
+        @case ('error') {
+          @let state = connection();
+          <span class="text-danger">{{state.status === 'error' ? state.message : ''}}</span>
+        }
+      }
+      <button type="button" class="btn btn-secondary btn-sm" (click)="refresh()">{{t('anki-refresh')}}</button>
+    </div>
+  </div>
+
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  <div class="row g-0 mt-4 mb-4">
+    <h6 class="section-title">{{t('anki-cards-label')}}</h6>
+
+    @if (cardFormats().length > 0) {
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <ul class="nav nav-pills">
+          @for (format of cardFormats(); track $index) {
+            <li class="nav-item">
+              <button type="button" class="nav-link" [class.active]="$index === formatIndex()" (click)="selectedFormat.set($index)">
+                {{format.name || ('Format ' + ($index + 1))}}
+              </button>
+            </li>
+          }
+        </ul>
+        @if (settingsService.showAdvanced() && cardFormats().length < maxCardFormats) {
+          <button type="button" class="btn btn-icon btn-sm" [title]="t('anki-add-format')" (click)="addFormat()">
+            <i class="fa fa-plus" aria-hidden="true"></i>
+            <span class="visually-hidden">{{t('anki-add-format')}}</span>
+          </button>
+        }
+      </div>
+    }
+
+    @if (format(); as f) {
+      @let controls = formatControls();
+      <div class="yomitan-anki-format">
+        @if (settingsService.showAdvanced()) {
+          <label class="yomitan-anki-label" for="yomitan-anki-format-name">{{t('anki-card-name')}}</label>
+          <app-yomitan-control [control]="controls.name" inputId="yomitan-anki-format-name" />
+
+          <label class="yomitan-anki-label" for="yomitan-anki-format-type">{{t('anki-card-type')}}</label>
+          <app-yomitan-control [control]="controls.type" inputId="yomitan-anki-format-type" />
+
+          <label class="yomitan-anki-label" for="yomitan-anki-format-icon">{{t('anki-card-icon')}}</label>
+          <app-yomitan-control [control]="controls.icon" inputId="yomitan-anki-format-icon" />
+        }
+
+        <label class="yomitan-anki-label" for="yomitan-anki-format-deck">{{t('anki-card-deck')}}</label>
+        <select class="form-select" id="yomitan-anki-format-deck" (change)="setDeck($event)">
+          <option value="" [selected]="f.deck === ''"></option>
+          @for (deck of deckOptions(); track deck) {
+            <option [value]="deck" [selected]="deck === f.deck">{{deck}}</option>
+          }
+        </select>
+
+        <label class="yomitan-anki-label" for="yomitan-anki-format-model">{{t('anki-card-model')}}</label>
+        <select class="form-select" id="yomitan-anki-format-model" (change)="setModel($event)">
+          <option value="" [selected]="f.model === ''"></option>
+          @for (model of modelOptions(); track model) {
+            <option [value]="model" [selected]="model === f.model">{{model}}</option>
+          }
+        </select>
+      </div>
+
+      @if (fields().length > 0) {
+        <div class="table-responsive mt-3">
+          <table class="table table-sm align-middle yomitan-anki-fields">
+            <thead>
+              <tr>
+                <th scope="col">{{t('anki-field-name')}}</th>
+                <th scope="col">{{t('anki-field-value')}}</th>
+                <th scope="col">{{t('anki-field-overwrite')}}</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (row of fields(); track row.name) {
+                <tr>
+                  <td class="yomitan-anki-field-name">{{row.name}}</td>
+                  <td>
+                    <div class="input-group input-group-sm flex-nowrap">
+                      <app-yomitan-control class="flex-grow-1" [control]="row.valueControl" [compact]="true" />
+                      <select class="form-select form-select-sm yomitan-marker-select" (change)="setFieldMarker(row.name, $event)"
+                              [attr.aria-label]="t('anki-field-insert-marker')">
+                        <option value="" selected>{{t('anki-field-insert-marker')}}</option>
+                        @for (marker of formatMarkers(); track marker) {
+                          <option [value]="marker">{{marker}}</option>
+                        }
+                      </select>
+                    </div>
+                  </td>
+                  <td>
+                    <app-yomitan-control [control]="row.overwriteControl" [compact]="true" />
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="text-muted mt-3">{{t('anki-fields-empty')}}</p>
+      }
+
+      @if (settingsService.showAdvanced() && cardFormats().length > 1) {
+        <button type="button" class="btn btn-outline-danger btn-sm" (click)="deleteFormat()">{{t('anki-delete-format')}}</button>
+      }
+    }
+  </div>
+
+  @if (settingsService.showAdvanced()) {
+    <div class="row g-0 mt-4 mb-4">
+      <h6 class="section-title">{{t('anki-templates-label')}}</h6>
+      <div class="text-muted" [innerHTML]="t('anki-templates-tooltip')"></div>
+      <textarea class="form-control yomitan-templates mt-2" rows="16" autocomplete="off" spellcheck="false"
+                [attr.aria-label]="t('anki-templates-label')" [formField]="templatesForm.value"></textarea>
+      <div class="mt-2">
+        <button type="button" class="btn btn-outline-danger btn-sm" (click)="resetTemplates()">{{t('anki-templates-reset')}}</button>
+      </div>
+    </div>
+  }
+</ng-container>

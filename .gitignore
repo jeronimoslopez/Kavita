@@ -522,6 +522,7 @@ UI/Web/dist/
 /Kavita.Server/config/*.csv
 /Kavita.Server/config/Hangfire.db
 /Kavita.Server/config/Hangfire-log.db
+/Kavita.Server/config/yomitan/
 Kavita.Server/config/covers/
 Kavita.Server/config/images/*
 Kavita.Server/config/stats/*

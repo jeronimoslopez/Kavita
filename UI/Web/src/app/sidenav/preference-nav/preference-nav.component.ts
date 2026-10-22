@@ -66,6 +66,7 @@ export enum SettingsTabId {
   CustomKeyBinds = 'custom-key-binds',
   ReadingProfiles = 'reading-profiles',
   Font = 'font',
+  Yomitan = 'yomitan',
   Clients = 'clients',
   Theme = 'theme',
   Devices = 'devices',
@@ -216,7 +217,7 @@ export class PreferenceNavComponent implements AfterViewInit {
         if (!isAdmin) return of(-1);
         return this.serverService.getMediaErrors().pipe(
           takeUntilDestroyed(this.destroyRef),
-          map(d => d.length),
+          map(d => d.filter(d2 => !d2.isDismissed).length),
           shareReplay({ bufferSize: 1, refCount: true })
         );
       })
@@ -254,6 +255,7 @@ export class PreferenceNavComponent implements AfterViewInit {
           new SideNavItem(SettingsTabId.Clients),
           new SideNavItem(SettingsTabId.Theme),
           new SideNavItem(SettingsTabId.Font),
+          new SideNavItem(SettingsTabId.Yomitan),
           new SideNavItem(SettingsTabId.Devices),
           new SideNavItem(SettingsTabId.RemapRules, [], undefined, [Role.ReadOnly]),
         ]

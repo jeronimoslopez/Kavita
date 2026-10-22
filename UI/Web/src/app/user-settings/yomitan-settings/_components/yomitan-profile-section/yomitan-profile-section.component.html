@@ -1,0 +1,71 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-item [title]="t('active-profile-label')" [subtitle]="t('active-profile-tooltip')">
+      <ng-template #view>{{currentName()}}</ng-template>
+      <ng-template #edit>
+        <select class="form-select" (change)="setActiveProfile($event)">
+          @for (profile of profiles(); track profile.index) {
+            <option [value]="profile.index" [selected]="profile.index === profileCurrent()">{{profile.name}}</option>
+          }
+        </select>
+      </ng-template>
+    </app-setting-item>
+  </div>
+
+  <div class="row g-0 mb-4">
+    <h6 class="section-title">{{t('profiles-label')}}</h6>
+    <ul class="list-group yomitan-list">
+      @for (profile of profiles(); track profile.index; let first = $first; let last = $last) {
+        <li class="list-group-item yomitan-profile">
+          <span class="text-muted yomitan-profile-index">{{profile.index + 1}}</span>
+          <div class="form-check mb-0" [title]="t('profile-default')">
+            <input type="radio" class="form-check-input" name="yomitan-profile-default" [id]="'yomitan-profile-default-' + profile.index"
+                   [checked]="profile.index === profileCurrent()" (change)="setDefaultProfile(profile.index)">
+            <label class="visually-hidden" [for]="'yomitan-profile-default-' + profile.index">{{t('profile-default')}}</label>
+          </div>
+          <app-yomitan-control class="yomitan-profile-name" [control]="profile.nameControl" [compact]="true"
+                               [inputId]="'yomitan-profile-name-' + profile.index" />
+          <label class="visually-hidden" [for]="'yomitan-profile-name-' + profile.index">{{t('profile-name')}}</label>
+
+          <div class="yomitan-profile-actions">
+            <select class="form-select form-select-sm yomitan-profile-copy" (change)="copyFrom(profile.index, $event)" [attr.aria-label]="t('profile-copy-from')">
+              <option value="" selected>{{t('profile-copy-from')}}</option>
+              @for (source of profiles(); track source.index) {
+                @if (source.index !== profile.index) {
+                  <option [value]="source.index">{{source.name}}</option>
+                }
+              }
+            </select>
+            <div class="btn-group btn-group-sm" role="group">
+              <button type="button" class="btn btn-icon" [title]="t('move-up')" (click)="move(profile.index, -1)" [disabled]="first">
+                <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('move-up')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('move-down')" (click)="move(profile.index, 1)" [disabled]="last">
+                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('move-down')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('profile-duplicate')" (click)="duplicate(profile.index)">
+                <i class="fa-regular fa-copy" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('profile-duplicate')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('profile-reset')" (click)="reset(profile.index)">
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('profile-reset')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('profile-delete')" (click)="delete(profile.index)" [disabled]="profiles().length <= 1">
+                <i class="fa fa-trash" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('profile-delete')}}</span>
+              </button>
+            </div>
+          </div>
+        </li>
+      }
+    </ul>
+    <div class="mt-2">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="add()">
+        <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+      </button>
+    </div>
+  </div>
+</ng-container>

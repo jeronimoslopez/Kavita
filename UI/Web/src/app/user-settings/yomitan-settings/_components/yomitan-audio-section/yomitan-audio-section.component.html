@@ -1,0 +1,92 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  <div class="row g-0 mt-4 mb-2">
+    <h6 class="section-title">{{t('audio-sources-label')}}</h6>
+  </div>
+
+  <app-yomitan-setting [setting]="defaultSourcesSetting" />
+
+  <div class="row g-0 mb-4">
+    <p class="text-muted">{{t('audio-sources-tooltip')}}</p>
+
+    @if (sources().length === 0) {
+      <p class="text-muted fst-italic">{{t('audio-sources-empty')}}</p>
+    }
+
+    <ol class="list-group list-group-numbered yomitan-list">
+      @for (item of sources(); track $index) {
+        @let field = parameterField(item.source.type);
+        <li class="list-group-item">
+          <div class="yomitan-audio-source">
+            <app-yomitan-control class="yomitan-audio-source-type" [control]="item.typeControl" [compact]="true" />
+
+            @if (field === 'url') {
+              <div class="input-group input-group-sm yomitan-audio-source-parameter">
+                <span class="input-group-text">{{t('audio-source-url')}}</span>
+                <app-yomitan-control class="flex-grow-1" [control]="item.urlControl" [compact]="true" />
+              </div>
+            } @else if (field === 'voice') {
+              <div class="input-group input-group-sm yomitan-audio-source-parameter">
+                <span class="input-group-text">{{t('audio-source-voice')}}</span>
+                <select class="form-select form-select-sm" [value]="item.source.voice" (change)="setVoice(item.index, $event)">
+                  <option value="" [selected]="item.source.voice === ''">{{t('audio-source-voice-none')}}</option>
+                  @for (voice of voices(); track voice.value) {
+                    <option [value]="voice.value" [selected]="voice.value === item.source.voice">{{voice.label}}</option>
+                  }
+                </select>
+              </div>
+            }
+
+            <div class="btn-group btn-group-sm yomitan-list-actions" role="group">
+              <button type="button" class="btn btn-icon" [title]="t('move-up')" (click)="move(item.index, -1)" [disabled]="$first">
+                <i class="fa-solid fa-chevron-up" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('move-up')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('move-down')" (click)="move(item.index, 1)" [disabled]="$last">
+                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('move-down')}}</span>
+              </button>
+              <button type="button" class="btn btn-icon" [title]="t('remove')" (click)="remove(item.index)">
+                <i class="fa fa-trash" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('remove')}}</span>
+              </button>
+            </div>
+          </div>
+
+          @switch (item.source.type) {
+            @case ('custom') {
+              <app-yomitan-help [html]="t('audio-source-help-custom') + ' ' + t('audio-source-cors-note')" />
+            }
+            @case ('custom-json') {
+              <app-yomitan-help [html]="t('audio-source-help-custom-json') + ' ' + t('audio-source-cors-note')" />
+            }
+            @case ('text-to-speech') {
+              <ng-container [ngTemplateOutlet]="ttsHelp" [ngTemplateOutletContext]="{$implicit: item.source.voice}" />
+            }
+            @case ('text-to-speech-reading') {
+              <ng-container [ngTemplateOutlet]="ttsHelp" [ngTemplateOutletContext]="{$implicit: item.source.voice}" />
+            }
+          }
+        </li>
+      }
+    </ol>
+
+    <div class="mt-2">
+      <button type="button" class="btn btn-secondary btn-sm" (click)="add()">
+        <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+      </button>
+    </div>
+  </div>
+
+  <ng-template #ttsHelp let-voice>
+    <app-yomitan-help [html]="t('audio-source-help-text-to-speech')" />
+    <div class="input-group input-group-sm mt-2 yomitan-tts-test">
+      <input type="text" class="form-control" lang="ja" [value]="testText()" (input)="testText.set($any($event.target).value)"
+             [attr.aria-label]="t('audio-source-test-text')">
+      <button type="button" class="btn btn-secondary" (click)="testVoice(voice)">{{t('test')}}</button>
+    </div>
+  </ng-template>
+</ng-container>

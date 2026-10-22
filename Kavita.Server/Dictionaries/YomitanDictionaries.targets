@@ -1,0 +1,53 @@
+<Project>
+  <!--
+    Yomitan dictionaries bundled with Kavita. The zips are downloaded at build time into a cache outside the repo so they
+    survive dotnet clean and new worktrees, then copied to $(OutDir)Dictionaries and to publish output. On startup the
+    server imports any zip whose title and revision isn't in config/yomitan/dictionaries.db yet.
+
+    -p:YomitanDictionaryCache=<dir>        overrides the cache folder
+    -p:RefreshYomitanDictionaries=true     downloads every zip again
+    -p:SkipYomitanDictionaries=true        skips the download and copy entirely
+  -->
+  <PropertyGroup>
+    <YomitanDictionaryCache Condition="'$(YomitanDictionaryCache)' == '' And '$(OS)' == 'Windows_NT'">$(LOCALAPPDATA)\kavita\yomitan-dictionaries</YomitanDictionaryCache>
+    <YomitanDictionaryCache Condition="'$(YomitanDictionaryCache)' == ''">$(HOME)/.cache/kavita/yomitan-dictionaries</YomitanDictionaryCache>
+    <RefreshYomitanDictionaries Condition="'$(RefreshYomitanDictionaries)' == ''">false</RefreshYomitanDictionaries>
+    <SkipYomitanDictionaries Condition="'$(SkipYomitanDictionaries)' == ''">false</SkipYomitanDictionaries>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <YomitanDictionary Include="jitendex-yomitan.zip" Url="https://github.com/stephenmk/stephenmk.github.io/releases/latest/download/jitendex-yomitan.zip" />
+    <YomitanDictionary Include="JMnedict.zip" Url="https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/JMnedict.zip" />
+    <YomitanDictionary Include="KANJIDIC_english.zip" Url="https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/KANJIDIC_english.zip" />
+    <YomitanDictionary Include="BCCWJ_SUW_LUW_combined.zip" Url="https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/BCCWJ_SUW_LUW_combined.zip" />
+    <YomitanDictionary Include="JPDB_v2.2_Frequency_Kana_2024-10-13.zip" Url="https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip" />
+    <YomitanDictionary Include="jiten_freq_global.zip" Url="https://api.jiten.moe/api/frequency-list/download" />
+  </ItemGroup>
+
+  <Target Name="DownloadYomitanDictionaries" BeforeTargets="Build" Condition="'$(SkipYomitanDictionaries)' != 'true'">
+    <MakeDir Directories="$(YomitanDictionaryCache)" />
+    <DownloadFile SourceUrl="%(YomitanDictionary.Url)"
+                  DestinationFolder="$(YomitanDictionaryCache)"
+                  DestinationFileName="%(YomitanDictionary.Identity)"
+                  SkipUnchangedFiles="false"
+                  Retries="2"
+                  Condition="'$(RefreshYomitanDictionaries)' == 'true' Or !Exists('$(YomitanDictionaryCache)/%(YomitanDictionary.Identity)')" />
+    <ItemGroup>
+      <_YomitanDictionaryFile Include="@(YomitanDictionary->'$(YomitanDictionaryCache)/%(Identity)')" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="CopyYomitanDictionariesToOutput" AfterTargets="Build" DependsOnTargets="DownloadYomitanDictionaries"
+          Condition="'$(SkipYomitanDictionaries)' != 'true'">
+    <Copy SourceFiles="@(_YomitanDictionaryFile)" DestinationFolder="$(OutDir)Dictionaries" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="AddYomitanDictionariesToPublish" AfterTargets="ComputeResolvedFilesToPublishList" DependsOnTargets="DownloadYomitanDictionaries"
+          Condition="'$(SkipYomitanDictionaries)' != 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="@(_YomitanDictionaryFile)"
+                             RelativePath="Dictionaries/%(Filename)%(Extension)"
+                             CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

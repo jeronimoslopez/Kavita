@@ -10,10 +10,10 @@ import {
   viewChild
 } from '@angular/core';
 import {Router, RouterLink} from '@angular/router';
-import {filter, Observable, ReplaySubject, Subject, switchMap} from 'rxjs';
-import {debounceTime, map, shareReplay, take, tap, throttleTime} from 'rxjs/operators';
+import {asyncScheduler, filter, Observable, Subject, switchMap} from 'rxjs';
+import {map, shareReplay, take, tap, throttleTime} from 'rxjs/operators';
 import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
-import {CarouselReelComponent} from '../../carousel/_components/carousel-reel/carousel-reel.component';
+import {CarouselReelComponent, NextPageLoader} from '../../carousel/_components/carousel-reel/carousel-reel.component';
 import {AsyncPipe, NgTemplateOutlet} from '@angular/common';
 import {
   SideNavCompanionBarComponent
@@ -36,7 +36,7 @@ import {QueryContext} from "../../_models/metadata/v2/query-context";
 import {LicenseService} from "../../_services/license.service";
 import {EntityCardComponent} from "../../cards/entity-card/entity-card.component";
 import {CardConfigFactory} from "../../_services/card-config-factory.service";
-import {CardEntity, CardEntityFactory} from "../../_models/card/card-entity";
+import {CardEntity, CardEntityFactory, SeriesCardEntity} from "../../_models/card/card-entity";
 import {PromotedIconComponent} from "../../shared/_components/promoted-icon/promoted-icon.component";
 import {FilterEntityType} from "../../_models/metadata/v2/filter-entity-type";
 import {ReadingListService} from "../../_services/reading-list.service";
@@ -52,6 +52,7 @@ import {EVENTS, MessageHubService} from "../../_services/message-hub.service";
 import {RecentlyAddedItem} from "../../_models/recently-added-item";
 import {SeriesSortField} from "../../_models/metadata/series-filter";
 import {Library} from "../../_models/library/library";
+import {PaginatedResult} from "../../_models/pagination";
 
 enum StreamId {
   OnDeck,
@@ -60,6 +61,18 @@ enum StreamId {
   MoreInGenre,
 }
 
+function mapPaginatedResult<T, U>(fn: (t: T) => U) {
+  return map<PaginatedResult<T[]>, PaginatedResult<U[]>>(paginatedResult => {
+    const result = new PaginatedResult<U[]>();
+
+    result.pagination = paginatedResult.pagination;
+    result.result = paginatedResult.result.map(fn);
+
+    return result;
+  });
+}
+
+const dashboardReloadEvents: string[] = [EVENTS.DashboardUpdate, EVENTS.SeriesAdded, EVENTS.SeriesRemoved, EVENTS.ScanSeries];
 
 @Component({
   selector: 'app-dashboard',
@@ -100,7 +113,6 @@ export class DashboardComponent {
   streams: Array<DashboardStream> = [];
   genre: Genre | undefined;
   refreshStreams$ = new Subject<void>();
-  refreshStreamsFromDashboardUpdate$ = new Subject<void>();
 
   streamCount: number = 0;
   streamsLoaded: number = 0;
@@ -115,40 +127,23 @@ export class DashboardComponent {
   protected titleTemplateRef = viewChild<TemplateRef<{ $implicit: CardEntity }>>('title');
   protected readonly readingListConfig = computed(() => this.cardConfigFactory.forReadingList({titleRef: this.titleTemplateRef(), overrides: {allowSelection: false, actionableFunc: () => []}}));
 
-
-  /**
-   * We use this Replay subject to slow the amount of times we reload the UI
-   */
-  private loadRecentlyAdded$: ReplaySubject<void> = new ReplaySubject<void>();
   protected readonly StreamType = StreamType;
   protected readonly StreamId = StreamId;
 
   constructor() {
     this.loadDashboard();
 
-    this.refreshStreamsFromDashboardUpdate$.pipe(takeUntilDestroyed(this.destroyRef), debounceTime(1000),
-      tap(() => this.loadDashboard()))
-      .subscribe();
+    // Trailing so the last event of a scan's burst still reloads
+    this.refreshStreams$.pipe(
+      throttleTime(10_000, asyncScheduler, {leading: true, trailing: true}),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(() => this.loadDashboard());
 
-    this.refreshStreams$.pipe(takeUntilDestroyed(this.destroyRef), throttleTime(10_000),
-        tap(() => this.loadDashboard()))
-        .subscribe();
-
-
-    this.messageHub.messages$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(res => {
-      // TODO: Make the event have a stream Id so I can refresh just that stream
-      if (res.event === EVENTS.DashboardUpdate) {
-        this.refreshStreamsFromDashboardUpdate$.next();
-      } else if (res.event === EVENTS.SeriesAdded) {
-        this.refreshStreams$.next();
-      } else if (res.event === EVENTS.SeriesRemoved) {
-        this.refreshStreams$.next();
-      } else if (res.event === EVENTS.ScanSeries) {
-        // We don't have events for when series are updated, but we do get events when a scan update occurs. Refresh recentlyAdded at that time.
-        this.loadRecentlyAdded$.next();
-        this.refreshStreams$.next();
-      }
-    });
+    // TODO: Make the event have a stream Id so I can refresh just that stream
+    this.messageHub.messages$.pipe(
+      filter(res => dashboardReloadEvents.includes(res.event)),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(() => this.refreshStreams$.next());
 
     if (this.licenseService.hasActiveLicense()) {
       this.scrobblingService.checkExpiredTokens()
@@ -162,32 +157,25 @@ export class DashboardComponent {
     }
   }
 
-  smartFilterNextPage(stream: DashboardStream) {
+  smartFilterNextPage(stream: DashboardStream): NextPageLoader<SeriesCardEntity> | null {
     if (!stream.smartFilterDecoded) return null;
 
     return (pageNum: number, pageSize: number) => {
       return this.seriesService.getAllSeriesV2(pageNum, pageSize, stream.smartFilterDecoded, QueryContext.Dashboard)
-        .pipe(map(d => d.result.map(series => CardEntityFactory.series(series))));
+        .pipe(mapPaginatedResult(series => CardEntityFactory.series(series)));
     }
   }
 
   onDeckNextPage(stream: DashboardStream) {
     return (pageNum: number, pageSize: number) => {
       return this.seriesService.getOnDeck(pageNum, pageSize)
-        .pipe(map(d => d.result.map(series => CardEntityFactory.series(series))));
+        .pipe(mapPaginatedResult(series => CardEntityFactory.series(series)));
     }
   }
   onRecentlyAddedNextPage(stream: DashboardStream) {
     return (pageNum: number, pageSize: number) => {
       return this.seriesService.getRecentlyAdded(pageNum, pageSize)
-        .pipe(map(d => d.result.map(series => CardEntityFactory.series(series))));
-    }
-  }
-
-  onRecentlyUpdatedNextPage(stream: DashboardStream) {
-    return (pageNum: number, pageSize: number) => {
-      return this.seriesService.getRecentlyUpdatedSeries(pageNum, pageSize)
-        .pipe(map(d => d.map(series => CardEntityFactory.recentlyUpdatedSeries(series))));
+        .pipe(mapPaginatedResult(series => CardEntityFactory.series(series)));
     }
   }
 

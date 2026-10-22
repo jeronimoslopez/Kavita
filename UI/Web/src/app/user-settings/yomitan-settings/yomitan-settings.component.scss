@@ -1,0 +1,99 @@
+.yomitan-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12rem;
+  grid-template-areas: "content nav";
+  gap: 2rem;
+  align-items: start;
+
+  @media (max-width: 1199.98px) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "nav" "content";
+    gap: 1rem;
+  }
+}
+
+.yomitan-content {
+  grid-area: content;
+  min-width: 0;
+}
+
+.yomitan-nav {
+  grid-area: nav;
+  position: sticky;
+  top: calc(var(--nav-offset) + 1rem);
+  z-index: 1;
+
+  .nav-link {
+    border: none;
+    background: none;
+    padding: 0.25rem 0.75rem;
+    text-align: left;
+    color: var(--body-text-color);
+    border-left: 0.125rem solid transparent;
+    white-space: nowrap;
+
+    &:hover {
+      color: var(--primary-color);
+    }
+
+    &.active {
+      color: var(--primary-color);
+      border-left-color: var(--primary-color);
+    }
+  }
+
+  @media (max-width: 1199.98px) {
+    top: var(--nav-offset);
+    background-color: var(--bs-body-bg);
+    border-bottom: 0.0625rem solid var(--setting-break-color);
+    margin: 0 -0.75rem;
+    padding: 0.25rem 0.75rem;
+
+    .nav {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+
+    .nav-link {
+      border-left: none;
+      border-bottom: 0.125rem solid transparent;
+
+      &.active {
+        border-bottom-color: var(--primary-color);
+      }
+    }
+  }
+}
+
+.yomitan-section {
+  scroll-margin-top: calc(var(--nav-offset) + 3.5rem);
+}
+
+// Shared by the section components
+:host ::ng-deep {
+  .yomitan-child {
+    padding-left: 1.5rem;
+    border-left: 0.125rem solid var(--setting-break-color);
+  }
+
+  .yomitan-list {
+    .list-group-item {
+      background-color: var(--elevation-layer1);
+      color: var(--body-text-color);
+      border-color: var(--setting-break-color);
+    }
+  }
+
+  .yomitan-list-actions {
+    margin-left: auto;
+  }
+
+  .yomitan-list-select {
+    min-width: 12rem;
+  }
+
+  .btn-icon {
+    color: var(--primary-color);
+  }
+}

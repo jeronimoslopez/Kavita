@@ -1,0 +1,132 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-item [title]="t('scan-modifier-key-label')" [subtitle]="t('scan-modifier-key-tooltip')">
+      <ng-template #view>
+        @for (option of mainModifierOptions(); track option.value) {
+          @if (option.value === mainModifierKey()) {
+            {{option.label ?? t(option.key!)}}
+          }
+        }
+      </ng-template>
+      <ng-template #edit>
+        <select class="form-select" (change)="setMainModifierKey($event)">
+          @for (option of mainModifierOptions(); track option.value) {
+            <option [value]="option.value" [selected]="option.value === mainModifierKey()">{{option.label ?? t(option.key!)}}</option>
+          }
+        </select>
+      </ng-template>
+    </app-setting-item>
+    <app-yomitan-help [html]="t('scan-modifier-key-help')" />
+  </div>
+
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-switch [title]="t('middle-mouse-button-scan-label')" [subtitle]="t('middle-mouse-button-scan-tooltip')">
+      <ng-template>
+        <div class="form-check form-switch float-end">
+          <input type="checkbox" role="switch" class="form-check-input" [checked]="middleMouseEnabled()" (change)="setMiddleMouseEnabled($event)">
+        </div>
+      </ng-template>
+    </app-setting-switch>
+  </div>
+
+  @if (settingsService.showAdvanced()) {
+    <div class="row g-0 mt-4 mb-4">
+      <h6 class="section-title">{{t('scanning-inputs-label', {count: inputs().length})}}</h6>
+      <div class="text-muted">{{t('scanning-inputs-tooltip')}}</div>
+      <app-yomitan-help [html]="t('scanning-inputs-help')" />
+
+      @if (inputs().length === 0) {
+        <p class="text-warning mt-2">{{t('scanning-inputs-empty')}}</p>
+      }
+
+      <div class="yomitan-scan-inputs mt-2">
+        @for (entry of inputEntries(); track $index; let i = $index) {
+          <div class="card yomitan-scan-input">
+            <div class="card-body">
+              <div class="d-flex align-items-center mb-2">
+                <strong class="me-auto">#{{i + 1}}</strong>
+                <div class="btn-group btn-group-sm" role="group">
+                  <button type="button" class="btn btn-icon" (click)="setShowAdvanced(i, !entry.input.options.showAdvanced)">
+                    {{entry.input.options.showAdvanced ? t('scan-input-hide-advanced') : t('scan-input-show-advanced')}}
+                  </button>
+                  <button type="button" class="btn btn-icon" (click)="clearInputs(i)">{{t('scan-input-clear-inputs')}}</button>
+                  <button type="button" class="btn btn-icon" [title]="t('remove')" (click)="removeInput(i)">
+                    <i class="fa fa-trash" aria-hidden="true"></i>
+                    <span class="visually-hidden">{{t('remove')}}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="yomitan-scan-input-grid">
+                <label class="yomitan-scan-input-label" [for]="'yomitan-scan-include-' + i">{{t('scan-input-include')}}</label>
+                <app-yomitan-input-field [inputId]="'yomitan-scan-include-' + i" [modifiers]="entry.include" [os]="os()"
+                                         [mouseSupported]="true" [pointerTypes]="entry.pointerTypes" [placeholder]="t('scan-input-no-inputs')"
+                                         (inputChange)="setInputModifiers(i, 'include', $event)" />
+
+                <label class="yomitan-scan-input-label" [for]="'yomitan-scan-exclude-' + i">{{t('scan-input-exclude')}}</label>
+                <app-yomitan-input-field [inputId]="'yomitan-scan-exclude-' + i" [modifiers]="entry.exclude" [os]="os()"
+                                         [mouseSupported]="true" [pointerTypes]="entry.pointerTypes" [placeholder]="t('scan-input-no-inputs')"
+                                         (inputChange)="setInputModifiers(i, 'exclude', $event)" />
+
+                <div class="yomitan-scan-input-label">{{t('scan-input-types')}}</div>
+                <div class="yomitan-scan-input-options">
+                  @for (option of typeOptions; track option.property) {
+                    <app-yomitan-control [control]="entry.checkboxes[option.property]" [label]="t(option.key)" />
+                  }
+                </div>
+
+                @if (entry.input.options.showAdvanced) {
+                  <div class="yomitan-scan-input-label">{{t('scan-input-search-types')}}</div>
+                  <div class="yomitan-scan-input-options">
+                    @for (option of searchOptions; track option.property) {
+                      <app-yomitan-control [control]="entry.checkboxes[option.property]" [label]="t(option.key)" />
+                    }
+                  </div>
+
+                  <div class="yomitan-scan-input-label">{{t('scan-input-touch-options')}}</div>
+                  <div class="yomitan-scan-input-options">
+                    @for (option of touchOptions; track option.property) {
+                      <app-yomitan-control [control]="entry.checkboxes[option.property]" [label]="t(option.key)" />
+                    }
+                    <div class="yomitan-scan-input-number">
+                      <label class="form-label mb-1" [for]="'yomitan-scan-touch-time-' + i">{{t('scan-input-minimum-touch-time')}}</label>
+                      <app-yomitan-control [control]="entry.minimumTouchTimeControl" [compact]="true" [inputId]="'yomitan-scan-touch-time-' + i" />
+                    </div>
+                  </div>
+
+                  <div class="yomitan-scan-input-label">{{t('scan-input-pen-options')}}</div>
+                  <div class="yomitan-scan-input-options">
+                    @for (option of penOptions; track option.property) {
+                      <app-yomitan-control [control]="entry.checkboxes[option.property]" [label]="t(option.key)" />
+                    }
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+
+      <div class="mt-2">
+        <button type="button" class="btn btn-secondary btn-sm" (click)="addInput()">
+          <i class="fa fa-plus" aria-hidden="true"></i><span class="ms-1">{{t('add')}}</span>
+        </button>
+      </div>
+    </div>
+  }
+
+  @for (setting of settings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+
+  @if (settingsService.showAdvanced()) {
+    <div class="row g-0 mt-4 mb-2">
+      <h6 class="section-title">{{t('input-action-prevention-label')}}</h6>
+      <div class="text-muted">{{t('input-action-prevention-tooltip')}}</div>
+      <app-yomitan-help [html]="t('input-action-prevention-help')" />
+    </div>
+    @for (setting of preventionSettings; track setting.key) {
+      <app-yomitan-setting [setting]="setting" />
+    }
+  }
+</ng-container>

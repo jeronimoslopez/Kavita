@@ -98,6 +98,7 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
     public DbSet<ClientDevice> ClientDevice { get; set; } = null!;
     public DbSet<ClientDeviceHistory> ClientDeviceHistory { get; set; } = null!;
     public DbSet<AppUserAuthKey> AppUserAuthKey { get; set; } = null!;
+    public DbSet<AppUserYomitanOptions> AppUserYomitanOptions { get; set; } = null!;
 
     public DbSet<ReadingListTag> ReadingListTag { get; set; } = null!;
     public DbSet<ReadingListRemapRule> ReadingListRemapRule { get; set; } = null!;
@@ -137,6 +138,18 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserCollection>()
             .Property(b => b.AgeRating)
             .HasDefaultValue(AgeRating.Unknown);
+
+        builder.Entity<MediaError>()
+            .HasOne(e => e.Library)
+            .WithMany()
+            .HasForeignKey(e => e.LibraryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<MediaError>()
+            .HasOne(e => e.Series)
+            .WithMany()
+            .HasForeignKey(e => e.SeriesId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         #region Reading List
         builder.Entity<ReadingList>()
@@ -225,6 +238,30 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
             .HasJsonConversion([])
             .HasColumnType("TEXT")
             .HasDefaultValue(new List<MetadataSettingField>());
+
+        builder.Entity<ExternalRating>()
+            .HasOne<Chapter>()
+            .WithMany(c => c.ExternalRatings)
+            .HasForeignKey(e => e.ChapterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ExternalReview>()
+            .HasOne<Chapter>()
+            .WithMany(c => c.ExternalReviews)
+            .HasForeignKey(e => e.ChapterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ScrobbleEvent>()
+            .HasOne(e => e.Chapter)
+            .WithMany()
+            .HasForeignKey(e => e.ChapterId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ScrobbleError>()
+            .HasOne(e => e.Chapter)
+            .WithMany()
+            .HasForeignKey(e => e.ChapterId)
+            .OnDelete(DeleteBehavior.Cascade);
         #endregion
 
         #region User & Preferences
@@ -271,6 +308,12 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserPreferences>()
             .Property(b => b.PromptForRereadsAfter)
             .HasDefaultValue(30);
+        builder.Entity<AppUserPreferences>()
+            .Property(b => b.OnDeckProgressDays)
+            .HasDefaultValue(30);
+        builder.Entity<AppUserPreferences>()
+            .Property(b => b.OnDeckUpdateDays)
+            .HasDefaultValue(7);
 
         builder.Entity<AppUserPreferences>()
             .Property(a => a.BookReaderHighlightSlots)
@@ -321,6 +364,9 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserReadingProfile>()
             .Property(b => b.AllowAutomaticWebtoonReaderDetection)
             .HasDefaultValue(true);
+        builder.Entity<AppUserReadingProfile>()
+            .Property(b => b.BookReaderYomitanEnabled)
+            .HasDefaultValue(false);
 
         builder.Entity<AppUserReadingProfile>()
             .PrimitiveCollection(p => p.LibraryIds)
@@ -514,6 +560,14 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserAuthKey>()
             .Property(a => a.Provider)
             .HasDefaultValue(AuthKeyProvider.User);
+        #endregion
+
+        #region AppUserYomitanOptions
+        builder.Entity<AppUserYomitanOptions>()
+            .HasOne(o => o.AppUser)
+            .WithOne(u => u.YomitanOptions)
+            .HasForeignKey<AppUserYomitanOptions>(o => o.AppUserId)
+            .OnDelete(DeleteBehavior.Cascade);
         #endregion
 
         #region AppUserBookmark

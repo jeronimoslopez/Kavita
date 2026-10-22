@@ -1,22 +1,11 @@
 import {Injectable} from '@angular/core';
-import {HubConnection, HubConnectionBuilder} from '@microsoft/signalr';
+import {HubConnection, HubConnectionBuilder, IRetryPolicy} from '@microsoft/signalr';
 import {BehaviorSubject, ReplaySubject} from 'rxjs';
 import {environment} from '../../environments/environment';
-import {LibraryModifiedEvent} from '../_models/events/library-modified-event';
-import {NotificationProgressEvent} from '../_models/events/notification-progress-event';
-import {ThemeProgressEvent} from '../_models/events/theme-progress-event';
-import {UserUpdateEvent} from '../_models/events/user-update-event';
 import {User} from '../_models/user/user';
-import {DashboardUpdateEvent} from "../_models/events/dashboard-update-event";
-import {SideNavUpdateEvent} from "../_models/events/sidenav-update-event";
-import {SiteThemeUpdatedEvent} from "../_models/events/site-theme-updated-event";
-import {ExternalMatchRateLimitErrorEvent} from "../_models/events/external-match-rate-limit-error-event";
-import {AnnotationUpdateEvent} from "../_models/events/annotation-update-event";
+import {SignalRMessage} from '../_models/events/core/signalr-message';
+import {MessageMeta} from '../_models/events/core/message-meta';
 import {toSignal} from "@angular/core/rxjs-interop";
-import {ReadingSessionCloseEvent, ReadingSessionUpdateEvent} from "../_models/events/reading-session-close-event";
-import {ReadingListUpdatedEvent} from "../_models/events/reading-list-updated-event";
-import {SeriesUpdateEvent} from "../_models/events/series-update-event";
-import {ScrobbleProviderUpdatedEvent} from "../_models/events/scrobble-provider-updated-event";
 
 export enum EVENTS {
   UpdateAvailable = 'UpdateAvailable',
@@ -62,6 +51,10 @@ export enum EVENTS {
    */
   SiteThemeProgress = 'SiteThemeProgress',
   /**
+   * A subtype of NotificationProgress for a book theme being processed
+   */
+  BookThemeProgress = 'BookThemeProgress',
+  /**
    * A cover is updated
    */
   CoverUpdate = 'CoverUpdate',
@@ -85,6 +78,10 @@ export enum EVENTS {
     * When bulk bookmarks are being converted
     */
   ConvertBookmarksProgress = 'ConvertBookmarksProgress',
+  /**
+   * When bulk covers are being converted
+   */
+  ConvertCoversProgress = 'ConvertCoversProgress',
    /**
     * When files are being scanned to calculate word count
     */
@@ -169,12 +166,70 @@ export enum EVENTS {
    * Progress event send after a batch completes
    */
   RerunMetadataMappingsProgress = 'RerunMetadataMappingsProgress',
+  /**
+   * Delayed scans were moved or removed after a scan ended. Admins only
+   */
+  ScanRescheduled = 'ScanRescheduled',
 }
 
 export interface Message<T> {
   event: EVENTS;
   payload: T;
+  /**
+   * The envelope without its body. Missing on messages not built from a hub frame
+   */
+  meta?: MessageMeta;
 }
+
+const bodyPayloadEvents = [
+  EVENTS.ScanSeries,
+  EVENTS.LibraryModified,
+  EVENTS.SiteThemeUpdated,
+  EVENTS.DashboardUpdate,
+  EVENTS.SideNavUpdate,
+  EVENTS.ExternalMatchRateLimitError,
+  EVENTS.AnnotationUpdate,
+  EVENTS.ReadingSessionClose,
+  EVENTS.ReadingSessionUpdate,
+  EVENTS.CollectionUpdated,
+  EVENTS.UserProgressUpdate,
+  EVENTS.UserUpdate,
+  EVENTS.Error,
+  EVENTS.Info,
+  EVENTS.SeriesAdded,
+  EVENTS.SeriesRemoved,
+  EVENTS.ChapterRemoved,
+  EVENTS.VolumeRemoved,
+  EVENTS.CoverUpdate,
+  EVENTS.ReadingListUpdated,
+  EVENTS.UpdateAvailable,
+  EVENTS.ScrobblingKeyExpired,
+  EVENTS.PersonMerged,
+  EVENTS.AuthKeyUpdate,
+  EVENTS.AuthKeyDeleted,
+  EVENTS.SeriesUpdated,
+  EVENTS.ScrobbleProviderUpdated,
+  EVENTS.LicenseInfoUpdate,
+  EVENTS.ExternalMetadataUpdate,
+  EVENTS.ScanRescheduled,
+];
+
+const envelopePayloadEvents = [
+  EVENTS.NotificationProgress,
+  EVENTS.DownloadProgress,
+];
+
+const RetryDelaysMs = [0, 2_000, 10_000, 30_000];
+const MaxRetryDelayMs = 60_000;
+
+function retryDelayMs(previousRetryCount: number) {
+  return RetryDelaysMs[previousRetryCount] ?? MaxRetryDelayMs;
+}
+
+// The default policy returns null after 4 tries (~42s), which closes the connection for good
+const keepRetrying: IRetryPolicy = {
+  nextRetryDelayInMilliseconds: context => retryDelayMs(context.previousRetryCount),
+};
 
 
 @Injectable({
@@ -182,7 +237,7 @@ export interface Message<T> {
 })
 export class MessageHubService {
   hubUrl = environment.hubUrl;
-  private hubConnection!: HubConnection;
+  private hubConnection?: HubConnection;
 
   private messagesSource = new ReplaySubject<Message<any>>(1);
   private onlineUsersSource = new BehaviorSubject<string[]>([]); // UserNames
@@ -202,315 +257,72 @@ export class MessageHubService {
 
   public readonly isConnectedSignal = toSignal(this.isConnectedSource);
 
-  constructor() {}
-
-  /**
-   * Tests that an event is of the type passed
-   * @param event
-   * @param eventType
-   * @returns
-   */
-  public isEventType(event: Message<any>, eventType: EVENTS) {
-    if (event.event == EVENTS.NotificationProgress) {
-      const notification = event.payload as NotificationProgressEvent;
-      return notification.eventType.toLowerCase() == eventType.toLowerCase();
-    }
-    return event.event === eventType;
-  }
 
   createHubConnection(user: User) {
-    this.hubConnection = new HubConnectionBuilder()
+    this.stopHubConnection();
+
+    const connection = new HubConnectionBuilder()
       .withUrl(this.hubUrl + 'messages', {
         accessTokenFactory: () => user.token
       })
-      .withAutomaticReconnect()
+      .withAutomaticReconnect(keepRetrying)
       .withStatefulReconnect()
       .build();
+    this.hubConnection = connection;
 
-    this.hubConnection.onreconnecting(() => this.isConnectedSource.next(false));
-    this.hubConnection.onreconnected(() => this.isConnectedSource.next(true));
-    this.hubConnection.onclose(() => this.isConnectedSource.next(false));
+    // A replaced connection can still close or reconnect after the new one is up
+    const setConnected = (connected: boolean) => {
+      if (connection === this.hubConnection) {
+        this.isConnectedSource.next(connected);
+      }
+    };
 
-    const started = this.hubConnection
-      .start()
-      .then(() => {
-        // Only report connected once the handshake actually resolves
-        this.isConnectedSource.next(true);
-      })
-      .catch(err => {
-        console.error(err);
-        this.isConnectedSource.next(false);
-      });
+    connection.onreconnecting(() => setConnected(false));
+    connection.onreconnected(() => setConnected(true));
+    connection.onclose(() => setConnected(false));
 
-    this.hubConnection.on(EVENTS.OnlineUsers, (usernames: string[]) => {
+    connection.on(EVENTS.OnlineUsers, (usernames: string[]) => {
       this.onlineUsersSource.next(usernames);
     });
 
-    this.hubConnection.on(EVENTS.ScanSeries, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ScanSeries,
-        payload: resp.body
-      });
+    bodyPayloadEvents.forEach(event => {
+      connection.on(event, (resp: SignalRMessage) => this.emit(event, resp, resp.body));
     });
 
-    this.hubConnection.on(EVENTS.ScanLibraryProgress, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ScanLibraryProgress,
-        payload: resp.body
-      });
+    envelopePayloadEvents.forEach(event => {
+      connection.on(event, (resp: SignalRMessage) => this.emit(event, resp, resp));
     });
 
-    this.hubConnection.on(EVENTS.ConvertBookmarksProgress, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ConvertBookmarksProgress,
-        payload: resp.body
-      });
-    });
+    this.startWithRetry(connection, setConnected);
+  }
 
-    this.hubConnection.on(EVENTS.WordCountAnalyzerProgress, resp => {
-      this.messagesSource.next({
-        event: EVENTS.WordCountAnalyzerProgress,
-        payload: resp.body
-      });
-    });
+  // Automatic reconnect only covers a connection that was up once, a failed first start is never retried by SignalR
+  private async startWithRetry(connection: HubConnection, setConnected: (connected: boolean) => void) {
+    for (let attempt = 1; connection === this.hubConnection; attempt++) {
+      try {
+        await connection.start();
+        setConnected(true);
+        return;
+      } catch (err) {
+        console.error(err);
+        setConnected(false);
+      }
 
-    this.hubConnection.on(EVENTS.LibraryModified, resp => {
-      this.messagesSource.next({
-        event: EVENTS.LibraryModified,
-        payload: resp.body as LibraryModifiedEvent
-      });
-    });
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs(attempt)));
+    }
+  }
 
-    this.hubConnection.on(EVENTS.SmartCollectionSync, resp => {
-      this.messagesSource.next({
-        event: EVENTS.NotificationProgress,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SiteThemeUpdated, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SiteThemeUpdated,
-        payload: resp.body as SiteThemeUpdatedEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.DashboardUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.DashboardUpdate,
-        payload: resp.body as DashboardUpdateEvent
-      });
-    });
-    this.hubConnection.on(EVENTS.SideNavUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SideNavUpdate,
-        payload: resp.body as SideNavUpdateEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ExternalMatchRateLimitError, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ExternalMatchRateLimitError,
-        payload: resp.body as ExternalMatchRateLimitErrorEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.AnnotationUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.AnnotationUpdate,
-        payload: resp.body as AnnotationUpdateEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ReadingSessionClose, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ReadingSessionClose,
-        payload: resp.body as ReadingSessionCloseEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ReadingSessionUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ReadingSessionUpdate,
-        payload: resp.body as ReadingSessionUpdateEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.NotificationProgress, (resp: NotificationProgressEvent) => {
-      this.messagesSource.next({
-        event: EVENTS.NotificationProgress,
-        payload: resp
-      });
-    });
-
-    this.hubConnection.on(EVENTS.DownloadProgress, (resp: NotificationProgressEvent) => {
-      this.messagesSource.next({
-        event: EVENTS.DownloadProgress,
-        payload: resp
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SiteThemeProgress, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SiteThemeProgress,
-        payload: resp.body as ThemeProgressEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.CollectionUpdated, resp => {
-      this.messagesSource.next({
-        event: EVENTS.CollectionUpdated,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.UserProgressUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.UserProgressUpdate,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.UserUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.UserUpdate,
-        payload: resp.body as UserUpdateEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.Error, resp => {
-      this.messagesSource.next({
-        event: EVENTS.Error,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.Info, resp => {
-      this.messagesSource.next({
-        event: EVENTS.Info,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SeriesAdded, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SeriesAdded,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SeriesRemoved, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SeriesRemoved,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ChapterRemoved, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ChapterRemoved,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.VolumeRemoved, resp => {
-      this.messagesSource.next({
-        event: EVENTS.VolumeRemoved,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.CoverUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.CoverUpdate,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ReadingListUpdated, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ReadingListUpdated,
-        payload: resp.body as ReadingListUpdatedEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.UpdateAvailable, resp => {
-      this.messagesSource.next({
-        event: EVENTS.UpdateAvailable,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SendingToDevice, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SendingToDevice,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ScrobblingKeyExpired, resp => {
-      this.messagesSource.next({
-        event: EVENTS.ScrobblingKeyExpired,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.PersonMerged, resp => {
-      this.messagesSource.next({
-        event: EVENTS.PersonMerged,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.AuthKeyUpdate, resp => {
-      this.messagesSource.next({
-        event: EVENTS.AuthKeyUpdate,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.AuthKeyDeleted, resp => {
-      this.messagesSource.next({
-        event: EVENTS.AuthKeyDeleted,
-        payload: resp.body
-      });
-    });
-
-    this.hubConnection.on(EVENTS.SeriesUpdated, resp => {
-      this.messagesSource.next({
-        event: EVENTS.SeriesUpdated,
-        payload: resp.body as SeriesUpdateEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ScrobbleProviderUpdated, (resp) => {
-      this.messagesSource.next({
-        event: EVENTS.ScrobbleProviderUpdated,
-        payload: resp.body as ScrobbleProviderUpdatedEvent
-      });
-    });
-
-    this.hubConnection.on(EVENTS.LicenseInfoUpdate, (resp) => {
-      this.messagesSource.next({
-        event: EVENTS.LicenseInfoUpdate,
-        payload: resp.body,
-      });
-    });
-
-    this.hubConnection.on(EVENTS.ExternalMetadataUpdate, (resp) => {
-      this.messagesSource.next({
-        event: EVENTS.ExternalMetadataUpdate,
-        payload: resp.body
-      });
-    });
-
-    return started;
+  private emit(event: EVENTS, resp: SignalRMessage, payload: unknown) {
+    const {body, ...meta} = resp;
+    this.messagesSource.next({event, payload, meta});
   }
 
   stopHubConnection() {
-    if (this.hubConnection) {
-      this.hubConnection.stop().catch(err => console.error(err));
-      this.isConnectedSource.next(false);
-    }
+    const connection = this.hubConnection;
+    if (!connection) return;
+
+    this.hubConnection = undefined;
+    connection.stop().catch(err => console.error(err));
+    this.isConnectedSource.next(false);
   }
 }

@@ -56,14 +56,13 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// </summary>
     /// <param name="user"></param>
     /// <param name="seriesId"></param>
-    public async Task MarkSeriesAsRead(AppUser user, int seriesId)
+    /// <param name="ct"></param>
+    public async Task MarkSeriesAsRead(AppUser user, int seriesId, CancellationToken ct = default)
     {
-        var volumes = await unitOfWork.VolumeRepository.GetVolumes(seriesId);
-        user.Progresses ??= new List<AppUserProgress>();
-        foreach (var volume in volumes)
-        {
-            await MarkChaptersAsRead(user, seriesId, volume.Chapters);
-        }
+        var volumes = await unitOfWork.VolumeRepository.GetVolumes(seriesId, ct);
+        var chapters = volumes.SelectMany(v => v.Chapters).ToList();
+
+        await MarkChaptersAsRead(user, seriesId, chapters, ct);
     }
 
     /// <summary>
@@ -71,14 +70,13 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// </summary>
     /// <param name="user"></param>
     /// <param name="seriesId"></param>
-    public async Task MarkSeriesAsUnread(AppUser user, int seriesId)
+    /// <param name="ct"></param>
+    public async Task MarkSeriesAsUnread(AppUser user, int seriesId, CancellationToken ct = default)
     {
-        var volumes = await unitOfWork.VolumeRepository.GetVolumes(seriesId);
-        user.Progresses ??= new List<AppUserProgress>();
-        foreach (var volume in volumes)
-        {
-            await MarkChaptersAsUnread(user, seriesId, volume.Chapters);
-        }
+        var volumes = await unitOfWork.VolumeRepository.GetVolumes(seriesId, ct);
+        var chapters = volumes.SelectMany(v => v.Chapters).ToList();
+
+        await MarkChaptersAsUnread(user, seriesId, chapters, ct);
     }
 
     /// <summary>
@@ -88,25 +86,31 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="user"></param>
     /// <param name="seriesId"></param>
     /// <param name="chapters"></param>
-    public async Task MarkChaptersAsRead(AppUser user, int seriesId, IList<Chapter> chapters)
+    /// <param name="ct"></param>
+    public async Task MarkChaptersAsRead(AppUser user, int seriesId, IList<Chapter> chapters,
+        CancellationToken ct = default)
     {
         var seenVolume = new Dictionary<int, bool>();
-        var series = await unitOfWork.SeriesRepository.GetSeriesByIdAsync(seriesId);
+        var series = await unitOfWork.SeriesRepository.GetSeriesByIdAsync(seriesId, ct: ct);
         if (series == null) throw new KavitaException("series-doesnt-exist");
+
+        var progresses = await unitOfWork.AppUserProgressRepository
+            .GetProgressesForChapters(user.Id, series.Id, chapters.Select(c => c.Id), ct);
 
         foreach (var chapter in chapters)
         {
-            var userProgress = GetUserProgressForChapter(user, chapter);
+            var userProgress = GetUserProgressForChapter(progresses, chapter);
 
             if (userProgress == null)
             {
-                user.Progresses.Add(new AppUserProgress
+                unitOfWork.AppUserProgressRepository.Add(new AppUserProgress
                 {
                     PagesRead = chapter.Pages,
                     VolumeId = chapter.VolumeId,
                     SeriesId = seriesId,
                     ChapterId = chapter.Id,
                     LibraryId = series.LibraryId,
+                    AppUserId = user.Id,
                 });
             }
             else
@@ -120,14 +124,14 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             userProgress?.MarkModified();
 
             await eventHub.SendMessageAsync(MessageFactory.UserProgressUpdate,
-                MessageFactory.UserProgressUpdateEvent(user.Id, seriesId, chapter.VolumeId, chapter.Id, chapter.Pages));
+                MessageFactory.UserProgressUpdateEvent(user.Id, seriesId, chapter.VolumeId, chapter.Id, chapter.Pages), ct: ct);
 
             // Send out volume events for each distinct volume
             if (seenVolume.TryAdd(chapter.VolumeId, true))
             {
                 await eventHub.SendMessageAsync(MessageFactory.UserProgressUpdate,
                     MessageFactory.UserProgressUpdateEvent(user.Id, seriesId,
-                        chapter.VolumeId, 0, chapters.Where(c => c.VolumeId == chapter.VolumeId).Sum(c => c.Pages)));
+                        chapter.VolumeId, 0, chapters.Where(c => c.VolumeId == chapter.VolumeId).Sum(c => c.Pages)), ct: ct);
             }
         }
 
@@ -140,12 +144,17 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="user"></param>
     /// <param name="seriesId"></param>
     /// <param name="chapters"></param>
-    public async Task MarkChaptersAsUnread(AppUser user, int seriesId, IList<Chapter> chapters)
+    /// <param name="ct"></param>
+    public async Task MarkChaptersAsUnread(AppUser user, int seriesId, IList<Chapter> chapters,
+        CancellationToken ct = default)
     {
+        var progresses = await unitOfWork.AppUserProgressRepository
+            .GetProgressesForChapters(user.Id, seriesId, chapters.Select(c => c.Id), ct);
+
         var seenVolume = new Dictionary<int, bool>();
         foreach (var chapter in chapters)
         {
-            var userProgress = GetUserProgressForChapter(user, chapter);
+            var userProgress = GetUserProgressForChapter(progresses, chapter);
 
             if (userProgress == null) continue;
 
@@ -155,55 +164,36 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             userProgress.MarkModified();
 
             await eventHub.SendMessageAsync(MessageFactory.UserProgressUpdate,
-                MessageFactory.UserProgressUpdateEvent(user.Id, userProgress.SeriesId, userProgress.VolumeId, userProgress.ChapterId, 0));
+                MessageFactory.UserProgressUpdateEvent(user.Id, userProgress.SeriesId, userProgress.VolumeId, userProgress.ChapterId, 0), ct: ct);
 
             // Send out volume events for each distinct volume
             if (seenVolume.TryAdd(chapter.VolumeId, true))
             {
                 await eventHub.SendMessageAsync(MessageFactory.UserProgressUpdate,
                     MessageFactory.UserProgressUpdateEvent(user.Id, seriesId,
-                        chapter.VolumeId, 0, 0));
+                        chapter.VolumeId, 0, 0), ct: ct);
             }
         }
         unitOfWork.UserRepository.Update(user);
     }
 
-    /// <summary>
-    /// Gets the User Progress for a given Chapter. This will handle any duplicates that might have occured in past versions and will delete them. Does not commit.
-    /// </summary>
-    /// <param name="user">Must have Progresses populated</param>
-    /// <param name="chapter"></param>
-    /// <returns></returns>
-    private AppUserProgress? GetUserProgressForChapter(AppUser user, Chapter chapter)
+    private AppUserProgress? GetUserProgressForChapter(List<AppUserProgress> progresses, Chapter chapter)
     {
-        AppUserProgress? userProgress = null;
-
-        if (user.Progresses == null)
+        var chapterProgresses = progresses.Where(x => x.ChapterId == chapter.Id).ToList();
+        if (chapterProgresses.Count > 1)
         {
-            //throw new ArgumentException("AppUser must have Progress on it"); // TODO: Figure out the impact of switching to a more dev experience exception
-            throw new KavitaException("progress-must-exist");
+            logger.LogInformation("Trying to save progress and multiple progress entries exist for chapter {ChapterId}, deleting and rewriting with highest progress rate",
+                chapter.Id);
+
+            var highestProgress = progresses.Max(x => x.PagesRead);
+            var firstProgress = progresses.OrderBy(p => p.LastModifiedUtc).First();
+            firstProgress.PagesRead = highestProgress;
+
+            unitOfWork.AppUserProgressRepository.RemoveRange(chapterProgresses.Where(x => x.Id != firstProgress.Id));
+            chapterProgresses = [firstProgress];
         }
 
-        try
-        {
-            userProgress = user.Progresses.SingleOrDefault(x => x.ChapterId == chapter.Id && x.AppUserId == user.Id);
-        }
-        catch (Exception)
-        {
-            // There is a very rare chance that user progress will duplicate current row. If that happens delete one with fewer pages
-            var progresses = user.Progresses.Where(x => x.ChapterId == chapter.Id && x.AppUserId == user.Id).ToList();
-            if (progresses.Count > 1)
-            {
-                var highestProgress = progresses.Max(x => x.PagesRead);
-                var firstProgress = progresses.OrderBy(p => p.LastModifiedUtc).First();
-                firstProgress.PagesRead = highestProgress;
-                user.Progresses = [firstProgress];
-                userProgress = user.Progresses.First();
-                logger.LogInformation("Trying to save progress and multiple progress entries exist, deleting and rewriting with highest progress rate: {@Progress}", userProgress);
-            }
-        }
-
-        return userProgress;
+        return chapterProgresses.FirstOrDefault();
     }
 
     /// <summary>
@@ -212,9 +202,19 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="progressDto"></param>
     /// <param name="userId"></param>
     /// <param name="saveToReadingSession"></param>
+    /// <param name="ct"></param>
     /// <returns></returns>
-    public async Task<bool> SaveReadingProgress(ProgressDto progressDto, int userId, bool saveToReadingSession = true)
+    public async Task<bool> SaveReadingProgress(ProgressDto progressDto, int userId, bool saveToReadingSession = true,
+        CancellationToken ct = default)
     {
+        if (!await unitOfWork.UserRepository.HasAccessToChapter(userId, progressDto.ChapterId, ct)) return false;
+
+        var parentIds = await unitOfWork.ChapterRepository.GetParentIdsForChapter(progressDto.ChapterId, ct);
+        if (parentIds == null) return false;
+        progressDto.VolumeId = parentIds.Value.VolumeId;
+        progressDto.SeriesId = parentIds.Value.SeriesId;
+        progressDto.LibraryId = parentIds.Value.LibraryId;
+
         // Don't let user save past total pages.
         var pageInfo = await CapPageToChapter(progressDto.ChapterId, progressDto.PageNum);
         progressDto.PageNum = pageInfo.Item1;
@@ -222,7 +222,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
 
         try
         {
-            var userProgress = await unitOfWork.AppUserProgressRepository.GetUserProgressAsync(progressDto.ChapterId, userId);
+            var userProgress = await unitOfWork.AppUserProgressRepository.GetUserProgressAsync(progressDto.ChapterId, userId, ct);
             var oldProgress = userProgress?.PagesRead ?? 0;
 
             // Don't create an empty progress record if there isn't any progress. This prevents Last Read date from being updated when opening a chapter
@@ -232,11 +232,6 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             logger.LogDebug("Saving Progress on Series {SeriesId}, Chapter {ChapterId} to Page {PageNum}", progressDto.SeriesId, progressDto.ChapterId, progressDto.PageNum);
             if (userProgress == null)
             {
-                // Create a user object
-                var userWithProgress = await unitOfWork.UserRepository.GetUserByIdAsync(userId, AppUserIncludes.Progress);
-                if (userWithProgress == null) return false;
-
-                userWithProgress.Progresses ??= [];
                 userProgress = new AppUserProgress
                 {
                     PagesRead = progressDto.PageNum,
@@ -245,9 +240,10 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
                     ChapterId = progressDto.ChapterId,
                     LibraryId = progressDto.LibraryId,
                     BookScrollId = progressDto.BookScrollId,
+                    AppUserId = userId,
                 };
-                userWithProgress.Progresses.Add(userProgress);
-                unitOfWork.UserRepository.Update(userWithProgress);
+
+                unitOfWork.AppUserProgressRepository.Add(userProgress);
             }
             else
             {
@@ -259,7 +255,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
                 unitOfWork.AppUserProgressRepository.Update(userProgress);
             }
 
-            if (!unitOfWork.HasChanges() || await unitOfWork.CommitAsync())
+            if (!unitOfWork.HasChanges() || await unitOfWork.CommitAsync(ct))
             {
                 if (saveToReadingSession)
                 {
@@ -269,7 +265,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
 
                 await eventHub.SendMessageAsync(MessageFactory.UserProgressUpdate,
                     MessageFactory.UserProgressUpdateEvent(userId, progressDto.SeriesId,
-                        progressDto.VolumeId, progressDto.ChapterId, progressDto.PageNum));
+                        progressDto.VolumeId, progressDto.ChapterId, progressDto.PageNum), ct: ct);
 
                 // Chapter-based tracking want per chapter updates, if the page has changed; Create one
                 if (oldProgress != progressDto.PageNum || progressDto.PageNum >= totalPages)
@@ -280,7 +276,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
                 }
 
                 BackgroundJob.Enqueue(() =>
-                    unitOfWork.SeriesRepository.ClearOnDeckRemovalAsync(progressDto.SeriesId, userId));
+                    unitOfWork.SeriesRepository.ClearOnDeckRemovalAsync(progressDto.SeriesId, userId, CancellationToken.None));
 
                 return true;
             }
@@ -292,7 +288,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
                     "The database operation was expected to affect 1 row(s), but actually affected 0 row(s)"))
                 return true;
             logger.LogError(exception, "Could not save progress");
-            await unitOfWork.RollbackAsync();
+            await unitOfWork.RollbackAsync(ct);
         }
 
         return false;
@@ -358,9 +354,9 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="currentChapterId"></param>
     /// <param name="userId"></param>
     /// <returns>-1 if nothing can be found</returns>
-    public async Task<int> GetNextChapterIdAsync(int seriesId, int volumeId, int currentChapterId, int userId)
+    public async Task<int> GetNextChapterIdAsync(int seriesId, int volumeId, int currentChapterId, int userId, CancellationToken ct = default)
     {
-        var volumes = await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId);
+        var volumes = await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId, ct: ct);
 
         var currentVolume = volumes.FirstOrDefault(v => v.Id == volumeId);
         if (currentVolume == null)
@@ -447,10 +443,12 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="volumeId"></param>
     /// <param name="currentChapterId"></param>
     /// <param name="userId"></param>
+    /// <param name="ct"></param>
     /// <returns>-1 if nothing can be found</returns>
-    public async Task<int> GetPrevChapterIdAsync(int seriesId, int volumeId, int currentChapterId, int userId)
+    public async Task<int> GetPrevChapterIdAsync(int seriesId, int volumeId, int currentChapterId, int userId,
+        CancellationToken ct = default)
     {
-        var volumes = (await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId)).ToList();
+        var volumes = (await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId, ct: ct)).ToList();
         var currentVolume = volumes.Single(v => v.Id == volumeId);
         var currentChapter = currentVolume.Chapters.Single(c => c.Id == currentChapterId);
 
@@ -523,17 +521,18 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// </summary>
     /// <param name="seriesId"></param>
     /// <param name="userId"></param>
+    /// <param name="ct"></param>
     /// <returns></returns>
-    public async Task<ChapterDto> GetContinuePoint(int seriesId, int userId)
+    public async Task<ChapterDto> GetContinuePoint(int seriesId, int userId, CancellationToken ct = default)
     {
         // Since the first chapter has progress already on it, we can check if there is any progress and if not, return that chapter
-        var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForSeriesAsync(seriesId, userId);
+        var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForSeriesAsync(seriesId, userId, ct);
         if (firstChapter is { PagesRead: 0 }) return firstChapter;
 
-        var currentlyReading = await unitOfWork.ChapterRepository.GetCurrentlyReadingChapterAsync(seriesId, userId);
+        var currentlyReading = await unitOfWork.ChapterRepository.GetCurrentlyReadingChapterAsync(seriesId, userId, ct);
         if (currentlyReading != null) return currentlyReading;
 
-        var volumes = (await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId, VolumeIncludes.Files)).ToList();
+        var volumes = (await unitOfWork.VolumeRepository.GetVolumesDtoAsync(seriesId, userId, VolumeIncludes.Files, ct)).ToList();
 
         var allChapters = volumes
             .OrderBy(v => v.MinNumber, _chapterSortComparerDefaultLast)
@@ -597,23 +596,24 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             }
 
             var chapterNum = accessor(chapter);
-            if (currentChapterNumber.Equals(chapterNum)) next = true;
+            if (currentChapterNumber.Is(chapterNum)) next = true;
         }
 
         return -1;
     }
 
-    public async Task<HourEstimateRangeDto> GetEstimateToCompletionForChapter(int userId, int seriesId, int chapterId)
+    public async Task<HourEstimateRangeDto> GetEstimateToCompletionForChapter(int userId, int seriesId, int chapterId,
+        CancellationToken ct = default)
     {
-        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId);
-        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId);
+        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId, ct);
+        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId, ct);
         if (series == null || chapter == null)
             throw new KavitaException(await localizationService.TranslateAsync(userId, "generic-error"));
 
         if (series.Format == MangaFormat.Epub)
         {
             // Get the word counts for all the pages
-            var pageCounts = await bookService.GetWordCountsPerPage(chapter.Files.First().FilePath); // TODO: Cache
+            var pageCounts = await bookService.GetWordCountsPerPage(chapter.Files.First().FilePath, ct); // TODO: Cache
             if (pageCounts == null) return GetTimeEstimate(chapter.WordCount, 0, true);
 
             // Sum character counts for unread pages
@@ -630,10 +630,11 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         return GetTimeEstimate(0, pagesLeft, false);
     }
 
-    public async Task<HourEstimateRangeDto> GetEstimateFromPageForChapter(int userId, int seriesId, int chapterId, int page)
+    public async Task<HourEstimateRangeDto> GetEstimateFromPageForChapter(int userId, int seriesId, int chapterId,
+        int page, CancellationToken ct = default)
     {
-        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId);
-        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId);
+        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId, ct);
+        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId, ct);
         if (series == null || chapter == null)
             throw new KavitaException(await localizationService.TranslateAsync(userId, "generic-error"));
 
@@ -642,7 +643,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         if (series.Format == MangaFormat.Epub)
         {
             // Get the word counts for all the pages
-            var pageCounts = await bookService.GetWordCountsPerPage(chapter.Files.First().FilePath); // TODO: Cache
+            var pageCounts = await bookService.GetWordCountsPerPage(chapter.Files.First().FilePath, ct); // TODO: Cache
             if (pageCounts == null) return GetTimeEstimate(series.WordCount, 0, true);
 
             // Sum character counts for unread pages
@@ -736,15 +737,17 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
     /// <param name="chapter"></param>
     /// <param name="pageNum"></param>
     /// <param name="cachedImages"></param>
+    /// <param name="ct"></param>
     /// <returns>Full path of thumbnail</returns>
-    public async Task<string> GetThumbnail(Chapter chapter, int pageNum, IEnumerable<string> cachedImages)
+    public async Task<string> GetThumbnail(Chapter chapter, int pageNum, IEnumerable<string> cachedImages,
+        CancellationToken ct = default)
     {
         var outputDirectory =
             directoryService.FileSystem.Path.Join(directoryService.TempDirectory, ImageService.GetThumbnailFormat(chapter.Id));
         try
         {
             var encodeFormat =
-                (await unitOfWork.SettingsRepository.GetSettingsDtoAsync()).EncodeMediaAs;
+                (await unitOfWork.SettingsRepository.GetSettingsDtoAsync(ct)).EncodeMediaAs;
 
             if (!Directory.Exists(outputDirectory))
             {
@@ -768,19 +771,20 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         }
     }
 
-    public async Task<RereadDto> CheckSeriesForReRead(int userId, int seriesId, int libraryId)
+    public async Task<RereadDto> CheckSeriesForReRead(int userId, int seriesId, int libraryId,
+        CancellationToken ct = default)
     {
-        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId);
+        var series = await unitOfWork.SeriesRepository.GetSeriesDtoByIdAsync(seriesId, userId, ct);
         if (series == null) return RereadDto.Dont();
 
         var namingContext = await CreateNamingContext(userId, libraryId);
 
-        var continuePoint = await GetContinuePoint(seriesId, userId);
+        var continuePoint = await GetContinuePoint(seriesId, userId, ct);
         var continuePointLabel = await FormatReReadLabel(userId, namingContext, continuePoint);
 
-        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForSeries(seriesId, userId);
+        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForSeries(seriesId, userId, ct);
 
-        if (lastProgress == null || !await unitOfWork.AppUserProgressRepository.AnyUserProgressForSeriesAsync(seriesId, userId))
+        if (lastProgress == null || !await unitOfWork.AppUserProgressRepository.AnyUserProgressForSeriesAsync(seriesId, userId, ct))
         {
             return new RereadDto
             {
@@ -792,7 +796,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         // Series is fully read, prompt for full reread
         if (series.PagesRead >= series.Pages)
         {
-            var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForSeriesAsync(seriesId, userId);
+            var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForSeriesAsync(seriesId, userId, ct);
 
             if (firstChapter != null)
             {
@@ -809,7 +813,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
 
         }
 
-        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId);
+        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId, ct);
 
         return await BuildRereadDto(
             namingContext,
@@ -822,20 +826,21 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             lastProgress.Value,
             getPrevChapter: async () =>
             {
-                var chapterId = await GetPrevChapterIdAsync(seriesId, continuePoint.VolumeId, continuePoint.Id, userId);
+                var chapterId = await GetPrevChapterIdAsync(seriesId, continuePoint.VolumeId, continuePoint.Id, userId, ct);
                 if (chapterId == -1) return null;
 
-                return await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId);
+                return await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId, ct);
             },
             isValidPrevChapter: prevChapter => prevChapter != null
         );
     }
 
-    public async Task<RereadDto> CheckVolumeForReRead(int userId, int volumeId, int seriesId, int libraryId)
+    public async Task<RereadDto> CheckVolumeForReRead(int userId, int volumeId, int seriesId, int libraryId,
+        CancellationToken ct = default)
     {
-        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId);
+        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId, ct);
 
-        var volume = await unitOfWork.VolumeRepository.GetVolumeDtoAsync(volumeId, userId);
+        var volume = await unitOfWork.VolumeRepository.GetVolumeDtoAsync(volumeId, userId, ct);
         if (volume == null) return RereadDto.Dont();
 
         var namingContext = await CreateNamingContext(userId, libraryId);
@@ -843,7 +848,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         var continuePoint = FindNextReadingChapter([.. volume.Chapters]);
         var continuePointLabel = await FormatReReadLabel(userId, namingContext, continuePoint);
 
-        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForVolume(volumeId, userId);
+        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForVolume(volumeId, userId, ct);
 
         // Check if there's no progress on the volume
         if (lastProgress == null || volume.PagesRead == 0)
@@ -858,7 +863,7 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         // Volume is fully read, prompt for full reread
         if (volume.PagesRead >= volume.Pages)
         {
-            var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForVolumeAsync(volumeId, userId);
+            var firstChapter = await unitOfWork.ChapterRepository.GetFirstChapterForVolumeAsync(volumeId, userId, ct);
 
             if (firstChapter != null)
             {
@@ -887,10 +892,10 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
             lastProgress.Value,
             getPrevChapter: async () =>
             {
-                var chapterId = await GetPrevChapterIdAsync(seriesId, continuePoint.VolumeId, continuePoint.Id, userId);
+                var chapterId = await GetPrevChapterIdAsync(seriesId, continuePoint.VolumeId, continuePoint.Id, userId, ct);
                 if (chapterId == -1) return null;
 
-                return await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId);
+                return await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId, ct);
             },
             isValidPrevChapter: prevChapter => prevChapter != null && prevChapter.VolumeId == volume.Id
         );
@@ -956,14 +961,15 @@ public class ReaderService(IUnitOfWork unitOfWork, ILogger<ReaderService> logger
         };
     }
 
-    public async Task<RereadDto> CheckChapterForReRead(int userId, int chapterId, int seriesId, int libraryId)
+    public async Task<RereadDto> CheckChapterForReRead(int userId, int chapterId, int seriesId, int libraryId,
+        CancellationToken ct = default)
     {
-        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId);
+        var userPreferences = await unitOfWork.UserRepository.GetPreferencesForUser(userId, ct);
 
-        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId);
+        var chapter = await unitOfWork.ChapterRepository.GetChapterDtoAsync(chapterId, userId, ct);
         if (chapter == null) return RereadDto.Dont();
 
-        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForChapter(chapterId, userId);
+        var lastProgress = await unitOfWork.AppUserProgressRepository.GetLatestProgressForChapter(chapterId, userId, ct);
 
         var namingContext = await CreateNamingContext(userId, libraryId);
 

@@ -1,4 +1,4 @@
-using System.IO.Abstractions;
+﻿using System.IO.Abstractions;
 using Kavita.API.Services;
 using Kavita.API.Services.Helpers;
 using Kavita.API.Services.Metadata;
@@ -17,6 +17,7 @@ using Kavita.Services.Reading;
 using Kavita.Services.ReadingLists;
 using Kavita.Services.Scanner;
 using Kavita.Services.SignalR;
+using Kavita.Services.Yomitan;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Kavita.Services.Extensions;
@@ -111,11 +112,22 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IFileCacheService, FileCacheService>();
         services.AddSingleton<IReadingSessionService, ReadingSessionService>();
         services.AddSingleton<IEntityNamingService, EntityNamingService>();
+        services.AddSingleton<IProgressThrottle, ProgressThrottle>();
+        services.AddSingleton<IActivityTracker, ActivityTracker>();
         services.AddSingleton<ActiveUserTrackerService>(); // This is required for the below lines. It allows IHostedService.StopAsync() to be called on shutdown
         services.AddSingleton<IActiveUserTrackerService>(sp => sp.GetRequiredService<ActiveUserTrackerService>());
         services.AddHostedService(sp => sp.GetRequiredService<ActiveUserTrackerService>());
 
         services.AddHostedService<StartupTasksHostedService>();
+
+        // Yomitan dictionaries live in their own SQLite file (config/yomitan/dictionaries.db), imported in the background
+        services.AddSingleton(_ => new YomitanDictionaryDatabase(YomitanDictionaryDatabase.DefaultDatabasePath));
+        services.AddSingleton<YomitanImportProgress>();
+        services.AddSingleton<YomitanDictionaryImporter>();
+        services.AddSingleton<IYomitanDictionaryService, YomitanDictionaryService>();
+        services.AddSingleton<IYomitanFetchService, YomitanFetchService>();
+        services.AddScoped<IYomitanOptionsService, YomitanOptionsService>();
+        services.AddHostedService<YomitanDictionaryImportHostedService>();
     }
 
 }

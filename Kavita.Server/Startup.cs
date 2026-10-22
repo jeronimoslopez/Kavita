@@ -38,6 +38,7 @@ using Kavita.Server.ManualMigrations.v0._8._9;
 using Kavita.Server.ManualMigrations.v0._9._0;
 using Kavita.Server.ManualMigrations.v0._9._1;
 using Kavita.Server.ManualMigrations.v0._9._1.x;
+using Kavita.Server.ManualMigrations.v0._9._2;
 using Kavita.Server.Middleware;
 using Kavita.Server.Swagger;
 using Kavita.Services.SignalR;
@@ -73,6 +74,7 @@ public class Startup
 
         // Disable Hangfire Automatic Retry
         GlobalJobFilters.Filters.Add(new AutomaticRetryAttribute { Attempts = 0 });
+        GlobalJobFilters.Filters.Add(new JobCorrelationFilter());
     }
 
     // This method gets called by the runtime. Use this method to add services to the container.
@@ -197,11 +199,12 @@ public class Startup
                 new AuthenticationRateLimiterPolicy().GetPartition(httpContext));
         });
 
-        services.AddHangfire(configuration => configuration
+        services.AddHangfire((provider, configuration) => configuration
             .UseSimpleAssemblyNameTypeSerializer()
             .UseRecommendedSerializerSettings()
             .UseInMemoryStorage()
-            .UseSerilogLogProvider());
+            .UseSerilogLogProvider()
+            .UseFilter(ActivatorUtilities.CreateInstance<ScanEndRetimeFilter>(provider)));
             //.UseSQLiteStorage("config/Hangfire.db"));
             //// UseSQLiteStorage - SQLite has some issues around resuming jobs when aborted (and locking can cause high utilization)
             /// (NOTE: There is code to clear jobs on startup a redditor gave me)
@@ -327,13 +330,21 @@ public class Startup
                 Mappings =
                 {
                     [".bcmap"] = "application/octet-stream",
-                    [".ftl"] = "text/plain"
+                    [".ftl"] = "text/plain",
+                    // Yomitan popup assets (Anki field templates and the resvg renderer)
+                    [".handlebars"] = "text/plain",
+                    [".wasm"] = "application/wasm"
                 }
             },
             HttpsCompression = HttpsCompressionMode.Compress,
             OnPrepareResponse = ctx =>
             {
-                ctx.Context.Response.Headers[HeaderNames.CacheControl] = "public,max-age=" + TimeSpan.FromHours(24);
+                // Yomitan's vendored modules aren't content hashed, so they revalidate instead of sitting in caches for a day
+                var revalidate = ctx.File.Name == "index.html" ||
+                                 ctx.Context.Request.Path.StartsWithSegments("/assets/yomitan", StringComparison.OrdinalIgnoreCase);
+                ctx.Context.Response.Headers[HeaderNames.CacheControl] = revalidate
+                    ? "no-cache"
+                    : "public,max-age=" + (int) TimeSpan.FromHours(24).TotalSeconds;
                 ctx.Context.Response.Headers[Headers.RobotsTag] = "noindex,nofollow";
             }
         });
@@ -372,8 +383,12 @@ public class Startup
                 // Don't let the site be iframed outside the same origin (clickjacking)
                 context.Response.Headers.XFrameOptions = "SAMEORIGIN";
 
-                // Setup CSP to ensure we load assets only from these origins
-                context.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none';";
+                // Setup CSP to ensure we load assets only from these origins. The Yomitan popup is a same-origin
+                // iframe hosted by the reader, so its pages may be framed by Kavita itself
+                context.Response.Headers.ContentSecurityPolicy =
+                    context.Request.Path.StartsWithSegments("/assets/yomitan", StringComparison.OrdinalIgnoreCase)
+                        ? "frame-ancestors 'self';"
+                        : "frame-ancestors 'none';";
             }
 
             await next();
@@ -383,7 +398,6 @@ public class Startup
         {
             endpoints.MapControllers();
             endpoints.MapHub<MessageHub>("hubs/messages");
-            endpoints.MapHub<LogHub>("hubs/logs");
             if (env.IsDevelopment())
             {
                 endpoints.MapHangfireDashboard();
@@ -396,11 +410,11 @@ public class Startup
         {
             try
             {
-                logger.LogInformation("Kavita - v{Version}", BuildInfo.Version);
+                logger.LogInformation("Kavita - v{Version}, boot {BootId}", BuildInfo.Version, BuildInfo.BootId);
             }
             catch (Exception)
             {
-                Console.WriteLine($"Kavita - v{BuildInfo.Version}");
+                Console.WriteLine($"Kavita - v{BuildInfo.Version}, boot {BuildInfo.BootId}");
             }
 
             _ = Task.Run(async () =>
@@ -547,6 +561,15 @@ public class Startup
 
                     #endregion
 
+                    #region v0.9.2
+
+                    await new ManualMigrationUnassignDefaultReadingProfile().RunAsync(dataContext, logger);
+                    await new ManualMigrateOnDeckSettings().RunAsync(dataContext, logger);
+                    await new ManualMigrationFixInvalidOnDeckSettings().RunAsync(dataContext, logger);
+                    await new ManualMigrationClearRootLowestFolderPath().RunAsync(dataContext, logger);
+
+                    #endregion
+
                     #endregion
 
                     //  Update the version in the DB after all migrations are run
@@ -600,7 +623,7 @@ public class Startup
     {
         Console.WriteLine("Server is shutting down. Please allow a few seconds to stop any background jobs...");
         TaskScheduler.Client.Dispose();
-        System.Threading.Thread.Sleep(1000);
+        Thread.Sleep(1000);
         Console.WriteLine("You may now close the application window.");
     }
 

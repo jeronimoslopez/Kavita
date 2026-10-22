@@ -9,13 +9,13 @@ namespace Kavita.Services.Scanner;
 
 public class BookParser(IDirectoryService directoryService, IBookService bookService, BasicParser basicParser) : DefaultParser(directoryService)
 {
-    public override ParserInfo? Parse(string filePath, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata = true, ComicInfo? comicInfo = null)
+    public override ParseInfoResult Parse(string filePath, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata = true, ComicInfo? comicInfo = null)
     {
         ParserInfo? info;
         if (enableMetadata)
         {
             info = bookService.ParseInfo(filePath);
-            if (info == null) return null;
+            if (info == null) return ParseInfoResult.FailedParse();
         }
         else
         {
@@ -36,7 +36,7 @@ public class BookParser(IDirectoryService directoryService, IBookService bookSer
         info.ComicInfo = comicInfo;
 
         // We need a special piece of code to override the Series IF there is a special marker in the filename for epub files
-        if (info.IsSpecial && info.Volumes is "0" or "0.0" && info.ComicInfo.Series != info.Series)
+        if (info.IsSpecial && info.Volumes is "0" or "0.0" && !string.IsNullOrEmpty(info.ComicInfo?.Series) && info.ComicInfo.Series != info.Series)
         {
             info.Series = info.ComicInfo.Series;
         }
@@ -52,14 +52,13 @@ public class BookParser(IDirectoryService directoryService, IBookService bookSer
 
             if (string.IsNullOrEmpty(info.ComicInfo?.Volume) && hasVolumeInTitle && (hasVolumeInSeries || string.IsNullOrEmpty(info.Series)))
             {
-                // NOTE: I'm not sure the comment is true. I've never seen this triggered
-                // This is likely a light novel for which we can set series from parsed title
+                // An epub with no series metadata gets its title as the series: "Overlord Vol. 3" becomes series "Overlord", volume 3
                 info.Series = Parser.ParseSeries(info.Title, type);
                 info.Volumes = parsedVolumeFromTitle;
             }
             else
             {
-                var info2 = basicParser.Parse(filePath, rootPath, libraryRoot, LibraryType.Book, enableMetadata, comicInfo);
+                var info2 = basicParser.Parse(filePath, rootPath, libraryRoot, LibraryType.Book, enableMetadata, comicInfo).Info;
                 info.Merge(info2);
 
                 if (hasVolumeInSeries && info2 != null && Parser.IsLooseLeafVolume(Parser.ParseVolume(info2.Series, type)))
@@ -73,7 +72,7 @@ public class BookParser(IDirectoryService directoryService, IBookService bookSer
         FinalizeNumbers(info);
         ParseExternalIdsFromNotesAndWeblinks(info);
 
-        return string.IsNullOrEmpty(info.Series) ? null : info;
+        return ParseInfoResult.FromParserInfo(info);
     }
 
     /// <summary>

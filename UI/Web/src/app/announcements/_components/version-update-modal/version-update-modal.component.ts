@@ -5,7 +5,6 @@ import {WikiLink} from "../../../_models/wiki";
 import {NgbActiveModal} from "@ng-bootstrap/ng-bootstrap";
 import {ChangelogUpdateItemComponent} from "../changelog-update-item/changelog-update-item.component";
 import {SafeHtmlPipe} from "../../../_pipes/safe-html.pipe";
-import {clearTransloco} from "../../../../libs/transloco-util";
 
 @Component({
   selector: 'app-version-update-modal',
@@ -35,9 +34,9 @@ export class VersionUpdateModalComponent {
     return this.isDocker() ? WikiLink.UpdateDocker : WikiLink.UpdateNative;
   });
   private readonly localePrefix: Record<string, string> = {
-    'refresh': 'new-version',
-    'update-available': 'update-notification',
-    'out-of-date': 'out-of-date',
+    'refresh': 'version-update-modal.new-version',
+    'update-available': 'version-update-modal.update-notification',
+    'out-of-date': 'version-update-modal.out-of-date',
   };
   title = computed(() => {
     const update = this.update();
@@ -55,25 +54,10 @@ export class VersionUpdateModalComponent {
   }
 
   refresh() {
-    this.bustLocaleCache();
-    // Refresh manually
     location.reload();
 
     // Dismiss anyway in case reload doesn't work
     this.modal.dismiss();
-  }
-
-
-  private bustLocaleCache() {
-    clearTransloco();
-    const locale = localStorage.getItem('kavita-locale') || 'en';
-    (this.translocoService as any).cache.delete(locale);
-    (this.translocoService as any).cache.clear();
-
-    // Retrigger transloco
-    setTimeout(() => {
-      this.translocoService.setActiveLang(locale);
-    }, 10);
   }
 
 }

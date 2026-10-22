@@ -1,0 +1,19 @@
+<ng-container *transloco="let t; prefix:'yomitan-settings'">
+  <app-yomitan-setting [setting]="enableSetting" />
+
+  <div class="row g-0 mt-4 mb-4">
+    <app-setting-item [title]="t('language-label')" [subtitle]="t('language-tooltip')" [showEdit]="false" [canEdit]="false"
+                      [toggleOnViewClick]="false" [allowClickEvents]="true">
+      <ng-template #view>
+        <select class="form-select yomitan-language-select" disabled [attr.aria-label]="t('language-label')">
+          <option value="ja" selected>{{t('language-japanese')}}</option>
+        </select>
+        <div class="form-text">{{t('language-fixed')}}</div>
+      </ng-template>
+    </app-setting-item>
+  </div>
+
+  @for (setting of otherSettings; track setting.key) {
+    <app-yomitan-setting [setting]="setting" />
+  }
+</ng-container>

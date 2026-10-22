@@ -1,8 +1,8 @@
-import {DestroyRef, inject, Injectable, signal} from '@angular/core';
-import {interval, Subscription, switchMap} from 'rxjs';
+import {DestroyRef, effect, inject, Injectable, signal, untracked} from '@angular/core';
+import {EMPTY, interval, Subscription, switchMap} from 'rxjs';
 import {ServerService} from "./server.service";
 import {AccountService} from "./account.service";
-import {filter, map, take, tap} from "rxjs/operators";
+import {catchError, filter, map, take, tap} from "rxjs/operators";
 import {Router} from "@angular/router";
 import {
   VersionUpdateModalComponent
@@ -10,6 +10,7 @@ import {
 import {versionNotifyModal, versionRefreshModal} from "../_models/modal/modal-options";
 import {UpdateVersionEvent} from "../_models/events/update-version-event";
 import {ModalService} from "./modal.service";
+import {EVENTS, MessageHubService} from "./message-hub.service";
 import {takeUntilDestroyed, toObservable} from "@angular/core/rxjs-interop";
 
 @Injectable({
@@ -20,12 +21,22 @@ export class VersionService {
   private readonly serverService = inject(ServerService);
   private readonly accountService = inject(AccountService);
   private readonly modalService = inject(ModalService);
+  private readonly messageHub = inject(MessageHubService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
   public static readonly SERVER_VERSION_KEY = 'kavita--version';
   public static readonly CLIENT_REFRESH_KEY = 'kavita--client-refresh-last-shown';
   private static readonly DISMISS_KEY_PREFIX = 'kavita--update-dismiss-';
+  private static readonly VERSION_PATTERN = /^\d+(\.\d+){1,3}$/;
+
+  /**
+   * Whether the value is a server version like 0.9.1.13. A dev server or reverse proxy can answer the version
+   * request with an HTML page, and that must never be stored, as it ends up in a request header
+   */
+  public static isVersion(value: string | null | undefined): value is string {
+    return !!value && VersionService.VERSION_PATTERN.test(value);
+  }
 
   private readonly _currentVersion = signal<string | undefined>(undefined);
   public readonly currentVersion = this._currentVersion.asReadonly();
@@ -64,6 +75,8 @@ export class VersionService {
   constructor() {
     this.startInitialVersionCheck();
     this.startVersionCheck();
+    this.startReconnectVersionCheck();
+    this.startUpdateAvailableListener();
   }
 
   /**
@@ -73,14 +86,18 @@ export class VersionService {
     toObservable(this.accountService.currentUserGenericApiKey).pipe(
       filter((key): key is string => !!key),
       take(1),
-      switchMap(key => this.serverService.getVersion(key))
-    ).subscribe(serverVersion => {
-      this.loadedVersion = serverVersion;
-      localStorage.setItem(VersionService.SERVER_VERSION_KEY, serverVersion);
-      this._currentVersion.set(serverVersion);
-      this.cleanupOldDismissals(serverVersion);
-      console.log('Initial version check - Server version:', serverVersion);
-    });
+      switchMap(key => this.getServerVersion(key))
+    ).subscribe(serverVersion => this.recordLoadedVersion(serverVersion));
+  }
+
+  private getServerVersion(apiKey: string) {
+    return this.serverService.getVersion(apiKey).pipe(filter(VersionService.isVersion));
+  }
+
+  private recordLoadedVersion(serverVersion: string): void {
+    this.loadedVersion = serverVersion;
+    localStorage.setItem(VersionService.SERVER_VERSION_KEY, serverVersion);
+    this._currentVersion.set(serverVersion);
   }
 
 
@@ -92,11 +109,44 @@ export class VersionService {
       .pipe(
         map(() => this.accountService.currentUserGenericApiKey()),
         filter((key): key is string => !!key && !this.modalOpen),
-        switchMap(key => this.serverService.getVersion(key)),
-        filter(update => !!update),
+        // The error interceptor rethrows, and an error reaching interval() ends the poll for good
+        switchMap(key => this.getServerVersion(key).pipe(catchError(() => EMPTY))),
         tap(serverVersion => this.handleVersionCheck(serverVersion)),
         takeUntilDestroyed(this.destroyRef)
       ).subscribe();
+  }
+
+  // Only the refresh check runs here, the server pushes UpdateAvailable itself on startup
+  private startReconnectVersionCheck(): void {
+    effect(() => {
+      const key = this.accountService.currentUserGenericApiKey();
+      if (!key || !this.messageHub.isConnectedSignal()) return;
+
+      untracked(() => {
+        this.getServerVersion(key).pipe(
+          catchError(() => EMPTY),
+          filter(() => !this.modalOpen),
+        ).subscribe(serverVersion => {
+          if (this.loadedVersion === null) {
+            this.recordLoadedVersion(serverVersion);
+            return;
+          }
+
+          this.showRefreshIfServerUpdated(serverVersion);
+        });
+      });
+    });
+  }
+
+  /** The server pushes UpdateAvailable on every startup and every 4-6 hours, so this must respect backoff */
+  private startUpdateAvailableListener(): void {
+    this.messageHub.messages$.pipe(
+      filter(event => event.event === EVENTS.UpdateAvailable),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(event => {
+      if (!this.accountService.hasAdminRole()) return;
+      this.showUpdateAvailableModal(event.payload as UpdateVersionEvent);
+    });
   }
 
   /**
@@ -112,22 +162,24 @@ export class VersionService {
    * (server updated mid-session) or check for available updates.
    */
   handleVersionCheck(serverVersion: string): void {
-    if (this.modalOpen || this.isExcludedRoute()) return;
+    if (this.modalOpen) return;
+    if (this.showRefreshIfServerUpdated(serverVersion)) return;
 
-    const isNewServerVersion = this.loadedVersion !== null && this.loadedVersion !== serverVersion;
+    this.handleUpdateCheck();
+  }
 
-    if (isNewServerVersion) {
-      // Server was updated mid-session - don't update loadedVersion so the
-      // refresh prompt persists until the user actually refreshes.
-      localStorage.setItem(VersionService.SERVER_VERSION_KEY, serverVersion);
-      this._currentVersion.set(serverVersion);
-      this.serverService.getChangelog(1).subscribe(changelog => {
-        this.showRefreshModal(changelog[0]);
-        localStorage.setItem(VersionService.CLIENT_REFRESH_KEY, Date.now().toString());
-      });
-    } else {
-      this.handleUpdateCheck();
-    }
+  private showRefreshIfServerUpdated(serverVersion: string): boolean {
+    if (this.loadedVersion === null || this.loadedVersion === serverVersion) return false;
+
+    // Server was updated mid-session - don't update loadedVersion so the
+    // refresh prompt persists until the user actually refreshes
+    localStorage.setItem(VersionService.SERVER_VERSION_KEY, serverVersion);
+    this._currentVersion.set(serverVersion);
+    this.serverService.getChangelog(1).subscribe(changelog => {
+      this.showRefreshModal(changelog[0]);
+      localStorage.setItem(VersionService.CLIENT_REFRESH_KEY, Date.now().toString());
+    });
+    return true;
   }
 
   /**
@@ -172,6 +224,7 @@ export class VersionService {
    */
   showUpdateModal(mode: 'refresh' | 'update-available' | 'out-of-date', data: { update?: UpdateVersionEvent | null, versionsOutOfDate?: number } = {}, force: boolean = false): void {
     if (this.modalOpen) return;
+    if (!force && this.isExcludedRoute()) return;
 
     // Per-version backoff for dismissible modes (skipped for refresh and user-initiated actions)
     if (mode !== 'refresh' && !force) {
@@ -232,40 +285,43 @@ export class VersionService {
    * Returns false if the user has dismissed enough times or too recently.
    */
   shouldShowNotification(targetVersion: string): boolean {
-    const raw = localStorage.getItem(VersionService.DISMISS_KEY_PREFIX + targetVersion);
+    const key = VersionService.DISMISS_KEY_PREFIX + targetVersion;
+    const raw = localStorage.getItem(key);
     if (!raw) return true;
 
-    const { count, lastDismissed } = JSON.parse(raw) as { count: number; lastDismissed: number };
-    if (count >= this.MAX_DISMISSALS) return false;
+    let record: { count: number; lastDismissed: number };
+    try {
+      record = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem(key);
+      return true;
+    }
 
-    const interval = this.BACKOFF_INTERVALS[Math.min(count - 1, this.BACKOFF_INTERVALS.length - 1)];
-    return Date.now() - lastDismissed >= interval;
+    if (record.count >= this.MAX_DISMISSALS) return false;
+
+    const interval = this.BACKOFF_INTERVALS[Math.min(record.count - 1, this.BACKOFF_INTERVALS.length - 1)];
+    return Date.now() - record.lastDismissed >= interval;
   }
 
   /**
    * Records a dismissal for the given version, incrementing the count and updating the timestamp.
    */
   recordDismissal(targetVersion: string): void {
-    const raw = localStorage.getItem(VersionService.DISMISS_KEY_PREFIX + targetVersion);
-    const current = raw ? JSON.parse(raw) as { count: number } : { count: 0 };
-    localStorage.setItem(VersionService.DISMISS_KEY_PREFIX + targetVersion, JSON.stringify({
-      count: current.count + 1,
-      lastDismissed: Date.now(),
-    }));
-  }
-
-  /**
-   * Removes dismiss keys for versions other than the current server version.
-   * Prevents stale backoff data from carrying over after an update.
-   */
-  private cleanupOldDismissals(currentVersion: string): void {
-    const keepKey = VersionService.DISMISS_KEY_PREFIX + currentVersion;
-    for (let i = localStorage.length - 1; i >= 0; i--) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith(VersionService.DISMISS_KEY_PREFIX) && key !== keepKey) {
-        localStorage.removeItem(key);
+    const key = VersionService.DISMISS_KEY_PREFIX + targetVersion;
+    const raw = localStorage.getItem(key);
+    let count = 0;
+    if (raw) {
+      try {
+        count = (JSON.parse(raw) as { count: number }).count;
+      } catch {
+        count = 0;
       }
     }
+
+    localStorage.setItem(key, JSON.stringify({
+      count: count + 1,
+      lastDismissed: Date.now(),
+    }));
   }
 
   private pauseChecks(): void {

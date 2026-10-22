@@ -28,6 +28,7 @@ using Kavita.Models.Entities.Metadata;
 using Kavita.Models.Entities.User;
 using Kavita.Models.Extensions;
 using Kavita.Server.Attributes;
+using Kavita.Services.Extensions;
 using Kavita.Services.Scanner;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -150,7 +151,7 @@ public class LibraryController(
             await libraryWatcher.RestartWatching();
         }
 
-        BackgroundJob.Enqueue(() => taskScheduler.ScanLibrary(library.Id, false));
+        ScanJobQueue.Enqueue(() => taskScheduler.EnqueueScanLibrary(library.Id, false));
         await eventHub.SendMessageAsync(MessageFactory.LibraryModified,
             MessageFactory.LibraryModifiedEvent(library.Id, "create"), false, ct);
         await eventHub.SendMessageAsync(MessageFactory.SideNavUpdate,
@@ -276,6 +277,7 @@ public class LibraryController(
     [HttpGet("jump-bar")]
     public ActionResult<IEnumerable<JumpKeyDto>> GetJumpBar(int libraryId)
     {
+        // TODO: Not used by UI
         var ct = HttpContext.RequestAborted;
         return Ok(unitOfWork.LibraryRepository.GetJumpBarAsync(libraryId, ct));
     }
@@ -289,6 +291,7 @@ public class LibraryController(
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
     public async Task<ActionResult<MemberDto>> UpdateUserLibraries(UpdateLibraryForUserDto updateLibraryForUserDto)
     {
+        // TODO: This isn't used by UI
         var ct = HttpContext.RequestAborted;
         var user = await unitOfWork.UserRepository.GetUserByUsernameAsync(updateLibraryForUserDto.Username, AppUserIncludes.SideNavStreams, ct);
         if (user == null) return BadRequest(await localizationService.TranslateAsync(UserId, "user-doesnt-exist"));
@@ -348,7 +351,7 @@ public class LibraryController(
     public async Task<ActionResult> Scan(int libraryId, bool force = false)
     {
         if (libraryId <= 0) return BadRequest(await localizationService.TranslateAsync(UserId, "greater-0", "libraryId"));
-        await taskScheduler.ScanLibrary(libraryId, force);
+        await taskScheduler.EnqueueScanLibrary(libraryId, force);
         return Ok();
     }
 
@@ -362,7 +365,7 @@ public class LibraryController(
     {
         foreach (var libraryId in dto.Ids)
         {
-            await taskScheduler.ScanLibrary(libraryId, dto.Force ?? false);
+            await taskScheduler.EnqueueScanLibrary(libraryId, dto.Force ?? false);
         }
 
         return Ok();
@@ -375,9 +378,9 @@ public class LibraryController(
     /// <returns></returns>
     [HttpPost("scan-all")]
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
-    public ActionResult ScanAll(bool force = false)
+    public async Task<ActionResult> ScanAll(bool force = false)
     {
-        taskScheduler.ScanLibraries(force);
+        await taskScheduler.EnqueueScanLibraries(force);
         return Ok();
     }
 
@@ -472,16 +475,7 @@ public class LibraryController(
             return BadRequest(await localizationService.TranslateAsync(UserId, "invalid-path"));
         }
 
-        dto.FolderPath = Parser.NormalizePath(dto.FolderPath);
-
-        var libraryFolder = (await unitOfWork.LibraryRepository.GetLibraryDtosAsync(ct))
-            .SelectMany(l => l.Folders)
-            .Distinct()
-            .Select(Parser.NormalizePath);
-
-        var seriesFolder = directoryService.FindHighestDirectoriesFromFiles(libraryFolder, [dto.FolderPath]);
-
-        taskScheduler.ScanFolder(seriesFolder.Keys.Count == 1 ? seriesFolder.Keys.First() : dto.FolderPath, dto.AbortOnNoSeriesMatch);
+        await taskScheduler.EnqueueScanFolderFromApiAsync(dto.FolderPath, dto.AbortOnNoSeriesMatch);
 
         return Ok();
     }
@@ -524,7 +518,7 @@ public class LibraryController(
     /// <returns></returns>
     [HttpDelete("delete-multiple")]
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
-    public async Task<ActionResult<bool>> DeleteMultipleLibraries([FromBody] List<int> libraryIds)
+    public async Task<ActionResult> DeleteMultipleLibraries([FromBody] List<int> libraryIds)
     {
         var ct = HttpContext.RequestAborted;
         var username = Username!;
@@ -558,7 +552,7 @@ public class LibraryController(
 
         try
         {
-            if (TaskScheduler.HasScanTaskRunningForLibrary(libraryId))
+            if (ScanJobQueue.Read().Jobs.IsLibraryInUse(libraryId, seriesIds))
             {
                 logger.LogInformation("User is attempting to delete a library while a scan is in progress");
                 throw new KavitaException(await localizationService.TranslateAsync(userId, "delete-library-while-scan"));
@@ -604,7 +598,7 @@ public class LibraryController(
             foreach (var seriesId in seriesIds)
             {
                 await eventHub.SendMessageAsync(MessageFactory.SeriesRemoved,
-                    MessageFactory.SeriesRemovedEvent(seriesId, string.Empty, libraryId), false, ct);
+                    MessageFactory.SeriesRemovedEvent(seriesId, libraryId), false, ct);
             }
 
             await eventHub.SendMessageAsync(MessageFactory.LibraryModified,
@@ -679,7 +673,7 @@ public class LibraryController(
 
         if (originalFoldersCount != dto.Folders.Count() || typeUpdate)
         {
-            await taskScheduler.ScanLibrary(library.Id);
+            await taskScheduler.EnqueueScanLibrary(library.Id);
         }
 
         await eventHub.SendMessageAsync(MessageFactory.LibraryModified,

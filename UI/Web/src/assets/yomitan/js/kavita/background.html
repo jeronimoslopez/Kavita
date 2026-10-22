@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <script src="chrome-shim.js" data-context="background"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "../dictionary/dictionary-database.js": "./remote-dictionary-database.js",
+            "../background/request-builder.js": "./request-builder.js"
+        }
+    }
+    </script>
+    <title>Yomitan Background</title>
+    <script src="background-main.js" type="module"></script>
+</head>
+<body>
+
+<textarea id="clipboard-paste-target"></textarea>
+<div id="clipboard-rich-content-paste-target" contenteditable="true"></div>
+
+</body>
+</html>

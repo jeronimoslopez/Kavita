@@ -216,6 +216,12 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
         var searchQuery = dto.Query;
         var hasQuery = !string.IsNullOrEmpty(searchQuery);
         var searchQueryNormalized = searchQuery.ToNormalized();
+        // Do not search on empty queries as it matches everything
+        if (string.IsNullOrEmpty(searchQueryNormalized))
+        {
+            searchQueryNormalized = searchQuery;
+        }
+
         var userRating = await context.AppUser.GetUserAgeRestriction(userId, ct: ct);
 
         var aniListId = dto.AniListId ?? 0;
@@ -620,7 +626,7 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
         bool customOnly = true, CancellationToken ct = default)
     {
         var extension = encodeFormat.GetExtension();
-        var prefix = "series{0}".Replace("0", string.Empty); // default: This actually depends on ImageService#GetSeriesFormat
+        var prefix = "series{0}".Replace("0", string.Empty); // TODO: This actually depends on ImageService#GetSeriesFormat
         var query = context.Series
             .Where(c => !string.IsNullOrEmpty(c.CoverImage)
                         && !c.CoverImage.EndsWith(extension)
@@ -683,6 +689,14 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
             .FirstOrDefaultAsync(ct);
     }
 
+    public Task<PublicationStatus?> GetPublicationStatusAsync(int seriesId, CancellationToken ct = default)
+    {
+        return context.Series
+            .Where(s => s.Id == seriesId)
+            .Select(s => (PublicationStatus?) s.Metadata.PublicationStatus)
+            .FirstOrDefaultAsync(ct);
+    }
+
     public async Task<string?> GetSeriesCoverImageAsync(int seriesId, CancellationToken ct = default)
     {
         return await context.Series
@@ -717,14 +731,13 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
     /// <returns></returns>
     public async Task<PagedList<SeriesDto>> GetOnDeckAsync(int userId, int libraryId, UserParams userParams, CancellationToken ct = default)
     {
-        var settings = await context.ServerSetting
-            .Select(x => x)
-            .AsNoTracking()
-            .ToListAsync(ct);
-        var serverSettings = mapper.Map<ServerSettingDto>(settings);
+        var x = await context.AppUserPreferences
+            .Where(p => p.AppUserId == userId)
+            .Select(p => new {p.OnDeckProgressDays, p.OnDeckUpdateDays})
+            .FirstAsync(ct);
 
-        var cutoffProgressPoint = DateTime.Now - TimeSpan.FromDays(serverSettings.OnDeckProgressDays);
-        var cutoffLastAddedPoint = DateTime.Now - TimeSpan.FromDays(serverSettings.OnDeckUpdateDays);
+        var cutoffProgressPoint = DateTime.Now - TimeSpan.FromDays(x.OnDeckProgressDays);
+        var cutoffLastAddedPoint = DateTime.Now - TimeSpan.FromDays(x.OnDeckUpdateDays);
 
         var libraryIds = context.AppUser.GetLibraryIdsForUser(userId, libraryId, QueryContext.Dashboard)
             .Where(id => libraryId == 0 || id == libraryId);
@@ -1251,51 +1264,54 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
     }
 
     /// <summary>
-    /// Return a Series by Folder path. Null if not found.
+    /// Every series of the library whose FolderPath or LowestFolderPath equals the folder
     /// </summary>
-    /// <param name="folder">This will be normalized in the query and checked against FolderPath and LowestFolderPath</param>
-    /// <param name="includes">Additional relationships to include with the base query</param>
-    /// <param name="ct"></param>
-    /// <returns></returns>
-    public async Task<Series?> GetSeriesByFolderPathAsync(string folder, SeriesIncludes includes = SeriesIncludes.None,
+    public async Task<IList<Series>> GetSeriesByFolderPathAsync(int libraryId, string folder, SeriesIncludes includes = SeriesIncludes.None,
         CancellationToken ct = default)
     {
-        var normalized = folder.NormalizePath();
-        if (string.IsNullOrEmpty(normalized)) return null;
+        var normalized = folder.NormalizePath().TrimEnd('/');
+        if (string.IsNullOrEmpty(normalized)) return [];
 
         return await context.Series
-            .Where(s => (!string.IsNullOrEmpty(s.FolderPath) && s.FolderPath.Equals(normalized) || (!string.IsNullOrEmpty(s.LowestFolderPath) && s.LowestFolderPath.Equals(normalized))))
+            .Where(s => s.LibraryId == libraryId)
+            .Where(s => s.FolderPath == normalized || s.LowestFolderPath == normalized)
             .Includes(includes)
-            .SingleOrDefaultAsync(ct);
+            .ToListAsync(ct);
     }
 
-    public async Task<Series?> GetSeriesThatContainsLowestFolderPathAsync(string path,
+    /// <summary>
+    /// The series of the library whose LowestFolderPath is the deepest folder containing the path (or equal to it).
+    /// Several when they share that folder
+    /// </summary>
+    public async Task<IList<Series>> GetSeriesThatContainsLowestFolderPathAsync(int libraryId, string path,
         SeriesIncludes includes = SeriesIncludes.None, CancellationToken ct = default)
     {
-        // Check if the path ends with a file (has a file extension)
-        string directoryPath;
-        if (Path.HasExtension(path))
-        {
-            // Remove the file part and get the directory path
-            directoryPath = Path.GetDirectoryName(path);
-            if (string.IsNullOrEmpty(directoryPath)) return null;
-        }
-        else
-        {
-            // Use the path as is if it doesn't end with a file
-            directoryPath = path;
-        }
+        var candidates = SelfAndParentFolders(path.NormalizePath().TrimEnd('/'));
+        if (candidates.Count == 0) return [];
 
-        // Normalize the directory path
-        var normalized = directoryPath.NormalizePath();
-        if (string.IsNullOrEmpty(normalized)) return null;
-
-        normalized = normalized.TrimEnd('/');
-
-        return await context.Series
-            .Where(s => !string.IsNullOrEmpty(s.LowestFolderPath) && EF.Functions.Like(normalized, s.LowestFolderPath + "%"))
+        var matches = await context.Series
+            .Where(s => s.LibraryId == libraryId)
+            .Where(s => s.LowestFolderPath != null && candidates.Contains(s.LowestFolderPath))
             .Includes(includes)
-            .SingleOrDefaultAsync(ct);
+            .ToListAsync(ct);
+
+        var deepest = matches.MaxBy(s => s.LowestFolderPath!.Length)?.LowestFolderPath;
+        return matches.Where(s => s.LowestFolderPath == deepest).ToList();
+    }
+
+    private static List<string> SelfAndParentFolders(string normalizedPath)
+    {
+        var folders = new List<string>();
+        var current = normalizedPath;
+        while (!string.IsNullOrEmpty(current))
+        {
+            folders.Add(current);
+            var lastSlash = current.LastIndexOf('/');
+            if (lastSlash <= 0) break;
+            current = current[..lastSlash];
+        }
+
+        return folders;
     }
 
     public async Task<IEnumerable<Series>> GetAllSeriesByNameAsync(IList<string> normalizedNames,
@@ -1482,19 +1498,12 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
     /// <param name="seenSeries"></param>
     /// <param name="libraryId"></param>
     /// <param name="ct"></param>
-    private sealed record SeriesNameMatch(int Id, MangaFormat Format, string NormalizedName,
-        string NormalizedLocalizedName, string NormalizedOriginalName);
-
     public async Task<IList<Series>> RemoveSeriesNotInListAsync(IList<ParsedSeries> seenSeries, int libraryId,
         CancellationToken ct = default)
     {
         if (seenSeries.Count == 0) return Array.Empty<Series>();
 
-        var candidates = await context.Series
-            .Where(s => s.LibraryId == libraryId)
-            .Select(s => new SeriesNameMatch(s.Id, s.Format, s.NormalizedName, s.NormalizedLocalizedName,
-                s.NormalizedOriginalName))
-            .ToListAsync(ct);
+        var candidates = await GetSeriesNameMatchesAsync(libraryId, ct);
         if (candidates.Count == 0) return Array.Empty<Series>();
 
         var byName = new Dictionary<string, List<SeriesNameMatch>>(StringComparer.Ordinal);
@@ -1513,6 +1522,11 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
         var keepIds = new HashSet<int>();
         foreach (var key in seenSeries)
         {
+            if (key.ExistingSeriesId is { } existingSeriesId)
+            {
+                keepIds.Add(existingSeriesId);
+            }
+
             if (!byName.TryGetValue(key.NormalizedName, out var matches)) continue;
 
             var best = matches
@@ -1634,8 +1648,8 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
                 VolumeId = c.VolumeId,
                 ChapterId = c.Id,
                 Format = c.Volume.Series.Format,
-                ChapterNumber = c.MinNumber + string.Empty, // default: Refactor this
-                ChapterRange = c.Range, // default: Refactor this
+                ChapterNumber = c.MinNumber + string.Empty, // TODO: Refactor this
+                ChapterRange = c.Range, // TODO: Refactor this
                 IsSpecial = c.IsSpecial,
                 VolumeNumber = c.Volume.MinNumber,
                 ChapterTitle = c.Title,
@@ -1789,9 +1803,10 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
     public async Task RemoveFromOnDeckAsync(int seriesId, int userId, CancellationToken ct = default)
     {
         var existingEntry = await context.AppUserOnDeckRemoval
-            .Where(u => u.Id == userId && u.SeriesId == seriesId)
+            .Where(u => u.AppUserId == userId && u.SeriesId == seriesId)
             .AnyAsync(ct);
         if (existingEntry) return;
+
         context.AppUserOnDeckRemoval.Add(new AppUserOnDeckRemoval()
         {
             SeriesId = seriesId,
@@ -1821,56 +1836,87 @@ public class SeriesRepository(DataContext context, IMapper mapper) : ISeriesRepo
             .AnyAsync(ct);
     }
 
+    public async Task<IList<SeriesNameMatch>> GetSeriesNameMatchesAsync(int libraryId, CancellationToken ct = default)
+    {
+        return await context.Series
+            .Where(s => s.LibraryId == libraryId)
+            .Select(s => new SeriesNameMatch(s.Id, s.Format, s.NormalizedName, s.NormalizedLocalizedName,
+                s.NormalizedOriginalName))
+            .ToListAsync(ct);
+    }
+
     public async Task<IDictionary<string, IList<SeriesModified>>> GetFolderPathMapAsync(int libraryId,
-        CancellationToken ct = default)
+        int? seriesId = null, CancellationToken ct = default)
     {
         var info = await context.Series
             .Where(s => s.LibraryId == libraryId)
+            .WhereIf(seriesId != null, s => s.Id == seriesId)
             .AsNoTracking()
             .Where(s => s.FolderPath != null)
-            .Select(s => new SeriesModified()
+            .Select(s => new
             {
-                LastScanned = s.LastFolderScanned,
-                SeriesName = s.Name,
-                FolderPath = s.FolderPath,
-                LowestFolderPath = s.LowestFolderPath,
-                Format = s.Format,
-                LibraryRoots = s.Library.Folders.Select(f => f.Path)
+                s.Id,
+                Modified = new SeriesModified()
+                {
+                    LastScanned = s.LastFolderScanned,
+                    // Placeholders must group with the parsed files, which carry the original name, not a user rename
+                    SeriesName = s.OriginalName ?? s.Name,
+                    FolderPath = s.FolderPath,
+                    LowestFolderPath = s.LowestFolderPath,
+                    Format = s.Format,
+                    LibraryRoots = s.Library.Folders.Select(f => f.Path)
+                }
             })
             .ToListAsync(ct);
 
+        var files = await context.MangaFile
+            .Where(f => f.Chapter.Volume.Series.LibraryId == libraryId)
+            .WhereIf(seriesId != null, f => f.Chapter.Volume.SeriesId == seriesId)
+            .Select(f => new { f.Id, f.Chapter.Volume.SeriesId, f.FilePath, f.Bytes, f.FileLastWriteTimeUtc, f.Chapter.Range, f.Chapter.IsSpecial })
+            .AsNoTracking()
+            .ToListAsync(ct);
+
+        var filesBySeries = files
+            .GroupBy(f => f.SeriesId)
+            .ToDictionary(g => g.Key, g => g
+                .Select(f => new KnownFile(f.Id, f.FilePath.NormalizePath(), f.Bytes, f.FileLastWriteTimeUtc,
+                    KnownFile.IsSortedBySiblings(f.Range, f.IsSpecial)))
+                .GroupBy(f => ParentFolder(f.Path))
+                .ToDictionary(folder => folder.Key, IReadOnlyList<KnownFile> (folder) => folder.ToList()));
+
         var map = new Dictionary<string, IList<SeriesModified>>();
-        foreach (var series in info)
+        foreach (var (id, series) in info.Select(s => (s.Id, s.Modified)))
         {
             if (string.IsNullOrEmpty(series.FolderPath)) continue;
-            if (!map.TryGetValue(series.FolderPath, out var value))
+
+            var filesByFolder = filesBySeries.GetValueOrDefault(id) ?? new Dictionary<string, IReadOnlyList<KnownFile>>();
+            series.FilesByFolder = filesByFolder;
+
+            var keys = new HashSet<string>(filesByFolder.Keys) { series.FolderPath };
+            if (!string.IsNullOrEmpty(series.LowestFolderPath) && series.LibraryRoots.Any(series.LowestFolderPath.IsInsideFolder))
             {
-                map.Add(series.FolderPath, new List<SeriesModified>()
-                {
-                    series
-                });
-            }
-            else
-            {
-                value.Add(series);
+                keys.Add(series.LowestFolderPath);
             }
 
-
-            if (string.IsNullOrEmpty(series.LowestFolderPath) || series.FolderPath.Equals(series.LowestFolderPath)) continue;
-            if (!map.TryGetValue(series.LowestFolderPath, out var value2))
+            foreach (var key in keys)
             {
-                map.Add(series.LowestFolderPath, new List<SeriesModified>()
+                if (!map.TryGetValue(key, out var list))
                 {
-                    series
-                });
-            }
-            else
-            {
-                value2.Add(series);
+                    list = new List<SeriesModified>();
+                    map.Add(key, list);
+                }
+
+                list.Add(series);
             }
         }
 
         return map;
+    }
+
+    private static string ParentFolder(string normalizedPath)
+    {
+        var lastSlash = normalizedPath.LastIndexOf('/');
+        return lastSlash < 0 ? normalizedPath : normalizedPath[..lastSlash];
     }
 
     /// <summary>

@@ -1,7 +1,7 @@
 import {HttpClient, httpResource} from '@angular/common/http';
 import {computed, DestroyRef, inject, Injectable, signal} from '@angular/core';
 import {Observable, of} from 'rxjs';
-import {filter, map, switchMap, tap} from 'rxjs/operators';
+import {filter, finalize, map, shareReplay, switchMap, tap} from 'rxjs/operators';
 import {environment} from '../../environments/environment';
 import {Preferences} from '../_models/preferences/preferences';
 import {User} from '../_models/user/user';
@@ -18,6 +18,7 @@ import {LocalizationService} from "./localization.service";
 import {Annotation} from "../book-reader/_models/annotations/annotation";
 import {AuthKey, ImageOnlyName, OpdsName} from "../_models/user/auth-key";
 import {Action} from "../_models/actionables/action";
+import {UpdateUserRequest} from "../_models/user/update-user-request";
 
 export enum Role {
   Admin = 'Admin',
@@ -377,7 +378,7 @@ export class AccountService {
     return this.httpClient.post(this.baseUrl + 'account/reset-password', {username, password, oldPassword}, TextResonse);
   }
 
-  update(model: {email: string, roles: Array<string>, libraries: Array<number>, userId: number, ageRestriction: AgeRestriction}) {
+  update(model: UpdateUserRequest) {
     return this.httpClient.post(this.baseUrl + 'account/update', model);
   }
 
@@ -465,17 +466,31 @@ export class AccountService {
     }));
   }
 
+  private refresh$?: Observable<{token: string, refreshToken: string}>;
 
-  private refreshToken() {
+  refreshToken() {
     const current = this._currentUser();
     if (!current || !this.isOnline || !current.token) return of();
 
-    return this.httpClient.post<{token: string, refreshToken: string}>(this.baseUrl + 'account/refresh-token',
-     {token: current.token, refreshToken: current.refreshToken}).pipe(map(tokens => {
-      const updated = this._currentUser();
-      if (updated) this.setCurrentUser({ ...updated, token: tokens.token, refreshToken: tokens.refreshToken });
-      return tokens;
-    }));
+    if (this.refresh$) {
+      return this.refresh$;
+    }
+
+    this.refresh$ = this.httpClient.post<{token: string, refreshToken: string}>(this.baseUrl + 'account/refresh-token',
+     {token: current.token, refreshToken: current.refreshToken}).pipe(
+       map(tokens => {
+         const updated = this._currentUser();
+         if (updated) {
+           this.setCurrentUser({ ...updated, token: tokens.token, refreshToken: tokens.refreshToken });
+         }
+
+         return tokens;
+       }),
+      finalize(() => this.refresh$ = undefined),
+      shareReplay(1),
+    );
+
+    return this.refresh$;
   }
 
   /**

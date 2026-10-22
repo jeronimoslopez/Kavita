@@ -24,17 +24,26 @@
         </div>
 
         <div class="col-xl-10 col-lg-7 col-md-12 col-sm-12 col-xs-12">
-          <h4 class="title mb-2">
-            <span>{{seriesValue.name}}
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h4 class="title mb-0">
+              <span>{{seriesValue.name}}
 
-              @if(showLoader()) {
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                  <span class="visually-hidden">{{t('loading')}}</span>
-                </div>
-              }
+                @if(showLoader()) {
+                  <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">{{t('loading')}}</span>
+                  </div>
+                }
+
               </span>
 
-          </h4>
+            </h4>
+
+            @if(showMediaIssueWarning()) {
+              <button type="button" class="btn btn-link p-0 fs-4 warning" [attr.aria-label]="t('media-error-tooltip')" [ngbTooltip]="t('media-error-tooltip')" placement="bottom" (click)="showMediaErrors()">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+              </button>
+            }
+          </div>
           <div class="subtitle  mt-2 mb-2">
             @if (seriesValue.localizedName !== seriesValue.name && seriesValue.localizedName) {
               <span>{{seriesValue.localizedName | defaultValue}}</span>
@@ -73,7 +82,7 @@
                     </span>
                   </button>
                   <div class="btn-group" ngbDropdown role="group" display="dynamic" [attr.aria-label]="t('read-options-alt')">
-                    <button type="button" class="btn btn-outline-primary dropdown-toggle-split" ngbDropdownToggle></button>
+                    <button type="button" class="btn btn-outline-primary dropdown-toggle-split" ngbDropdownToggle [attr.aria-label]="t('read-options-alt')"></button>
                     <div class="dropdown-menu" ngbDropdownMenu>
                       <button ngbDropdownItem (click)="read(true)">
                         <span>
@@ -230,7 +239,7 @@
               <a ngbNavLink>{{Tabs.Storyline | tabTitle}}</a>
               <ng-template ngbNavContent>
                 @defer (when activeTabId === Tabs.Storyline; prefetch on idle) {
-                  <virtual-scroller #scroll [items]="storylineItems()" [bufferAmount]="1" [parentScroll]="scrollingBlock" [childHeight]="1">
+                  <virtual-scroller #scroll [items]="storylineItems()" [bufferAmount]="1" [modifyOverflowStyleOfParentScroll]="false" [parentScroll]="companionBar">
 
                     <div class="card-container row g-0" #container>
                       @for(item of scroll.viewPortItems; let idx = $index; track trackStoryLineIdentity(idx, item)) {
@@ -258,7 +267,7 @@
               </a>
               <ng-template ngbNavContent>
                 @defer (when activeTabId === Tabs.Volumes; prefetch on idle) {
-                  <virtual-scroller #scroll [items]="volumeEntities()" [parentScroll]="scrollingBlock" [childHeight]="1">
+                  <virtual-scroller #scroll [items]="volumeEntities()" [modifyOverflowStyleOfParentScroll]="false" [parentScroll]="companionBar">
                     <div class="card-container row g-0" #container>
                       @for (item of scroll.viewPortItems; let idx = $index; track item.data.id + '_volumes') {
                         <ng-container [ngTemplateOutlet]="nonChapterVolumeCard" [ngTemplateOutletContext]="{$implicit: item, scroll: scroll, idx: idx, totalLength: volumeEntities().length}" />
@@ -279,7 +288,7 @@
               </a>
               <ng-template ngbNavContent>
                 @defer (when activeTabId === Tabs.Chapters; prefetch on idle) {
-                  <virtual-scroller #scroll [items]="chapterEntities()" [parentScroll]="scrollingBlock" [childHeight]="1">
+                  <virtual-scroller #scroll [items]="chapterEntities()" [modifyOverflowStyleOfParentScroll]="false" [parentScroll]="companionBar">
                     <div class="card-container row g-0" #container>
                       @for (item of scroll.viewPortItems; let idx = $index; track item.data.id + '_chapters') {
                         <ng-container [ngTemplateOutlet]="nonSpecialChapterCard" [ngTemplateOutletContext]="{$implicit: item, scroll: scroll, idx: idx, totalLength: chapterEntities().length}" />
@@ -300,7 +309,7 @@
               </a>
               <ng-template ngbNavContent>
                 @defer (when activeTabId === Tabs.Specials; prefetch on idle) {
-                  <virtual-scroller #scroll [items]="specialEntities()" [parentScroll]="scrollingBlock" [childHeight]="1">
+                  <virtual-scroller #scroll [items]="specialEntities()" [modifyOverflowStyleOfParentScroll]="false" [parentScroll]="companionBar">
                     <div class="card-container row g-0" #container>
                       @for(item of scroll.viewPortItems; let idx = $index; track item.data.id + '_specials') {
                         <ng-container [ngTemplateOutlet]="specialChapterCard" [ngTemplateOutletContext]="{$implicit: item, scroll: scroll, idx: idx, totalLength: specialEntities().length}" />
@@ -353,7 +362,7 @@
               </a>
               <ng-template ngbNavContent>
                 @defer (when activeTabId === Tabs.Recommendations; prefetch on idle) {
-                  <virtual-scroller #scroll [items]="combinedRecs()" [parentScroll]="scrollingBlock" [childHeight]="1">
+                  <virtual-scroller #scroll [items]="combinedRecs()" [modifyOverflowStyleOfParentScroll]="false" [parentScroll]="companionBar">
                     <div class="card-container row g-0" #container>
                       @for(item of scroll.viewPortItems; let idx = $index; track idx) {
                         @if (asRecommendedSeries(item); as owned) {
@@ -404,7 +413,7 @@
             <li [ngbNavItem]="Tabs.Activity" id="activity-tab">
               <a ngbNavLink>{{Tabs.Activity | tabTitle}}</a>
               <ng-template ngbNavContent>
-                @defer (when activeTabId == Tabs.Activity; prefetch on idle) {
+                @defer (when activeTabId === Tabs.Activity; prefetch on idle) {
                   <div class="pb-3">
                     <app-reading-history-viewer
                       [currentEntries]="readingHistory()"

@@ -524,7 +524,7 @@ public static partial class Parser
             MatchOptions, RegexTimeout),
         // Batgirl Vol.2000 #57 (December, 2004)
         new Regex(
-            @"^(?<Series>.+?)(?:\s|_)(v|vol|tome|t)\.?(\s|_)?(?<Volume>\d+)",
+            @"^(?<Series>.+?)(?:\s|_)(v|vol|volume|tome|t)\.?(\s|_)?(?<Volume>\d+)",
             MatchOptions, RegexTimeout),
         // Chinese Volume: 第n卷 -> Volume n, 第n册 -> Volume n, 幽游白书完全版 第03卷 天下 or 阿衰online 第1册
         new Regex(
@@ -655,7 +655,7 @@ public static partial class Parser
             MatchOptions, RegexTimeout),
         // Korean Chapter: 제n화 -> Chapter n, 가디언즈 오브 갤럭시 죽음의 보석.E0008.7화#44
         new Regex(
-            @"제?(?<Chapter>\d+\.?\d+)(회|화|장)",
+            @"제?(?<Chapter>\d+(?:\.\d+)?)(?:-\d+)?(회|화|장)",
             MatchOptions, RegexTimeout),
         // Korean Chapter: 第10話 -> Chapter n, [ハレム]ナナとカオル ～高校生のSMごっこ～　第1話
         new Regex(
@@ -1139,6 +1139,16 @@ public static partial class Parser
     }
 
     /// <summary>
+    /// Cover images are skipped by the parsers and never become a file of the series, except in Image libraries
+    /// </summary>
+    /// <param name="filename">Filename with extension</param>
+    /// <param name="type">Library type</param>
+    public static bool IsSkippedCoverImage(string filename, LibraryType type)
+    {
+        return type != LibraryType.Image && IsCoverImage(filename);
+    }
+
+    /// <summary>
     /// Validates that a Path doesn't start with certain blacklisted folders, like __MACOSX, @Recently-Snapshot, etc. and that if a full path, the filename
     /// doesn't start with ._, which is a metadata file on MACOSX.
     /// </summary>
@@ -1220,21 +1230,6 @@ public static partial class Parser
     private static string ReplaceUnderscores(string name)
     {
         return string.IsNullOrEmpty(name) ? string.Empty : name.Replace('_', ' ');
-    }
-
-    public static string? ExtractFilename(string fileUrl)
-    {
-        var matches = CssImageUrlRegex.Matches(fileUrl);
-        foreach (Match match in matches)
-        {
-            if (!match.Success) continue;
-
-            // NOTE: This is failing for //localhost:5000/api/book/29919/book-resources?file=OPS/images/tick1.jpg
-            var importFile = match.Groups["Filename"].Value;
-            if (!importFile.Contains('?')) return importFile;
-        }
-
-        return null;
     }
 
     /// <summary>

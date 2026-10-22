@@ -7,7 +7,10 @@ using Kavita.API.Repositories;
 using Kavita.API.Services;
 using Kavita.API.Services.SignalR;
 using Kavita.Common.Extensions;
+using Kavita.Common.Helpers;
 using Kavita.Database.Tests;
+using Kavita.Models.Builders;
+using Kavita.Models.Entities;
 using Kavita.Models.Entities.Enums;
 using Kavita.Models.Metadata;
 using Kavita.Models.Parser;
@@ -56,35 +59,35 @@ public class MockReadingItemService : IReadingItemService
         throw new NotImplementedException();
     }
 
-    public ParserInfo Parse(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
+    public ParserInfo? Parse(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
     {
         if (_comicVineParser.IsApplicable(path, type))
         {
-            return _comicVineParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path));
+            return _comicVineParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path)).Info;
         }
         if (_imageParser.IsApplicable(path, type))
         {
-            return _imageParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path));
+            return _imageParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path)).Info;
         }
         if (_bookParser.IsApplicable(path, type))
         {
-            return _bookParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path));
+            return _bookParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path)).Info;
         }
         if (_pdfParser.IsApplicable(path, type))
         {
-            return _pdfParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path));
+            return _pdfParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path)).Info;
         }
         if (_basicParser.IsApplicable(path, type))
         {
-            return _basicParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path));
+            return _basicParser.Parse(path, rootPath, libraryRoot, type, enableMetadata, GetComicInfo(path)).Info;
         }
 
         return null;
     }
 
-    public ParserInfo ParseFile(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
+    public ParseFileResult ParseFile(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
     {
-        return Parse(path, rootPath, libraryRoot, type, enableMetadata);
+        return new ParseFileResult(Parse(path, rootPath, libraryRoot, type, enableMetadata));
     }
 }
 
@@ -112,10 +115,10 @@ public class ParseScannedFilesTests: AbstractDbTest
     // public async Task MergeName_ShouldMergeMatchingFormatAndName()
     // {
     //     var fileSystem = new MockFileSystem();
-    //     fileSystem.AddDirectory("C:/Data/");
-    //     fileSystem.AddFile("C:/Data/Accel World v1.cbz", new MockFileData(string.Empty));
-    //     fileSystem.AddFile("C:/Data/Accel World v2.cbz", new MockFileData(string.Empty));
-    //     fileSystem.AddFile("C:/Data/Accel World v2.pdf", new MockFileData(string.Empty));
+    //     fileSystem.AddDirectory(Root + "Data/");
+    //     fileSystem.AddFile(Root + "Data/Accel World v1.cbz", new MockFileData(string.Empty));
+    //     fileSystem.AddFile(Root + "Data/Accel World v2.cbz", new MockFileData(string.Empty));
+    //     fileSystem.AddFile(Root + "Data/Accel World v2.pdf", new MockFileData(string.Empty));
     //
     //     var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
     //     var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
@@ -140,7 +143,7 @@ public class ParseScannedFilesTests: AbstractDbTest
     //         parsedSeries.Add(foundParsedSeries, parsedFiles);
     //     }
     //
-    //     await psf.ScanLibrariesForSeries(LibraryType.Manga, new List<string>() {"C:/Data/"}, "libraryName",
+    //     await psf.ScanLibrariesForSeries(LibraryType.Manga, new List<string>() {Root + "Data/"}, "libraryName",
     //         false, await _unitOfWork.SeriesRepository.GetFolderPathMapAsync(1), TrackFiles);
     //
     //     Assert.Equal("Accel World",
@@ -155,17 +158,17 @@ public class ParseScannedFilesTests: AbstractDbTest
     // public async Task MergeName_ShouldMerge_MismatchedFormatSameName()
     // {
     //     var fileSystem = new MockFileSystem();
-    //     fileSystem.AddDirectory("C:/Data/");
-    //     fileSystem.AddFile("C:/Data/Accel World v1.cbz", new MockFileData(string.Empty));
-    //     fileSystem.AddFile("C:/Data/Accel World v2.cbz", new MockFileData(string.Empty));
-    //     fileSystem.AddFile("C:/Data/Accel World v2.pdf", new MockFileData(string.Empty));
+    //     fileSystem.AddDirectory(Root + "Data/");
+    //     fileSystem.AddFile(Root + "Data/Accel World v1.cbz", new MockFileData(string.Empty));
+    //     fileSystem.AddFile(Root + "Data/Accel World v2.cbz", new MockFileData(string.Empty));
+    //     fileSystem.AddFile(Root + "Data/Accel World v2.pdf", new MockFileData(string.Empty));
     //
     //     var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
     //     var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
     //         new MockReadingItemService(new DefaultParser(ds)), Substitute.For<IEventHub>());
     //
     //
-    //     await psf.ScanLibrariesForSeries(LibraryType.Manga, new List<string>() {"C:/Data/"}, "libraryName");
+    //     await psf.ScanLibrariesForSeries(LibraryType.Manga, new List<string>() {Root + "Data/"}, "libraryName");
     //
     //     Assert.Equal("Accel World",
     //         psf.MergeName(ParserInfoFactory.CreateParsedInfo("Accel World", "1", "0", "Accel World v1.epub", false)));
@@ -201,8 +204,7 @@ public class ParseScannedFilesTests: AbstractDbTest
 
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
 
         var library =
@@ -212,7 +214,7 @@ public class ParseScannedFilesTests: AbstractDbTest
 
         library.Type = LibraryType.Manga;
         var parsedSeries = await psf.ScanLibrariesForSeries(library, new List<string>() {Root + "Data/"}, false,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1));
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)));
 
 
         // Assert.Equal(3, parsedSeries.Values.Count);
@@ -230,14 +232,14 @@ public class ParseScannedFilesTests: AbstractDbTest
     private static MockFileSystem CreateTestFilesystem()
     {
         var fileSystem = new MockFileSystem();
-        fileSystem.AddDirectory("C:/Data/");
-        fileSystem.AddDirectory("C:/Data/Accel World");
-        fileSystem.AddDirectory("C:/Data/Accel World/Specials/");
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddDirectory(Root + "Data/");
+        fileSystem.AddDirectory(Root + "Data/Accel World");
+        fileSystem.AddDirectory(Root + "Data/Accel World/Specials/");
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
 
         return fileSystem;
     }
@@ -251,13 +253,12 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fileSystem = CreateTestFilesystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var directoriesSeen = new HashSet<string>();
         var library = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(1,
                 LibraryIncludes.Folders | LibraryIncludes.FileTypes);
-        var scanResults = await psf.ScanFiles("C:/Data/", true, await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1), library);
+        var scanResults = await psf.ScanFiles(Root + "Data/", true, Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)), library);
         foreach (var scanResult in scanResults)
         {
             directoriesSeen.Add(scanResult.Folder);
@@ -275,16 +276,15 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fileSystem = CreateTestFilesystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var library = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(1,
             LibraryIncludes.Folders | LibraryIncludes.FileTypes);
         Assert.NotNull(library);
 
         var directoriesSeen = new HashSet<string>();
-        var scanResults = await psf.ScanFiles("C:/Data/", false,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1), library);
+        var scanResults = await psf.ScanFiles(Root + "Data/", false,
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)), library);
 
         foreach (var scanResult in scanResults)
         {
@@ -292,8 +292,8 @@ public class ParseScannedFilesTests: AbstractDbTest
         }
 
         Assert.Single(directoriesSeen);
-        directoriesSeen.TryGetValue("C:/Data/", out var actual);
-        Assert.Equal("C:/Data/", actual);
+        directoriesSeen.TryGetValue(Root + "Data/", out var actual);
+        Assert.Equal(Root + "Data/", actual);
     }
 
     [Fact]
@@ -303,24 +303,23 @@ public class ParseScannedFilesTests: AbstractDbTest
         var scannerHelper = await Setup(unitOfWork);
 
         var fileSystem = new MockFileSystem();
-        fileSystem.AddDirectory("C:/Data/");
-        fileSystem.AddDirectory("C:/Data/Accel World");
-        fileSystem.AddDirectory("C:/Data/Accel World/Specials/");
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddDirectory(Root + "Data/");
+        fileSystem.AddDirectory(Root + "Data/Accel World");
+        fileSystem.AddDirectory(Root + "Data/Accel World/Specials/");
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
 
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var library = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(1,
             LibraryIncludes.Folders | LibraryIncludes.FileTypes);
         Assert.NotNull(library);
-        var scanResults = await psf.ScanFiles("C:/Data", true, await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1), library);
+        var scanResults = await psf.ScanFiles(Root + "Data",true, Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)), library);
 
         Assert.Equal(2, scanResults.Count);
     }
@@ -336,25 +335,24 @@ public class ParseScannedFilesTests: AbstractDbTest
         var scannerHelper = await Setup(unitOfWork);
 
         var fileSystem = new MockFileSystem();
-        fileSystem.AddDirectory("C:/Data/");
-        fileSystem.AddDirectory("C:/Data/Accel World");
-        fileSystem.AddDirectory("C:/Data/Accel World/Specials/");
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
-        fileSystem.AddFile("C:/Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddDirectory(Root + "Data/");
+        fileSystem.AddDirectory(Root + "Data/Accel World");
+        fileSystem.AddDirectory(Root + "Data/Accel World/Specials/");
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v1.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Accel World v2.pdf", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Accel World/Specials/Accel World SP01.cbz", new MockFileData(string.Empty));
+        fileSystem.AddFile(Root + "Data/Black World/Black World SP01.cbz", new MockFileData(string.Empty));
 
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var library = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(1,
             LibraryIncludes.Folders | LibraryIncludes.FileTypes);
         Assert.NotNull(library);
-        var scanResults = await psf.ScanFiles("C:/Data", false,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1), library);
+        var scanResults = await psf.ScanFiles(Root + "Data",false,
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)), library);
 
         Assert.Single(scanResults);
     }
@@ -364,8 +362,7 @@ public class ParseScannedFilesTests: AbstractDbTest
 
     #endregion
 
-    // TODO: Add back in (removed for Hotfix v0.8.5.x)
-    //[Fact]
+    [Fact]
     public async Task HasSeriesFolderNotChangedSinceLastScan_AllSeriesFoldersHaveChanges()
     {
         var (unitOfWork, context, mapper) = await CreateDatabase();
@@ -382,8 +379,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fs = new FileSystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var scanner = scannerHelper.CreateServices(ds, fs);
         await scanner.ScanLibrary(library.Id);
@@ -403,22 +399,20 @@ public class ParseScannedFilesTests: AbstractDbTest
 
         await Task.Delay(1100); // Ensure at least one second has passed since library scan
 
-        // Add a new chapter to a volume of the series, and scan. Validate that only, and all directories of this
-        // series are marked as HasChanged
+        // Add a new chapter to a volume of the series, and scan. Only the folder that got the file is read again
         var executionerCopyDir = Path.Join(Path.Join(testDirectoryPath, "The Executioner and Her Way of Life"),
                "The Executioner and Her Way of Life Vol. 1");
         File.Copy(Path.Join(executionerCopyDir, "The Executioner and Her Way of Life Vol. 1 Ch. 0001.cbz"),
             Path.Join(executionerCopyDir, "The Executioner and Her Way of Life Vol. 1 Ch. 0002.cbz"));
 
-        // 4 series, of which 2 have volumes as directories
+        // 4 series folders plus the 6 volume folders that hold the files
         var folderMap = await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id);
-        Assert.Equal(6, folderMap.Count);
+        Assert.Equal(10, folderMap.Count);
 
-        var res = await psf.ScanFiles(testDirectoryPath, true, folderMap, postLib);
+        var res = await psf.ScanFiles(testDirectoryPath, true, Known(folderMap), postLib);
         var changes = res.Where(sc => sc.HasChanged).ToList();
-        Assert.Equal(2, changes.Count);
-        // Only volumes of The Executioner and Her Way of Life should be marked as HasChanged (Spice and Wolf also has 2 volumes dirs)
-        Assert.Equal(2, changes.Count(sc => sc.Folder.Contains("The Executioner and Her Way of Life")));
+        var change = Assert.Single(changes);
+        Assert.EndsWith("The Executioner and Her Way of Life Vol. 1", change.Folder);
     }
 
     [Fact]
@@ -438,8 +432,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fs = new FileSystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var scanner = scannerHelper.CreateServices(ds, fs);
         await scanner.ScanLibrary(library.Id);
@@ -462,13 +455,51 @@ public class ParseScannedFilesTests: AbstractDbTest
             Path.Join(executionerCopyDir, "The Executioner and Her Way of Life Vol. 2.cbz"));
 
         var res = await psf.ScanFiles(testDirectoryPath, true,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id), postLib);
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id)), postLib);
         var changes = res.Count(sc => sc.HasChanged);
         Assert.Equal(1, changes);
     }
 
-    // TODO: Add back in (removed for Hotfix v0.8.5.x)
-    //[Fact]
+    [Fact]
+    public async Task ScanLibrariesForSeries_OneSeriesChanged_OnlyThatSeriesHasChanged()
+    {
+        var (unitOfWork, _, _) = await CreateDatabase();
+        var scannerHelper = await Setup(unitOfWork);
+
+        const string testcase = "Subfolder always scanning fix publisher layout - Comic.json";
+        var library = await scannerHelper.GenerateScannerData(testcase, new Dictionary<string, ComicInfo>());
+        var testDirectoryPath = library.Folders.First().Path;
+
+        unitOfWork.LibraryRepository.Update(library);
+        await unitOfWork.CommitAsync();
+
+        var fs = new FileSystem();
+        var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
+        var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
+
+        var scanner = scannerHelper.CreateServices(ds, fs);
+        await scanner.ScanLibrary(library.Id);
+
+        var postLib = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(library.Id, LibraryIncludes.Series);
+        Assert.NotNull(postLib);
+        Assert.Equal(4, postLib.Series.Count);
+
+        await Task.Delay(1100); // Ensure at least one second has passed since library scan
+
+        var executionerDir = Path.Join(Path.Join(testDirectoryPath, "YenPress"), "The Executioner and Her Way of Life");
+        File.Copy(Path.Join(executionerDir, "The Executioner and Her Way of Life Vol. 1.cbz"),
+            Path.Join(executionerDir, "The Executioner and Her Way of Life Vol. 2.cbz"));
+
+        var res = await psf.ScanLibrariesForSeries(postLib, [testDirectoryPath], true,
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id)));
+
+        Assert.Equal(4, res.Count);
+        var changed = Assert.Single(res, r => r.HasChanged);
+        Assert.Equal("The Executioner and Her Way of Life", changed.ParsedSeries.Name);
+    }
+
+    [Fact]
     public async Task SubFoldersNoSubFolders_SkipAll()
     {
         var (unitOfWork, context, mapper) = await CreateDatabase();
@@ -485,8 +516,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fs = new FileSystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var scanner = scannerHelper.CreateServices(ds, fs);
         await scanner.ScanLibrary(library.Id);
@@ -504,7 +534,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         await Task.Delay(1100); // Ensure at least one second has passed since library scan
 
         var res = await psf.ScanFiles(testDirectoryPath, true,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id), postLib);
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id)), postLib);
         Assert.DoesNotContain(res, sc => sc.HasChanged);
     }
 
@@ -525,8 +555,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fs = new FileSystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var scanner = scannerHelper.CreateServices(ds, fs);
         await scanner.ScanLibrary(library.Id);
@@ -549,7 +578,7 @@ public class ParseScannedFilesTests: AbstractDbTest
             Path.Join(spiceAndWolfDir, "Spice and Wolf Vol. 4.cbz"));
 
         var res = await psf.ScanFiles(testDirectoryPath, true,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id), postLib);
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id)), postLib);
         var changes = res.Count(sc => sc.HasChanged);
         Assert.Equal(2, changes);
     }
@@ -571,8 +600,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var fs = new FileSystem();
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fs);
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            new MockReadingItemService(ds, Substitute.For<IBookService>()), Substitute.For<IEventHub>());
 
         var scanner = scannerHelper.CreateServices(ds, fs);
         await scanner.ScanLibrary(library.Id);
@@ -595,9 +623,50 @@ public class ParseScannedFilesTests: AbstractDbTest
             Path.Join(spiceAndWolfDir, "Spice and Wolf Vol. 3 Ch. 0013.cbz"));
 
         var res = await psf.ScanFiles(testDirectoryPath, true,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id), postLib);
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(postLib.Id)), postLib);
         var changes = res.Count(sc => sc.HasChanged);
         Assert.Equal(2, changes);
+    }
+
+    [Fact]
+    public async Task ScanSingleDirectory_LowestFolderPathIsDriveRoot_ReadsTheUnchangedSeriesFolder()
+    {
+        const string file = "M:/Higurashi When They Cry/Higurashi When They Cry v01.cbz";
+        var writeTime = DateTime.UtcNow.AddDays(-1);
+        var ds = Substitute.For<IDirectoryService>();
+        var tree = new FolderTree("M:/Higurashi When They Cry");
+        tree.AddRootFiles([new FileStamp(file, 10, writeTime)]);
+        ds.ListFolderTreeAsync(default!, default!, default, default!, default).ReturnsForAnyArgs(tree);
+        var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
+            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>());
+
+        var library = new LibraryBuilder("Manga").WithFolderPath(new FolderPathBuilder("M:/").Build()).Build();
+        var seriesPaths = new Dictionary<string, IList<SeriesModified>>
+        {
+            ["M:/Higurashi When They Cry"] =
+            [
+                new SeriesModified
+                {
+                    SeriesName = "Higurashi When They Cry",
+                    FolderPath = "M:/Higurashi When They Cry",
+                    LowestFolderPath = "M:",
+                    LastScanned = DateTime.Now,
+                    LibraryRoots = ["M:/"],
+                    FilesByFolder = new Dictionary<string, IReadOnlyList<KnownFile>>
+                    {
+                        ["M:/Higurashi When They Cry"] = [new KnownFile(1, file, 10, writeTime)],
+                    },
+                },
+            ],
+        };
+
+        var result = await psf.ScanFiles("M:/Higurashi When They Cry", false, Known(seriesPaths), library);
+
+        Assert.True(Assert.Single(result).HasChanged);
+        await ds.Received(1).ListFolderTreeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<GlobMatcher?>(), Arg.Any<Func<string, Task>>(),
+            Arg.Any<bool>());
+        await ds.Received(1).ListFolderTreeAsync("M:/Higurashi When They Cry", Arg.Any<string>(), Arg.Any<GlobMatcher?>(),
+            Arg.Any<Func<string, Task>>(), true);
     }
 
     [Fact]
@@ -629,8 +698,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         ConcurrentDictionary<ParsedSeries, List<ParserInfo>> scannedSeries = [];
 
         var psd = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), Substitute.For<IDirectoryService>(),
-            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>());
 
         psd.TrackSeriesAcrossScanResults(scanResults, scannedSeries);
 
@@ -661,13 +729,100 @@ public class ParseScannedFilesTests: AbstractDbTest
         ConcurrentDictionary<ParsedSeries, List<ParserInfo>> scannedSeries = [];
 
         var psd = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), Substitute.For<IDirectoryService>(),
-            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>(),
-            Substitute.For<IMediaErrorService>());
+            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>());
 
         psd.TrackSeriesAcrossScanResults(scanResults, scannedSeries);
 
         Assert.Single(scannedSeries);
         Assert.Single(scannedSeries.Values.First().DistinctBy(x => x.Series));
+    }
+
+    private static ParseScannedFiles GroupingScanner()
+    {
+        return new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), Substitute.For<IDirectoryService>(),
+            Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>());
+    }
+
+    [Fact]
+    public void TrackSeries_NamesMatchTwoSeries_ReturnsAmbiguousSeriesIssue()
+    {
+        var ambiguous = new ParserInfo
+        {
+            Series = "Accel World", LocalizedSeries = "Spice and Wolf", Filename = "Accel World v02.cbz",
+            FullFilePath = Root + "Accel World/Accel World v02.cbz",
+        };
+        List<ScanResult> scanResults =
+        [
+            new()
+            {
+                ParserInfos =
+                [
+                    new ParserInfo { Series = "Spice and Wolf" },
+                    new ParserInfo { Series = "Accel World" },
+                    ambiguous,
+                ]
+            }
+        ];
+        ConcurrentDictionary<ParsedSeries, List<ParserInfo>> scannedSeries = [];
+
+        var rejected = GroupingScanner().TrackSeriesAcrossScanResults(scanResults, scannedSeries);
+
+        var (info, issue) = Assert.Single(rejected);
+        Assert.Same(ambiguous, info);
+        Assert.Equal(MediaErrorReason.AmbiguousSeries, issue.Reason);
+        Assert.Contains("Spice and Wolf", issue.Details);
+        Assert.Contains("Accel World", issue.Details);
+        Assert.Equal(2, scannedSeries.Count);
+        Assert.DoesNotContain(scannedSeries.Values, infos => infos.Contains(ambiguous));
+    }
+
+    [Fact]
+    public void TrackSeries_LocalizedNameMatchesExistingKey_GroupsUnderIt()
+    {
+        List<ScanResult> scanResults =
+        [
+            new()
+            {
+                ParserInfos =
+                [
+                    new ParserInfo { Series = "Spice and Wolf" },
+                    new ParserInfo { Series = "Ookami to Koushinryou", LocalizedSeries = "SPICE AND WOLF" },
+                ]
+            }
+        ];
+        ConcurrentDictionary<ParsedSeries, List<ParserInfo>> scannedSeries = [];
+
+        var rejected = GroupingScanner().TrackSeriesAcrossScanResults(scanResults, scannedSeries);
+
+        Assert.Empty(rejected);
+        var (key, infos) = Assert.Single(scannedSeries);
+        Assert.Equal("Spice and Wolf", key.Name);
+        Assert.Equal(2, infos.Count);
+        Assert.All(infos, i => Assert.Equal("Spice and Wolf", i.Series));
+    }
+
+    [Fact]
+    public void TrackSeries_SameNameDifferentFormat_KeepsTwoKeys()
+    {
+        List<ScanResult> scanResults =
+        [
+            new()
+            {
+                ParserInfos =
+                [
+                    new ParserInfo { Series = "Spice and Wolf", Format = MangaFormat.Archive },
+                    new ParserInfo { Series = "Spice and Wolf", Format = MangaFormat.Epub },
+                    new ParserInfo { Series = "Spice and Wolf", Format = MangaFormat.Archive },
+                ]
+            }
+        ];
+        ConcurrentDictionary<ParsedSeries, List<ParserInfo>> scannedSeries = [];
+
+        GroupingScanner().TrackSeriesAcrossScanResults(scanResults, scannedSeries);
+
+        Assert.Equal(2, scannedSeries.Count);
+        Assert.Equal(2, scannedSeries.Single(s => s.Key.Format == MangaFormat.Archive).Value.Count);
+        Assert.Single(scannedSeries.Single(s => s.Key.Format == MangaFormat.Epub).Value);
     }
 
     #region ParseFiles Concurrency
@@ -691,7 +846,7 @@ public class ParseScannedFilesTests: AbstractDbTest
             _inner = new MockReadingItemService(directoryService, bookService);
         }
 
-        public ParserInfo ParseFile(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
+        public ParseFileResult ParseFile(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
         {
             Interlocked.Increment(ref _totalCalls);
             var running = Interlocked.Increment(ref _current);
@@ -713,11 +868,6 @@ public class ParseScannedFilesTests: AbstractDbTest
                 Interlocked.Decrement(ref _current);
             }
         }
-
-        public ParserInfo Parse(string path, string rootPath, string libraryRoot, LibraryType type, bool enableMetadata)
-            => _inner.Parse(path, rootPath, libraryRoot, type, enableMetadata);
-
-        public ComicInfo GetComicInfo(string filePath) => _inner.GetComicInfo(filePath);
 
         public int GetNumberOfPages(string filePath, MangaFormat format) => _inner.GetNumberOfPages(filePath, format);
 
@@ -746,7 +896,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         var ds = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), fileSystem);
         var readingItemService = new ConcurrencyTrackingReadingItemService(ds, Substitute.For<IBookService>());
         var psf = new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
-            readingItemService, Substitute.For<IEventHub>(), Substitute.For<IMediaErrorService>());
+            readingItemService, Substitute.For<IEventHub>());
 
         var library = await unitOfWork.LibraryRepository.GetLibraryForIdAsync(1,
             LibraryIncludes.Folders | LibraryIncludes.FileTypes);
@@ -754,7 +904,7 @@ public class ParseScannedFilesTests: AbstractDbTest
         library.Type = LibraryType.Manga;
 
         await psf.ScanLibrariesForSeries(library, new List<string> { Root + "Data/" }, false,
-            await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1));
+            Known(await unitOfWork.SeriesRepository.GetFolderPathMapAsync(1)));
 
         // Every file still goes through the parser
         Assert.Equal(fileCount, readingItemService.TotalCalls);
@@ -765,6 +915,271 @@ public class ParseScannedFilesTests: AbstractDbTest
         var expectedMax = Math.Max(1, Environment.ProcessorCount / 2);
         Assert.True(readingItemService.MaxObservedConcurrency <= expectedMax,
             $"Observed parse concurrency {readingItemService.MaxObservedConcurrency} exceeded the cap {expectedMax}");
+    }
+
+    #endregion
+
+    #region Failed Files
+
+    private static readonly string FictionFolder = Root + "Fiction";
+    private static readonly string MurderbotFolder = FictionFolder + "/Martha Wells/The Murderbot Diaries";
+    private static readonly DateTime FailedWriteTime = new(2026, 10, 5, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly FileStamp Broken = new($"{MurderbotFolder}/Fugitive Telemetry.epub", 100, FailedWriteTime);
+    private static readonly FileStamp Readable = new($"{MurderbotFolder}/All Systems Red.epub", 200, FailedWriteTime);
+    private static readonly ParseIssue CorruptEpub = new(MediaErrorReason.CorruptEpub, "details");
+
+    private static ParseScannedFiles FailedFileScanner(IDirectoryService ds, IReadingItemService? reader = null)
+    {
+        return new ParseScannedFiles(Substitute.For<ILogger<ParseScannedFiles>>(), ds,
+            reader ?? Substitute.For<IReadingItemService>(), Substitute.For<IEventHub>());
+    }
+
+    private static IDirectoryService ListingOf(params FileStamp[] files)
+    {
+        var ds = Substitute.For<IDirectoryService>();
+        var tree = new FolderTree(FictionFolder);
+        tree.Add(MurderbotFolder, FictionFolder, files);
+        ds.ListFolderTreeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<GlobMatcher?>(), Arg.Any<Func<string, Task>>(), false)
+            .Returns(tree);
+
+        var seriesTree = new FolderTree(MurderbotFolder);
+        seriesTree.AddRootFiles(files);
+        ds.ListFolderTreeAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<GlobMatcher?>(), Arg.Any<Func<string, Task>>(), true)
+            .Returns(seriesTree);
+        return ds;
+    }
+
+    private static IReadingItemService ReaderReturning(Func<string, ParseFileResult> resultForPath)
+    {
+        var reader = Substitute.For<IReadingItemService>();
+        reader.ParseFile(default!, default!, default!, default, default).ReturnsForAnyArgs(ci => resultForPath(ci.ArgAt<string>(0)));
+        return reader;
+    }
+
+    private static ParserInfo MurderbotInfo(FileStamp file, string series = "The Murderbot Diaries")
+    {
+        return new ParserInfo
+        {
+            Series = series,
+            Filename = Path.GetFileName(file.Path),
+            FullFilePath = file.Path,
+            Format = MangaFormat.Epub,
+            Volumes = Parser.LooseLeafVolume,
+            Chapters = Parser.DefaultChapter,
+        };
+    }
+
+    private static Library BooksLibrary()
+    {
+        return new LibraryBuilder("Books", LibraryType.Book).WithFolderPath(new FolderPathBuilder(FictionFolder).Build()).Build();
+    }
+
+    private static FailedFile AsFailedFile(FileStamp stamp) => new(stamp.Path, stamp.Bytes, stamp.LastWriteTimeUtc);
+
+    private static SeriesModified Owner(string name, params FileStamp[] files)
+    {
+        return new SeriesModified
+        {
+            SeriesName = name,
+            FolderPath = MurderbotFolder,
+            LowestFolderPath = MurderbotFolder,
+            LastScanned = DateTime.Now,
+            LibraryRoots = [FictionFolder],
+            FilesByFolder = new Dictionary<string, IReadOnlyList<KnownFile>>
+            {
+                [MurderbotFolder] = files.Select((f, i) => new KnownFile(i + 1, f.Path, f.Bytes, f.LastWriteTimeUtc)).ToList(),
+            },
+        };
+    }
+
+    private static Dictionary<string, IList<SeriesModified>> FolderOwnedBy(params SeriesModified[] owners)
+    {
+        return new Dictionary<string, IList<SeriesModified>> { [MurderbotFolder] = owners.ToList() };
+    }
+
+    private static Dictionary<string, IList<SeriesModified>> MurderbotOwnsReadable()
+    {
+        return FolderOwnedBy(Owner("The Murderbot Diaries", Readable));
+    }
+
+    private static KnownSeriesFolders Known(IDictionary<string, IList<SeriesModified>> byFolder, bool forced = false) => new(byFolder, forced);
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ScanFiles_FolderWithOnlyAFailedFile_IsSkippedUnlessForced(bool forceCheck, bool expectedChanged)
+    {
+        var psf = FailedFileScanner(ListingOf(Broken));
+
+        var result = await psf.ScanFiles(FictionFolder, true, Known(new Dictionary<string, IList<SeriesModified>>(), forceCheck), BooksLibrary(),
+            [AsFailedFile(Broken)]);
+
+        Assert.Equal(expectedChanged, Assert.Single(result).HasChanged);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task ScanFiles_SeriesFolderWithAFailedFile_IsSkippedWhileTheRowMatches(bool hasRow, bool expectedChanged)
+    {
+        var psf = FailedFileScanner(ListingOf(Readable, Broken));
+
+        var result = await psf.ScanFiles(MurderbotFolder, false, Known(MurderbotOwnsReadable()), BooksLibrary(),
+            failedFiles: hasRow ? [AsFailedFile(Broken)] : []);
+
+        Assert.Equal(expectedChanged, Assert.Single(result).HasChanged);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ScanFiles_LooseFailedFileInParentFolder_IsSkippedWhileTheRowMatches(bool hasRow)
+    {
+        var author = FictionFolder + "/Martha Wells";
+        var loose = new FileStamp($"{author}/Compulsory.epub", 300, FailedWriteTime);
+        var ds = Substitute.For<IDirectoryService>();
+        var tree = new FolderTree(FictionFolder);
+        tree.Add(author, FictionFolder, [loose]);
+        tree.Add(MurderbotFolder, author, [Readable]);
+        ds.ListFolderTreeAsync(default!, default!, default, default!).ReturnsForAnyArgs(tree);
+        var psf = FailedFileScanner(ds);
+
+        var result = await psf.ScanFiles(FictionFolder, true, Known(new Dictionary<string, IList<SeriesModified>>()), BooksLibrary(),
+            failedFiles: hasRow ? [AsFailedFile(loose)] : []);
+
+        var authorResult = result.SingleOrDefault(r => r.Folder == author);
+        if (hasRow)
+        {
+            Assert.Null(authorResult);
+        }
+        else
+        {
+            Assert.Contains(loose, authorResult!.Files);
+        }
+    }
+
+    [Fact]
+    public async Task ScanFiles_SeriesFolderNotInMap_FailedFileDoesNotSkipIt()
+    {
+        var psf = FailedFileScanner(ListingOf(Broken));
+
+        var result = await psf.ScanFiles(MurderbotFolder, false, Known(new Dictionary<string, IList<SeriesModified>>()), BooksLibrary(),
+            failedFiles: [AsFailedFile(Broken)]);
+
+        Assert.True(Assert.Single(result).HasChanged);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(120)]
+    public async Task ScanLibrariesForSeries_FailedParse_IsCollectedWithItsStamp(int fileCount)
+    {
+        var files = Enumerable.Range(0, fileCount)
+            .Select(i => new FileStamp($"{MurderbotFolder}/Book {i}.epub".Replace('/', '\\'), 100 + i, FailedWriteTime.AddMinutes(i)))
+            .ToArray();
+        var failing = files.Where((_, i) => i % 2 == 1).ToList();
+        var failingPaths = failing.Select(f => f.Path).ToHashSet();
+        var reader = ReaderReturning(path => failingPaths.Contains(path) ? ParseFileResult.Failed(CorruptEpub) : new ParseFileResult(null));
+        var psf = FailedFileScanner(ListingOf(files), reader);
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()));
+
+        var expected = failing
+            .Select(f => new ScanIssue(f.Path.Replace('\\', '/'), f.Bytes, f.LastWriteTimeUtc, CorruptEpub.Reason, CorruptEpub.Details))
+            .ToList();
+        Assert.Equal(expected, psf.Issues);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("[&/")]
+    public async Task ScanLibrariesForSeries_NoUsableSeriesName_IsCollectedWithItsStamp(string series)
+    {
+        var reader = ReaderReturning(_ => new ParseFileResult(MurderbotInfo(Broken, series)));
+        var psf = FailedFileScanner(ListingOf(Broken), reader);
+
+        var result = await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()));
+
+        Assert.Empty(result);
+        var issue = Assert.Single(psf.Issues);
+        Assert.Equal((Broken.Path, Broken.Bytes, Broken.LastWriteTimeUtc), (issue.Path, issue.Bytes, issue.LastWriteTimeUtc));
+        Assert.Equal(MediaErrorReason.NoSeriesName, issue.Reason);
+    }
+
+    [Fact]
+    public async Task ScanLibrariesForSeries_ImportedFileWithAnIssue_IsKeptWithTheIssue()
+    {
+        var notStrict = new ParseIssue(MediaErrorReason.EpubNotStrict, "navigation file is not a valid XHTML file");
+        var reader = ReaderReturning(_ => new ParseFileResult(MurderbotInfo(Broken), notStrict));
+        var psf = FailedFileScanner(ListingOf(Broken), reader);
+
+        var result = await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()));
+
+        Assert.Single(result);
+        Assert.Equal(MediaErrorReason.EpubNotStrict, Assert.Single(psf.Issues).Reason);
+    }
+
+    [Fact]
+    public async Task ScanLibrariesForSeries_RejectedFile_ReplacesItsMetadataIssue()
+    {
+        var unreadable = new ParseIssue(MediaErrorReason.MetadataUnreadable, "details");
+        var reader = ReaderReturning(_ => new ParseFileResult(MurderbotInfo(Broken, "[&/"), unreadable));
+        var psf = FailedFileScanner(ListingOf(Broken), reader);
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()));
+
+        Assert.Equal(MediaErrorReason.NoSeriesName, Assert.Single(psf.Issues).Reason);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScanLibrariesForSeries_FailedFileThatParsesNow_IsResolved(bool forceCheck)
+    {
+        var replaced = Broken with { Bytes = Broken.Bytes + 1 };
+        var reader = ReaderReturning(_ => new ParseFileResult(MurderbotInfo(replaced)));
+        var psf = FailedFileScanner(ListingOf(replaced), reader);
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>(), forceCheck),
+            [AsFailedFile(Broken)]);
+
+        Assert.Empty(psf.Issues);
+        Assert.Equal([Broken.Path], psf.ResolvedFailedFiles);
+    }
+
+    [Fact]
+    public async Task ScanLibrariesForSeries_FailedFileDeleted_IsResolved()
+    {
+        var psf = FailedFileScanner(ListingOf(Readable), ReaderReturning(_ => new ParseFileResult(MurderbotInfo(Readable))));
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(MurderbotOwnsReadable()), [AsFailedFile(Broken)]);
+
+        Assert.Equal([Broken.Path], psf.ResolvedFailedFiles);
+    }
+
+    [Fact]
+    public async Task ScanLibrariesForSeries_FailedFileStillFailing_IsNotResolved()
+    {
+        var replaced = Broken with { Bytes = Broken.Bytes + 1 };
+        var psf = FailedFileScanner(ListingOf(replaced), ReaderReturning(_ => ParseFileResult.Failed(CorruptEpub)));
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()),
+            [AsFailedFile(Broken)]);
+
+        Assert.Empty(psf.ResolvedFailedFiles);
+        Assert.Equal(replaced.Bytes, Assert.Single(psf.Issues).Bytes);
+    }
+
+    [Fact]
+    public async Task ScanLibrariesForSeries_UnchangedFolder_KeepsItsFailedFile()
+    {
+        var psf = FailedFileScanner(ListingOf(Broken));
+
+        await psf.ScanLibrariesForSeries(BooksLibrary(), [FictionFolder], true, Known(new Dictionary<string, IList<SeriesModified>>()),
+            [AsFailedFile(Broken)]);
+
+        Assert.Empty(psf.Issues);
+        Assert.Empty(psf.ResolvedFailedFiles);
     }
 
     #endregion

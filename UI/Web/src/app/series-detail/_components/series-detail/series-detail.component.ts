@@ -15,7 +15,6 @@ import {
   signal,
   viewChild
 } from '@angular/core';
-import {ReactiveFormsModule} from '@angular/forms';
 import {ActivatedRoute, Router, RouterLink} from '@angular/router';
 import {
   NgbDropdown,
@@ -40,7 +39,7 @@ import {takeUntilDestroyed} from "@angular/core/rxjs-interop";
 import {UserReview} from "../../../_models/user-review";
 import {ExternalSeriesCardComponent} from '../../../cards/external-series-card/external-series-card.component';
 import {SeriesCardComponent} from '../../../cards/series-card/series-card.component';
-import {VirtualScrollerModule} from '@iharbeck/ngx-virtual-scroller';
+import {VirtualScrollerComponent} from '@kareadita/ngx-virtual-scroller';
 import {BulkOperationsComponent} from '../../../cards/bulk-operations/bulk-operations.component';
 import {translate, TranslocoDirective} from "@jsverse/transloco";
 import {CardActionablesComponent} from "../../../_single-module/card-actionables/card-actionables.component";
@@ -123,6 +122,8 @@ import {SeriesMetadata} from "../../../_models/metadata/series-metadata";
 import {ReadingList} from "../../../_models/reading-list/reading-list";
 import {SeriesRemovedEvent} from "../../../_models/events/series-removed-event";
 import {ScanSeriesEvent} from "../../../_models/events/scan-series-event";
+import {NotificationProgressEvent} from "../../../_models/events/notification-progress-event";
+import {LibraryScanSummary} from "../../../_models/activity/library-scan-summary";
 import {RelatedSeries} from "../../../_models/series-detail/related-series";
 import {RelationKind} from "../../../_models/series-detail/relation-kind";
 import {EditSeriesModalComponent} from "../../../cards/_modals/edit-series-modal/edit-series-modal.component";
@@ -131,6 +132,10 @@ import {StatisticsService} from "../../../_services/statistics.service";
 import {ReadingHistoryItem} from "../../../_models/stats/reading-history-item";
 import {Pagination} from "../../../_models/pagination";
 import {Series} from "../../../_models/series";
+import {ServerService} from "../../../_services/server.service";
+import {
+  GenericListModalComponent
+} from "../../../statistics/_components/_modals/generic-list-modal/generic-list-modal.component";
 
 interface StoryLineItem {
   chapter?: ChapterCardEntity;
@@ -145,10 +150,10 @@ const READING_HISTORY_PAGE_SIZE = 10;
   templateUrl: './series-detail.component.html',
   styleUrls: ['./series-detail.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CardActionablesComponent, ReactiveFormsModule, NgStyle,
+  imports: [CardActionablesComponent, NgStyle,
     NgbTooltip, NgbDropdown, NgbDropdownToggle, NgbDropdownMenu,
     NgbDropdownItem, BulkOperationsComponent,
-    NgbNav, NgbNavItem, NgbNavLink, NgbNavContent, VirtualScrollerModule, SeriesCardComponent, ExternalSeriesCardComponent, NgbNavOutlet, NgbPopover, KavitaplusTooltipComponent,
+    NgbNav, NgbNavItem, NgbNavLink, NgbNavContent, VirtualScrollerComponent, SeriesCardComponent, ExternalSeriesCardComponent, NgbNavOutlet, NgbPopover, KavitaplusTooltipComponent,
     TranslocoDirective, NgTemplateOutlet, NextExpectedCardComponent,
     NgClass, DetailsTabComponent, DefaultValuePipe, ExternalRatingComponent, ReadMoreComponent, RouterLink, BadgeExpanderComponent,
     PublicationStatusPipe, MetadataDetailRowComponent, DownloadButtonComponent, RelatedTabComponent, CoverImageComponent, ReviewsComponent,
@@ -156,7 +161,6 @@ const READING_HISTORY_PAGE_SIZE = 10;
 })
 class SeriesDetailComponent implements OnInit, AfterViewInit {
 
-  protected readonly DownloadEntityType = DownloadEntityType;
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly seriesService = inject(SeriesService);
@@ -189,8 +193,13 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
   private readonly entityTitleService = inject(EntityTitleService);
   private readonly statisticsService = inject(StatisticsService);
   private readonly drawerService = inject(DrawerService);
+  private readonly serverService = inject(ServerService);
 
   readonly scrollingBlock = viewChild<ElementRef<HTMLDivElement>>('scrollingBlock');
+  /**
+   * The element that actually scrolls the page (the app shell's companion bar), for virtual scrollers to track
+   */
+  protected readonly companionBar = this.document.querySelector<HTMLElement>('.companion-bar') ?? undefined;
 
 
   seriesId = input(0, {transform: numberAttribute });
@@ -269,8 +278,8 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
     if (!currentlyReadingChp.isSpecial) {
       const vol = this.volumes().filter(v => v.id === currentlyReadingChp.volumeId);
 
+      const volumeLocaleKey = 'common.volume-num-shorthand';
       let chapterLocaleKey = 'common.chapter-num-shorthand';
-      let volumeLocaleKey = 'common.volume-num-shorthand';
       switch (this.libraryType()) {
         case LibraryType.ComicVine:
         case LibraryType.Comic:
@@ -372,6 +381,19 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
   nextExpectedChapter = signal<NextExpectedChapter | null>(null);
   loadPageSource = new ReplaySubject<boolean>(1);
   loadPage$ = this.loadPageSource.asObservable();
+
+  private readonly mediaErrorResource = this.serverService.hasMediaErrorsResource(() =>
+    this.accountService.hasAdminRole() ? this.seriesId() : undefined
+  );
+
+  readonly showMediaIssueWarning = computed(() => {
+    const errors = this.mediaErrorResource.value() ?? [];
+    return errors.length > 0;
+  });
+
+  readonly mediaErrors = computed(() => {
+    return this.mediaErrorResource.value() ?? [];
+  });
 
   readonly useBookLogic = computed(() => {
     const libType = this.libraryType();
@@ -480,7 +502,7 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
 
     this.bulkSelectionService.registerResolver(() => {
       // Tab-dependent chapter array
-      let chapterArray = this.activeTabId === Tabs.Chapters ? this.chapters() : this.storylineChapters();
+      const chapterArray = this.activeTabId === Tabs.Chapters ? this.chapters() : this.storylineChapters();
       const offset = this.activeTabId === Tabs.Storyline ? this.volumes().length : 0;
 
       const volIndices = this.bulkSelectionService.getSelectedCardsForSource('volume');
@@ -551,6 +573,13 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
       } else if (event.event === EVENTS.SeriesUpdated) {
         if ((event.payload as SeriesUpdateEvent).id === this.seriesId()) {
           this.loadPageSource.next(false);
+        }
+      } else if (event.event === EVENTS.NotificationProgress) {
+        // Problem rows get their series only at scan end, after the ScanSeries event
+        const progress = event.payload as NotificationProgressEvent;
+        if (progress.name === EVENTS.ScanProgress && progress.eventType === 'ended'
+          && (progress.body as LibraryScanSummary | null)?.libraryId === this.libraryId()) {
+          this.mediaErrorResource.reload();
         }
       } else if (event.event === EVENTS.ExternalMetadataUpdate) {
         if ((event.payload as ExternalMetadataUpdateEvent).seriesId === this.seriesId()) {
@@ -899,7 +928,7 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
 
   openEditSeriesModal() {
     const modalRef = this.modalService.open(EditSeriesModalComponent);
-    modalRef.componentInstance.series = this.series();
+    modalRef.setInput('series', this.series());
     modalRef.closed.subscribe((closeResult: ModalResult<Series>) => {
       if (closeResult.success) {
         window.scrollTo(0, 0);
@@ -954,12 +983,18 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
     patchEntitySignal(this.chapters, c);
     patchEntitySignal(this.specials, c);
     patchEntitySignal(this.storylineChapters, c);
-    this.setContinuePoint();
+    this.loadPageSource.next(false);
   }
 
   updateVolume(c: Volume) {
     patchEntitySignal(this.volumes, c);
-    this.setContinuePoint();
+    this.loadPageSource.next(false);
+  }
+
+  showMediaErrors() {
+    const ref = this.modalService.open(GenericListModalComponent);
+    ref.setInput('items', this.mediaErrors().map(m => m.filePath));
+    ref.setInput('title', translate('series-detail.media-errors-title'));
   }
 
   protected readonly LibraryType = LibraryType;
@@ -973,6 +1008,7 @@ class SeriesDetailComponent implements OnInit, AfterViewInit {
   protected readonly Breakpoint = Breakpoint;
   protected readonly READING_HISTORY_PAGE_SIZE = READING_HISTORY_PAGE_SIZE;
   protected readonly PublicationStatus = PublicationStatus;
+  protected readonly DownloadEntityType = DownloadEntityType;
 }
 
 export default SeriesDetailComponent
