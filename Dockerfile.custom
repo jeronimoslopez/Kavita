@@ -1,0 +1,72 @@
+#Builds Kavita from source with the same steps as build.sh, so the fork doesn't depend on upstream's release tooling.
+#The stock Dockerfile expects prebuilt tarballs in _output, and only Kareadita's CI produces those.
+
+#Assembly version baked into the build. The csproj lags one behind each release because upstream bumps it in CI.
+ARG KAVITA_VERSION
+
+#The UI output is the same on every architecture, so build it once on the host platform
+FROM --platform=$BUILDPLATFORM node:24-bookworm AS ui
+
+WORKDIR /src/UI/Web
+COPY UI/Web/package.json UI/Web/package-lock.json ./
+RUN npm ci --legacy-peer-deps
+COPY UI/Web/ ./
+RUN npm run prod
+
+#Cross-publish the server for the target platform from the host's SDK
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS server
+
+ARG TARGETARCH
+ARG KAVITA_VERSION
+
+WORKDIR /src
+COPY . .
+COPY --from=ui /src/UI/Web/dist/browser/ Kavita.Server/wwwroot/
+
+RUN set -eux; \
+    test -n "$KAVITA_VERSION" || { echo "KAVITA_VERSION build arg is required" >&2; exit 1; }; \
+    case "$TARGETARCH" in \
+      amd64) RID=linux-x64   ;; \
+      arm64) RID=linux-arm64 ;; \
+      arm)   RID=linux-arm   ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac; \
+    dotnet publish Kavita.Server/Kavita.Server.csproj -c Release --self-contained --runtime "$RID" \
+      -p:AssemblyVersion="$KAVITA_VERSION" -o /Kavita; \
+    rm -rf /Kavita/BuildHost-net472 /Kavita/BuildHost-netcore /Kavita/config/cache-long; \
+    cp INSTALL.txt /Kavita/README.txt; \
+    cp LICENSE /Kavita/LICENSE.txt; \
+    mkdir -p /Kavita/config; \
+    cp Kavita.Server/config/appsettings.json /Kavita/config/appsettings-init.json; \
+    mv /Kavita/Kavita.Server /Kavita/Kavita; \
+    chmod +x /Kavita/Kavita
+
+#Production image, copied from the stock Dockerfile
+FROM ubuntu:noble
+
+COPY --from=server /Kavita /kavita
+COPY Kavita.Server/config/appsettings.json /tmp/config/appsettings.json
+
+#Installs program dependencies
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y libicu-dev libgdiplus curl tzdata libjemalloc2 \
+  && rm -rf /var/lib/apt/lists/*
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5000
+
+WORKDIR /kavita
+
+HEALTHCHECK --interval=30s --timeout=15s --start-period=30s --retries=3 CMD curl -fsS http://localhost:5000/api/health || exit 1
+
+# Enable detection of running in a container
+ENV DOTNET_RUNNING_IN_CONTAINER=true
+# Set the time zone
+ENV TZ=UTC
+
+ENTRYPOINT [ "/bin/bash" ]
+CMD ["/entrypoint.sh"]

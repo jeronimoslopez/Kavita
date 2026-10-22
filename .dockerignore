@@ -1,0 +1,16 @@
+.git
+.vs
+.vscode
+.idea
+**/bin
+**/obj
+_output
+UI/Web/node_modules
+UI/Web/dist
+UI/Web/.angular
+Kavita.Server/wwwroot
+Kavita.Server/config/cache*
+Kavita.Server/config/logs
+Kavita.Server/config/*.db*
+Dockerfile*
+.dockerignore
