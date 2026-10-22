@@ -38,6 +38,7 @@ export interface BookReadingProfileFormModel {
   bookReaderLayoutMode: BookPageLayoutMode;
   bookReaderImmersiveMode: boolean;
   bookReaderDisableBookmarkIcon: boolean;
+  bookReaderYomitanEnabled: boolean;
 }
 
 @Injectable()
@@ -64,6 +65,7 @@ export class EpubReaderSettingsService {
 
   formModel = signal<BookReadingProfileFormModel>({
     bookReaderDisableBookmarkIcon: false,
+    bookReaderYomitanEnabled: false,
     bookReaderFontFamily: "",
     bookReaderFontSize: 0,
     bookReaderImmersiveMode: false,
@@ -108,6 +110,7 @@ export class EpubReaderSettingsService {
   public readonly activeTheme = this._activeTheme.asReadonly();
   public readonly clickToPaginate = computed(() => this.formGroup.bookReaderTapToPaginate().value());
   public readonly immersiveMode = computed(() => this.formGroup.bookReaderImmersiveMode().value());
+  public readonly yomitanEnabled = computed(() => this.formGroup.bookReaderYomitanEnabled().value());
   public readonly isFullscreen = this._isFullscreen.asReadonly();
   public readonly epubFonts = this._epubFonts.asReadonly();
 
@@ -367,6 +370,7 @@ export class EpubReaderSettingsService {
 
     this.formModel.set({
       bookReaderDisableBookmarkIcon: profile.bookReaderDisableBookmarkIcon,
+      bookReaderYomitanEnabled: profile.bookReaderYomitanEnabled,
       bookReaderFontFamily: profile.bookReaderFontFamily,
       bookReaderFontSize: profile.bookReaderFontSize,
       bookReaderImmersiveMode: profile.bookReaderImmersiveMode,
@@ -433,6 +437,7 @@ export class EpubReaderSettingsService {
     data.bookReaderLineSpacing = modelSettings.bookReaderLineSpacing;
     data.bookReaderMargin = modelSettings.bookReaderMargin;
     data.bookReaderDisableBookmarkIcon = modelSettings.bookReaderDisableBookmarkIcon;
+    data.bookReaderYomitanEnabled = modelSettings.bookReaderYomitanEnabled;
 
     // Update from signals
     data.bookReaderTapToPaginate = this.clickToPaginate();

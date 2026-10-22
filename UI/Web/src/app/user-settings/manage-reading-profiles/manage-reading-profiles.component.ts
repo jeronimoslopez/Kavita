@@ -147,6 +147,7 @@ export class ManageReadingProfilesComponent implements OnInit {
     autoCloseMenu: false,
     backgroundColor: "",
     bookReaderDisableBookmarkIcon: false,
+    bookReaderYomitanEnabled: false,
     bookReaderFontFamily: "",
     bookReaderFontSize: 0,
     bookReaderImmersiveMode: false,

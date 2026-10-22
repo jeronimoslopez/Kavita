@@ -1460,6 +1460,7 @@
     },
 
     "book-reader": {
+        "yomitan-failed": "Yomitan couldn't start. Check that the dictionaries finished importing.",
         "page-label": "Page",
         "skip-header": "Skip to main content",
         "loading-book": "Loading book…",
@@ -2066,6 +2067,8 @@
         "margin-label": "{{manage-reading-profiles.margin-book-label}}",
         "disable-bookmark-icon-label": "{{manage-reading-profiles.disable-bookmark-icon-label}}",
         "disable-bookmark-icon-tooltip": "{{manage-reading-profiles.disable-bookmark-icon-tooltip}}",
+        "yomitan-enabled-label": "{{manage-reading-profiles.yomitan-enabled-label}}",
+        "yomitan-enabled-tooltip": "{{manage-reading-profiles.yomitan-enabled-tooltip}}",
         "reset-to-defaults": "Reset to Defaults",
         "update-parent": "Save to {{name}}",
         "loading": "loading",
@@ -4859,6 +4862,8 @@
         "margin-book-tooltip": "How much spacing on each side of the screen. This will override to 0 on mobile devices regardless of this setting.",
         "disable-bookmark-icon-label": "Disable Bookmark Icon",
         "disable-bookmark-icon-tooltip": "Removes bookmark icons from images in the reader",
+        "yomitan-enabled-label": "Yomitan Dictionary",
+        "yomitan-enabled-tooltip": "Click a Japanese word in the book to look it up in Yomitan's pop-up dictionary",
 
         "pdf-scroll-mode-label": "Scroll Mode",
         "pdf-scroll-mode-tooltip": "How you scroll through pages. Vertical/Horizontal and Tap to Paginate (no scroll)",
