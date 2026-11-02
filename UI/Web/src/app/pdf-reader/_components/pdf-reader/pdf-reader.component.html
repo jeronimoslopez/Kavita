@@ -67,6 +67,12 @@
               </button>
             }
 
+            <button [ngbTooltip]="yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')" (click)="toggleYomitan()"
+                    [attr.aria-pressed]="yomitanEnabled()" class="btn-icon mt-0 mb-0 pt-1 pb-0 toolbarButton">
+              <i class="toolbar-icon fa fa-language" [ngStyle]="{color: fontColor, opacity: yomitanEnabled() ? 1 : 0.5}" aria-hidden="true"></i>
+              <span class="visually-hidden">{{yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')}}</span>
+            </button>
+
             @if (incognitoMode) {
               <button [ngbTooltip]="t('toggle-incognito')" (click)="turnOffIncognito()" class="btn-icon mt-0 mb-0 pt-1 pb-0 toolbarButton">
                 <i class="toolbar-icon fa fa-glasses" [ngStyle]="{color: fontColor}" aria-hidden="true"></i>
