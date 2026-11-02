@@ -59,20 +59,27 @@ class KavitaYomitan {
         this._lastScannedText = null;
         this._includeSelector = null;
         this._excludeSelector = null;
+        /** The reader's layoutAwareScan, which wins over the user's while set. */
+        this._layoutAwareScanOverride = null;
+        /** The user's own layoutAwareScan, put back when the override is cleared. */
+        this._userLayoutAwareScan = false;
     }
 
     /**
      * Starts scanning text inside elements matching `includeSelector`. Clicking a word looks it up,
      * on top of whatever scanning inputs the user configured in the Scanning settings.
-     * @param {{includeSelector: string, excludeSelector: string}} details
+     * `layoutAwareScan` overrides the user's setting until the next call. Leave it out to use theirs.
+     * @param {{includeSelector: string, excludeSelector: string, layoutAwareScan?: boolean}} details
      */
-    async enableScanning({includeSelector, excludeSelector}) {
+    async enableScanning({includeSelector, excludeSelector, layoutAwareScan}) {
         this._includeSelector = includeSelector;
         this._excludeSelector = excludeSelector;
+        this._layoutAwareScanOverride = layoutAwareScan ?? null;
         const frontend = await this._getFrontend();
         const scanner = frontend._textScanner;
         scanner.includeSelector = includeSelector;
         scanner.excludeSelector = excludeSelector;
+        scanner._layoutAwareScan = this._layoutAwareScanOverride ?? this._userLayoutAwareScan;
         frontend.setDisabledOverride(false);
     }
 
@@ -211,6 +218,15 @@ class KavitaYomitan {
         scanner._searchOnClick = true;
         scanner.includeSelector = this._includeSelector;
         scanner.excludeSelector = this._excludeSelector;
+        // Frontend pushes the user's scanning options on every options change, so the reader's
+        // layoutAwareScan override has to sit in front of setOptions to stick.
+        const setOptions = scanner.setOptions.bind(scanner);
+        scanner.setOptions = (options) => {
+            if (typeof options.layoutAwareScan === 'boolean') {
+                this._userLayoutAwareScan = options.layoutAwareScan;
+            }
+            setOptions({...options, layoutAwareScan: this._layoutAwareScanOverride ?? options.layoutAwareScan});
+        };
         await frontend.prepare();
         scanner.on('searchSuccess', ({textSource}) => { this._lastScannedText = textSource.text(); });
         this._frontend = frontend;

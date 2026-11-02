@@ -7,7 +7,7 @@ import {AccountService} from "./account.service";
  * loaded at runtime from assets, outside the Angular build.
  */
 interface KavitaYomitan {
-  enableScanning(details: {includeSelector: string, excludeSelector: string}): Promise<void>;
+  enableScanning(details: {includeSelector: string, excludeSelector: string, layoutAwareScan?: boolean}): Promise<void>;
   disableScanning(): Promise<void>;
   isScannableTextAt(x: number, y: number): boolean;
   isPopupVisible(): boolean;
@@ -57,12 +57,13 @@ export class YomitanService {
 
   /**
    * Turns on click-to-look-up for text inside the element matching `contentSelector`.
+   * @param options.layoutAwareScan Overrides the user's Yomitan setting for this reader. Leave it out to use theirs.
    */
-  async enableReaderScanning(contentSelector: string) {
+  async enableReaderScanning(contentSelector: string, options: {layoutAwareScan?: boolean} = {}) {
     this.scanningEnabled = true;
     const instance = await this.start();
     if (!this.scanningEnabled) return;
-    await instance.enableScanning({includeSelector: contentSelector, excludeSelector: READER_EXCLUDE_SELECTOR});
+    await instance.enableScanning({includeSelector: contentSelector, excludeSelector: READER_EXCLUDE_SELECTOR, ...options});
   }
 
   async disableReaderScanning() {
