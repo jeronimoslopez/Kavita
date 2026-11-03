@@ -1,5 +1,15 @@
 import {OcrStatus} from '../ocr-status';
 
+/** Which of the sidecar's engines reads a library's pages */
+export enum OcrEngine {
+  /** Manga for Manga and Comic libraries, Books for the rest */
+  Auto = 0,
+  /** NDLOCR-Lite */
+  Books = 1,
+  /** PP-OCRv6_manga */
+  Manga = 2,
+}
+
 export enum OcrLineKind {
   Body = 0,
   Title = 1,
@@ -9,7 +19,7 @@ export enum OcrLineKind {
   Folio = 5,
 }
 
-/** One OCR line. The box is a fraction of the page as pdf.js shows it, origin top left */
+/** One OCR line. The box is a fraction of the page image, origin top left */
 export interface OcrLine {
   order: number;
   text: string;
@@ -21,6 +31,8 @@ export interface OcrLine {
   kind: OcrLineKind;
   detectionConfidence: number;
   recognitionConfidence: number;
+  /** Lines with the same number are one speech bubble or caption. Only the manga engine groups lines */
+  block?: number | null;
 }
 
 export interface OcrPage {
