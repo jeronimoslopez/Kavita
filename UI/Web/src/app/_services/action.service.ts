@@ -217,8 +217,15 @@ export class ActionService {
         );
 
       case Action.RunOcr:
+        return this.ocrService.runSeries(series.id, false).pipe(
+          tap(queued => this.toastr.info(translate(queued > 0 ? 'toasts.ocr-queued' : 'toasts.ocr-nothing-queued', {name: series.name}))),
+          map(() => this.fromAction(action, series, 'none'))
+        );
+
       case Action.RerunOcr:
-        return this.ocrService.runSeries(series.id, action.action === Action.RerunOcr).pipe(
+        return from(this.confirmService.confirm(translate('toasts.confirm-rerun-ocr', {name: series.name}))).pipe(
+          filter(confirmed => confirmed),
+          switchMap(() => this.ocrService.runSeries(series.id, true)),
           tap(queued => this.toastr.info(translate(queued > 0 ? 'toasts.ocr-queued' : 'toasts.ocr-nothing-queued', {name: series.name}))),
           map(() => this.fromAction(action, series, 'none'))
         );
