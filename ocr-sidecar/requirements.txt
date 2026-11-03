@@ -12,3 +12,5 @@ tqdm==4.66.4
 fastapi==0.162.0
 uvicorn==0.54.0
 python-multipart==0.0.33
+# PP-OCRv6_manga's detector post-processing grows each text contour with it
+pyclipper==1.4.0

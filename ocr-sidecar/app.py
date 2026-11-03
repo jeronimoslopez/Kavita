@@ -7,7 +7,7 @@ import threading
 from contextlib import asynccontextmanager
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
 log = logging.getLogger("ocr-sidecar")
@@ -32,6 +32,17 @@ def load_ndlocr():
     return NdlocrEngine(threads=ocr_threads())
 
 
+def load_manga():
+    from engine_manga import MangaEngine
+
+    return MangaEngine(threads=ocr_threads())
+
+
+# The first engine is the default, so a request without an engine field gets
+# what it got before the manga engine existed.
+ENGINES = {"ndlocr": load_ndlocr, "manga": load_manga}
+
+
 def serialize(engine, result):
     return {
         "engine": engine.name,
@@ -47,6 +58,7 @@ def serialize(engine, result):
                 "kind": line.kind,
                 "detConf": round(float(line.det_conf), 4),
                 "recConf": round(float(line.rec_conf), 4),
+                **({"block": int(line.block)} if getattr(line, "block", None) is not None else {}),
             }
             for line in result.lines
         ],
@@ -66,36 +78,49 @@ def decode(data):
         raise HTTPException(400, f"could not decode image: {exc}") from exc
 
 
-def create_app(engine_factory=load_ndlocr):
+def create_app(engine_factories=None):
+    factories = engine_factories or ENGINES
+    default = next(iter(factories))
+
     @asynccontextmanager
     async def lifespan(app):
         # Models load once, before the server accepts requests.
-        app.state.engine = engine_factory()
-        log.info("engine %s %s ready", app.state.engine.name, app.state.engine.version)
+        app.state.engines = {key: factory() for key, factory in factories.items()}
+        for key, engine in app.state.engines.items():
+            log.info("engine %s (%s %s) ready", key, engine.name, engine.version)
         yield
 
     app = FastAPI(title="Kavita OCR sidecar", lifespan=lifespan)
-    # The engine already spreads one page over OCR_THREADS threads, so two pages
-    # at once would only compete for the same cores.
+    # Each engine already spreads one page over OCR_THREADS threads, so two
+    # pages at once would only compete for the same cores, whatever the engine.
     lock = threading.Lock()
+
+    def describe(engine):
+        return {"engine": engine.name, "engineVersion": engine.version, "ready": bool(engine.ready)}
 
     @app.get("/health")
     def health():
-        engine = app.state.engine
-        return {"engine": engine.name, "engineVersion": engine.version, "ready": bool(engine.ready)}
+        engines = app.state.engines
+        return {
+            **describe(engines[default]),
+            "ready": all(engine.ready for engine in engines.values()),
+            "engines": {key: describe(engine) for key, engine in engines.items()},
+        }
 
     # Plain def endpoints run in Starlette's thread pool, so the lock blocks a
     # worker thread and never the event loop.
     @app.post("/ocr")
-    def ocr(image: UploadFile = File(...)):
+    def ocr(image: UploadFile = File(...), engine: str = Form(default)):
+        chosen = app.state.engines.get(engine)
+        if chosen is None:
+            raise HTTPException(400, f"unknown engine {engine!r}, expected one of {sorted(app.state.engines)}")
         data = image.file.read(MAX_BYTES + 1)
         if len(data) > MAX_BYTES:
             raise HTTPException(413, f"image is over the {MAX_BYTES} byte limit")
         img = decode(data)
-        engine = app.state.engine
         with lock:
-            result = engine.recognize(img)
-        return serialize(engine, result)
+            result = chosen.recognize(img)
+        return serialize(chosen, result)
 
     return app
 

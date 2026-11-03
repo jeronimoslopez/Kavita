@@ -20,7 +20,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 class FakeLine:
-    def __init__(self, order, text, box, vertical, kind, det_conf, rec_conf):
+    def __init__(self, order, text, box, vertical, kind, det_conf, rec_conf, block=None):
         self.order = order
         self.text = text
         self.box = box
@@ -28,6 +28,7 @@ class FakeLine:
         self.kind = kind
         self.det_conf = det_conf
         self.rec_conf = rec_conf
+        self.block = block
 
 
 class FakeResult:
@@ -44,11 +45,12 @@ class FakeEngine:
     produce them, so the tests catch anything the JSON encoder can't take.
     """
 
-    name = "fake"
     version = "0"
     ready = True
 
-    def __init__(self, delay=0.0):
+    def __init__(self, delay=0.0, name="fake", block=None):
+        self.name = name
+        self.block = block
         self.delay = delay
         self.calls = []
         self.active = 0
@@ -65,8 +67,8 @@ class FakeEngine:
             h, w = img.shape[:2]
             return FakeResult(w, h, [
                 FakeLine(0, "吾輩は猫である。", [np.int64(10), 20, 30, np.int32(400)], np.bool_(True), "body",
-                         np.float32(0.95), np.float64(0.87654321)),
-                FakeLine(1, "わがはい", [42, 20, 12, 60], True, "ruby", 0.8, 0.5),
+                         np.float32(0.95), np.float64(0.87654321), self.block),
+                FakeLine(1, "わがはい", [42, 20, 12, 60], True, "ruby", 0.8, 0.5, self.block),
             ])
         finally:
             with self._count_lock:
@@ -80,7 +82,7 @@ def engine():
 
 @pytest.fixture
 def client(engine):
-    with TestClient(sidecar.create_app(engine_factory=lambda: engine)) as c:
+    with TestClient(sidecar.create_app({"ndlocr": lambda: engine})) as c:
         yield c
 
 
