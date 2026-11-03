@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jeronimoslopez/Kavita/ocr-sidecar/contract/ocr-response.schema.json",
+  "title": "OCR sidecar response for POST /ocr",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["engine", "engineVersion", "imageWidth", "imageHeight", "lines"],
+  "properties": {
+    "engine": { "type": "string", "minLength": 1 },
+    "engineVersion": { "type": "string", "minLength": 1 },
+    "imageWidth": { "type": "integer", "minimum": 1 },
+    "imageHeight": { "type": "integer", "minimum": 1 },
+    "lines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/line" }
+    }
+  },
+  "$defs": {
+    "line": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "text", "box", "vertical", "kind", "detConf", "recConf"],
+      "properties": {
+        "order": {
+          "description": "Position in reading order, 0-based and equal to the line's index in the array. Ruby follows the line it annotates.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": { "type": "string", "minLength": 1 },
+        "box": {
+          "description": "[x, y, width, height] in pixels of the posted image, origin top left.",
+          "type": "array",
+          "prefixItems": [
+            { "type": "integer", "minimum": 0 },
+            { "type": "integer", "minimum": 0 },
+            { "type": "integer", "minimum": 1 },
+            { "type": "integer", "minimum": 1 }
+          ],
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "vertical": {
+          "description": "True when the box is taller than 0.8 times its width, the recognizer's own rule.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["body", "caption", "title", "ruby", "header", "folio"]
+        },
+        "detConf": {
+          "description": "The layout detector's score for the box.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "recConf": {
+          "description": "The lowest per-character softmax probability the recognizer gave the line.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

@@ -16,3 +16,4 @@ Kavita.Server/config/*.db*
 Kavita.Server/config/yomitan
 Dockerfile*
 .dockerignore
+ocr-sidecar
