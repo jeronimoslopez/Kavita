@@ -1,0 +1,134 @@
+{
+  "engine": "ndlocr-lite",
+  "engineVersion": "e57f7c6+adapter.1",
+  "imageWidth": 1100,
+  "imageHeight": 1500,
+  "lines": [
+    {
+      "order": 0,
+      "text": "吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつ",
+      "box": [
+        957,
+        107,
+        46,
+        1251
+      ],
+      "vertical": true,
+      "kind": "body",
+      "detConf": 0.947,
+      "recConf": 0.9988
+    },
+    {
+      "order": 1,
+      "text": "わがはいねこなよんけんぞう",
+      "box": [
+        998,
+        110,
+        24,
+        1167
+      ],
+      "vertical": true,
+      "kind": "ruby",
+      "detConf": 0.862,
+      "recConf": 0.4736
+    },
+    {
+      "order": 2,
+      "text": "かぬ。何でも薄暗いじめじめした所でニヤーニヤー泣いていた事だ",
+      "box": [
+        874,
+        112,
+        45,
+        1251
+      ],
+      "vertical": true,
+      "kind": "body",
+      "detConf": 0.956,
+      "recConf": 0.7985
+    },
+    {
+      "order": 3,
+      "text": "うすぐら",
+      "box": [
+        918,
+        361,
+        15,
+        77
+      ],
+      "vertical": true,
+      "kind": "ruby",
+      "detConf": 0.84,
+      "recConf": 0.9999
+    },
+    {
+      "order": 4,
+      "text": "けは記憶している。吾輩はここで始めて人間というものを見た。し",
+      "box": [
+        789,
+        110,
+        43,
+        1255
+      ],
+      "vertical": true,
+      "kind": "body",
+      "detConf": 0.952,
+      "recConf": 0.9996
+    },
+    {
+      "order": 5,
+      "text": "きおく わがはい にんげん",
+      "box": [
+        832,
+        205,
+        22,
+        740
+      ],
+      "vertical": true,
+      "kind": "ruby",
+      "detConf": 0.872,
+      "recConf": 0.9565
+    },
+    {
+      "order": 6,
+      "text": "かもあとで聞くとそれは書生という人間中で一番獰悪な種族であつ",
+      "box": [
+        706,
+        112,
+        44,
+        1250
+      ],
+      "vertical": true,
+      "kind": "body",
+      "detConf": 0.956,
+      "recConf": 0.6842
+    },
+    {
+      "order": 7,
+      "text": "しよせいどうあく",
+      "box": [
+        751,
+        574,
+        18,
+        537
+      ],
+      "vertical": true,
+      "kind": "ruby",
+      "detConf": 0.836,
+      "recConf": 0.993
+    },
+    {
+      "order": 8,
+      "text": "たそうだ。",
+      "box": [
+        624,
+        112,
+        33,
+        192
+      ],
+      "vertical": true,
+      "kind": "body",
+      "detConf": 0.95,
+      "recConf": 0.9997
+    }
+  ]
+}
