@@ -1,0 +1,37 @@
+// The OCR text layer both readers draw over a page image. Its spans are added at runtime, so each reader includes this
+// under :host ::ng-deep .kavita-ocr-layer
+@mixin layer {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  overflow: clip;
+  z-index: 1;
+  line-height: 1;
+
+  > span {
+    position: absolute;
+    color: transparent;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0 0;
+    user-select: text;
+  }
+
+  span::selection {
+    background: rgb(0 0 255 / 25%);
+  }
+
+  &.outlined > span {
+    outline: 1px solid hsl(var(--ocr-hue) 80% 45%);
+    background: hsl(var(--ocr-hue) 80% 45% / 10%);
+  }
+
+  // Find matches, in pdf.js's find colors. They sit inside a line's span and take its place and stretch, so no padding
+  .kavita-ocr-match {
+    background: rgb(180 0 170 / 25%);
+
+    &.selected {
+      background: rgb(0 100 0 / 35%);
+    }
+  }
+}

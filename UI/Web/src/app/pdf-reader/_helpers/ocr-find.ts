@@ -1,5 +1,5 @@
 import {OcrPage} from '../../_models/ocr/ocr';
-import {drawnLines, OCR_LAYER_CLASS, OcrLineMatch, paintOcrMatches} from './ocr-overlay';
+import {drawnLines, OCR_LAYER_CLASS, OcrLineMatch, paintOcrMatches} from '../../reader-shared/_helpers/ocr-overlay';
 
 /**
  * Makes pdf.js's find search OCR text, so OCR matches share its counter, its next and previous, and its options.
