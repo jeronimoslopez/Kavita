@@ -4504,6 +4504,7 @@
         "scan-queued": "Scan queued for {{name}}",
         "ocr-queued": "OCR queued for {{name}}",
         "ocr-nothing-queued": "{{name}} has no PDFs to OCR. Check that its library has OCR turned on",
+        "confirm-rerun-ocr": "OCR every page of {{name}} again? On pages that already have text, the reader will select and look up the OCR text instead of the PDF's own, so only do this when the PDF's text is wrong.",
         "confirm-remove-ocr": "Delete the OCR text for {{name}}? It won't be OCR'd again until you run it.",
         "ocr-removed": "OCR text removed for {{name}}",
         "scan-all-queued": "Scan queued for all libraries",
