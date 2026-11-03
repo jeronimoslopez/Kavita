@@ -861,6 +861,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       filter(() => this.readerMode() !== ReaderMode.Webtoon),
       filter(img => !!img),
       tap(() => {
+        // Find turns pages too, and Enter in its box has to keep going to the next match
+        if (this.findOpen() && document.activeElement === this.findInput()?.nativeElement) return;
         this.imageElement()?.nativeElement?.focus();
       }),
     ).subscribe();
@@ -1011,11 +1013,13 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       return;
     }
     this.findOpen.set(true);
+    this.cancelMenuCloseTimer();
     setTimeout(() => this.findInput()?.nativeElement.focus());
   }
 
   closeFind() {
     this.findOpen.set(false);
+    if (this.menuOpen()) this.startMenuCloseTimer();
     this.findResult.set(null);
     this.findIndex.set(-1);
     this.ocrOverlay?.repaint();
@@ -1069,8 +1073,20 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   private selectFindMatch(index: number) {
     this.findIndex.set(index);
     const match = this.findResult()?.matches[index];
-    if (match && match.pageNumber - 1 !== this.pageNum()) this.goToPage(match.pageNumber - 1);
+    if (match) this.goToPageIndex(match.pageNumber - 1);
     this.ocrOverlay?.repaint();
+  }
+
+  /**
+   * Goes to a 0-based page. goToPage takes the number someone types in its prompt, which is 1-based except at the
+   * first and last page
+   */
+  private goToPageIndex(index: number) {
+    if (index === this.pageNum() || index < 0 || index >= this.maxPages()) return;
+    this.pagingDirectionSubject.next(index > this.pageNum() ? PAGING_DIRECTION.FORWARD : PAGING_DIRECTION.BACKWARDS);
+    this.setPageNum(this.adjustPagesForDoubleRenderer(index));
+    this.goToPageEvent.next(index);
+    this.render();
   }
 
   private paintFindMatches(layer: HTMLElement, page: OcrPage, src: string) {
@@ -1567,7 +1583,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   startMenuCloseTimer() {
-    if (!this.autoCloseMenu()) { return; }
+    // Someone typing a search keeps the menu, and the find bar in it, open
+    if (!this.autoCloseMenu() || this.findOpen()) { return; }
 
     this.menuTimeout = setTimeout(() => {
       this.toggleMenu();
