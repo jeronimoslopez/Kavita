@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Kavita.Models.DTOs.Ocr;
@@ -29,6 +30,11 @@ public interface IOcrService
     Task<OcrChapterStatusDto?> GetChapterStatusAsync(int chapterId, CancellationToken ct = default);
     /// <param name="pageNum">1-based, matching pdf.js</param>
     Task<OcrPageDto?> GetPageAsync(int chapterId, int pageNum, CancellationToken ct = default);
+    /// <summary>
+    /// Every page of the chapter's PDF that has OCR text, so the reader's find can search pages it hasn't drawn
+    /// </summary>
+    /// <returns>Null when the chapter has no PDF</returns>
+    Task<IList<OcrPageDto>?> GetChapterPagesAsync(int chapterId, CancellationToken ct = default);
     /// <summary>
     /// Moves the chapter's PDF ahead of the queue, because someone opened it
     /// </summary>

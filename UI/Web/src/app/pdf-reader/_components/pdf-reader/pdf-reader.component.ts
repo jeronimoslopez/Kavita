@@ -19,12 +19,13 @@ import {
   PageRenderedEvent,
   PageViewModeType,
   pdfDefaultOptions,
+  PDFNotificationService,
   ProgressBarEvent,
   ScrollModeType,
   SpreadType
 } from 'ngx-extended-pdf-viewer';
 import {ToastrService} from '@openng/ngx-toastr';
-import {filter, take} from 'rxjs';
+import {filter, firstValueFrom, take} from 'rxjs';
 import {NgbTooltip} from '@ng-bootstrap/ng-bootstrap';
 import {DOCUMENT, NgStyle} from '@angular/common';
 import {translate, TranslocoDirective} from "@jsverse/transloco";
@@ -54,6 +55,7 @@ import {OcrPage} from "../../../_models/ocr/ocr";
 import {OcrStatus} from "../../../_models/ocr-status";
 import {EVENTS, MessageHubService} from "../../../_services/message-hub.service";
 import {drawOcrLayer, OCR_LAYER_CLASS, setOcrOutlines} from "../../_helpers/ocr-overlay";
+import {OcrFind} from "../../_helpers/ocr-find";
 
 const KEYBIND_TARGETS = [
   {keyBindTarget: KeyBindTarget.OpenHelp},
@@ -90,6 +92,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
   private readonly yomitanService = inject(YomitanService);
   private readonly ocrService = inject(OcrService);
   private readonly messageHub = inject(MessageHubService);
+  private readonly pdfNotificationService = inject(PDFNotificationService);
 
 
   readonly container = viewChild.required<ElementRef>('container');
@@ -175,6 +178,10 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
    * The latest div pdf.js rendered for each 1-based page. pdf.js replaces a page's contents on every render
    */
   private readonly renderedPageDivs = new Map<number, HTMLElement>();
+  /**
+   * Lets the find bar search OCR text. It loads every OCR'd page on the first search, since find covers pages pdf.js hasn't rendered
+   */
+  private readonly ocrFind = new OcrFind(this.document, () => this.loadOcrPagesForFind());
 
   constructor() {
       this.navService.hideNavBar();
@@ -217,6 +224,11 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
       });
 
       effect(() => {
+        const app = this.pdfNotificationService.onPDFJSInitSignal();
+        if (app) this.ocrFind.install(app);
+      });
+
+      effect(() => {
         if (this.yomitanEnabled()) {
           // pdf.js positions every text run absolutely, and so does the OCR layer, so layout-aware scanning would end
           // each word at its span. One :is() keeps Yomitan's "selector, selector *" check matching inside both layers
@@ -247,6 +259,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
     this.navService.showSideNav();
     this.readerService.disableWakeLock();
     void this.yomitanService.disableReaderScanning();
+    this.ocrFind.dispose();
 
     window.removeEventListener('keydown', this.downloadHandler, { capture: true });
   }
@@ -433,7 +446,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
 
     const cached = this.ocrPageCache.get(pageNum);
     if (cached) {
-      drawOcrLayer(div, cached, this.ocrOutlines());
+      this.ocrFind.paint(drawOcrLayer(div, cached, this.ocrOutlines()));
       return;
     }
 
@@ -442,8 +455,15 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
       this.ocrPageCache.set(pageNum, page);
       // The page may have been re-rendered while its lines were loading
       const current = this.renderedPageDivs.get(pageNum);
-      if (current?.isConnected) drawOcrLayer(current, page, this.ocrOutlines());
+      if (current?.isConnected) this.ocrFind.paint(drawOcrLayer(current, page, this.ocrOutlines()));
     });
+  }
+
+  private async loadOcrPagesForFind() {
+    const pages = await firstValueFrom(this.ocrService.getChapterPages(this.chapterId)) ?? [];
+    // These were fetched just now, so they're at least as new as anything cached
+    pages.forEach(page => this.ocrPageCache.set(page.pageNumber, page));
+    return pages;
   }
 
   toggleOcrOutlines() {

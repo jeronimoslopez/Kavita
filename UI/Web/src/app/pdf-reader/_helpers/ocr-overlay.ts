@@ -13,6 +13,27 @@ export interface OcrLineStyle {
   writingMode: 'vertical-rl' | 'horizontal-tb';
 }
 
+/** Class of a find match painted inside a drawn line */
+export const OCR_MATCH_CLASS = 'kavita-ocr-match';
+
+/** One find match, or the part of one that falls on a line. Offsets count characters in the line's text */
+export interface OcrLineMatch {
+  line: number;
+  start: number;
+  end: number;
+  selected: boolean;
+}
+
+/**
+ * The lines the layer draws, in the order it draws them. Find searches the same lines, so the nth line here is the nth
+ * span on the layer.
+ */
+export function drawnLines(page: OcrPage) {
+  return [...page.lines]
+    .sort((a, b) => a.order - b.order)
+    .filter(line => DRAWN_KINDS.has(line.kind) && line.text.trim().length > 0);
+}
+
 /**
  * Positions a line on the layer. The layer is a size container, so cqw and cqh follow the page through every zoom
  * without being recalculated.
@@ -36,18 +57,17 @@ export function ocrLineStyle(line: OcrLine): OcrLineStyle {
  * Lines go into the DOM in reading order with nothing between them, so a lookup that runs off the end of one line
  * carries on into the next.
  */
-export function drawOcrLayer(pageDiv: HTMLElement, page: OcrPage, outlined: boolean) {
+export function drawOcrLayer(pageDiv: HTMLElement, page: OcrPage, outlined: boolean): HTMLElement {
   pageDiv.querySelector(`:scope > .${OCR_LAYER_CLASS}`)?.remove();
 
   const layer = document.createElement('div');
   layer.className = OCR_LAYER_CLASS;
   layer.classList.toggle('outlined', outlined);
   layer.dataset['pageNumber'] = `${page.pageNumber}`;
+  layer.dataset['version'] = `${page.version}`;
 
   const drawn: Array<[HTMLSpanElement, OcrLine]> = [];
-  for (const line of [...page.lines].sort((a, b) => a.order - b.order)) {
-    if (!DRAWN_KINDS.has(line.kind) || line.text.trim().length === 0) continue;
-
+  for (const line of drawnLines(page)) {
     const span = document.createElement('span');
     span.textContent = line.text;
     Object.assign(span.style, ocrLineStyle(line));
@@ -59,11 +79,55 @@ export function drawOcrLayer(pageDiv: HTMLElement, page: OcrPage, outlined: bool
 
   pageDiv.appendChild(layer);
   for (const [span, line] of drawn) fitLine(span, line, layer);
+  return layer;
 }
 
 /** Shows or hides the confidence outlines on every drawn layer under root */
 export function setOcrOutlines(root: ParentNode, outlined: boolean) {
   root.querySelectorAll(`.${OCR_LAYER_CLASS}`).forEach(layer => layer.classList.toggle('outlined', outlined));
+}
+
+/**
+ * Wraps each match in its line's span, replacing the matches painted before. The wrappers are inline, so they take the
+ * line's writing mode and stretch and land on the printed characters without positions of their own.
+ *
+ * @returns The wrapper of the selected match, if it's on this layer
+ */
+export function paintOcrMatches(layer: HTMLElement, matches: OcrLineMatch[]): HTMLElement | null {
+  const spans = layer.querySelectorAll<HTMLSpanElement>(':scope > span');
+  // Setting a span's text drops the wrappers painted inside it
+  spans.forEach(span => {
+    if (span.childElementCount > 0) span.textContent = span.textContent;
+  });
+
+  let selected: HTMLElement | null = null;
+  const byLine = new Map<number, OcrLineMatch[]>();
+  for (const match of matches) byLine.set(match.line, [...(byLine.get(match.line) ?? []), match]);
+  for (const [lineIndex, lineMatches] of byLine) {
+    const span = spans[lineIndex];
+    if (!span) continue;
+
+    const text = span.textContent ?? '';
+    const nodes: Node[] = [];
+    let at = 0;
+    for (const match of lineMatches.sort((a, b) => a.start - b.start)) {
+      // Matches for several words can overlap, and the first one wins
+      const start = Math.max(match.start, at);
+      if (start >= match.end) continue;
+      if (start > at) nodes.push(document.createTextNode(text.slice(at, start)));
+
+      const mark = document.createElement('span');
+      mark.className = OCR_MATCH_CLASS;
+      mark.classList.toggle('selected', match.selected);
+      mark.textContent = text.slice(start, match.end);
+      nodes.push(mark);
+      if (match.selected && !selected) selected = mark;
+      at = match.end;
+    }
+    if (at < text.length) nodes.push(document.createTextNode(text.slice(at)));
+    span.replaceChildren(...nodes);
+  }
+  return selected;
 }
 
 /**
