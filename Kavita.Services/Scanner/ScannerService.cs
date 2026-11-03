@@ -363,6 +363,7 @@ public class ScannerService(
 
                 await metadataServiceScoped.GenerateCoversForSeries(serverSettings, scopedLibrary.Id, result.SeriesId.Value, false, false);
                 await wordCountAnalyzerServiceScoped.ScanSeries(scopedLibrary.Id, result.SeriesId.Value, bypassFolderOptimizationChecks);
+                await scope.ServiceProvider.GetRequiredService<IOcrService>().MarkSeriesForCheckAsync(result.SeriesId.Value);
             }
 
             seriesLeftToProcess--;
@@ -851,6 +852,7 @@ public class ScannerService(
 
             await metadataServiceScoped.GenerateCoversForSeries(serverSettings, libraryId, seriesId, false, false);
             await wordCountAnalyzerServiceScoped.ScanSeries(libraryId, seriesId, forceUpdate);
+            await scope.ServiceProvider.GetRequiredService<IOcrService>().MarkSeriesForCheckAsync(seriesId);
         }
 
         return sw.ElapsedMilliseconds;

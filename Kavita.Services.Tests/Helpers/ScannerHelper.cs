@@ -135,6 +135,7 @@ public class ScannerHelper
         serviceProvider.GetService(typeof(IMetadataService)).Returns(Substitute.For<IMetadataService>());
         serviceProvider.GetService(typeof(IWordCountAnalyzerService))
             .Returns(Substitute.For<IWordCountAnalyzerService>());
+        serviceProvider.GetService(typeof(IOcrService)).Returns(Substitute.For<IOcrService>());
 
         var scope = Substitute.For<IServiceScope>();
         scope.ServiceProvider.Returns(serviceProvider);

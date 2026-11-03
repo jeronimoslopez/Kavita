@@ -13,6 +13,11 @@ namespace Kavita.API.Services;
 public interface IBookService
 {
     int GetNumberOfPages(string filePath);
+    /// <summary>
+    /// How many non-whitespace characters of text each page of a PDF carries, in page order
+    /// </summary>
+    /// <exception cref="System.Exception">The PDF cannot be opened</exception>
+    int[] GetPdfPageTextLengths(string filePath);
     string GetCoverImage(string fileFilePath, string fileName, string outputDirectory, EncodeFormat encodeFormat, CoverImageSize size = CoverImageSize.Default);
     /// <param name="strictOpenError">Set when an epub only opened with lenient parsing, why the strict open failed</param>
     /// <exception cref="System.Exception">The file or its metadata cannot be read</exception>

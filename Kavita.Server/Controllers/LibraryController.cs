@@ -95,6 +95,7 @@ public class LibraryController(
         library.RemovePrefixForSortName = dto.RemovePrefixForSortName;
         library.DefaultLanguage = dto.DefaultLanguage;
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
+        library.EnableOcr = dto.EnableOcr;
 
         // Override Scrobbling for Comic libraries since there are no providers to scrobble to
         if (library.Type == LibraryType.Comic)
@@ -431,6 +432,7 @@ public class LibraryController(
                 EnableMetadata = sourceLibrary.EnableMetadata,
                 RemovePrefixForSortName = sourceLibrary.RemovePrefixForSortName,
                 InheritWebLinksFromFirstChapter = sourceLibrary.InheritWebLinksFromFirstChapter,
+                EnableOcr = sourceLibrary.EnableOcr,
                 DefaultLanguage = sourceLibrary.DefaultLanguage,
                 MetadataProvider = sourceLibrary.MetadataProvider,
                 ExcludePatterns = sourceLibrary.LibraryExcludePatterns.Select(p => p.Pattern).ToList(),
@@ -662,6 +664,7 @@ public class LibraryController(
 
         var typeUpdate = library.Type != dto.Type;
         var folderWatchingUpdate = library.FolderWatching != dto.FolderWatching;
+        var ocrTurnedOn = !library.EnableOcr && dto.EnableOcr;
         UpdateLibrarySettings(dto, library);
 
         if (!await unitOfWork.CommitAsync(ct)) return BadRequest(await localizationService.TranslateAsync(userId, "generic-library-update"));
@@ -674,6 +677,12 @@ public class LibraryController(
         if (originalFoldersCount != dto.Folders.Count() || typeUpdate)
         {
             await taskScheduler.EnqueueScanLibrary(library.Id);
+        }
+
+        // Scans skip unchanged series, so existing PDFs would otherwise wait for a forced scan to be checked
+        if (ocrTurnedOn)
+        {
+            BackgroundJob.Enqueue<IOcrService>(service => service.DetectNewFilesAsync());
         }
 
         await eventHub.SendMessageAsync(MessageFactory.LibraryModified,
@@ -745,6 +754,7 @@ public class LibraryController(
         library.EnableMetadata = dto.EnableMetadata;
         library.RemovePrefixForSortName = dto.RemovePrefixForSortName;
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
+        library.EnableOcr = dto.EnableOcr;
         library.DefaultLanguage = dto.DefaultLanguage;
         library.MetadataProvider = dto.MetadataProvider;
 

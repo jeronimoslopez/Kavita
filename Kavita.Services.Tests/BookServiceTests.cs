@@ -266,4 +266,16 @@ public class BookServiceTests
         Assert.True(result.IsSuccess);
         Assert.Equal("image/png", result.ContentType);
     }
+
+    [Fact]
+    public void GetPdfPageTextLengths_CountsTextPerPage()
+    {
+        var testDirectory = Path.Join(Directory.GetCurrentDirectory(), "../../../Test Data/BookService");
+
+        var lengths = _bookService.GetPdfPageTextLengths(Path.Join(testDirectory, "scanned-and-text.pdf"));
+
+        Assert.Equal(2, lengths.Length);
+        Assert.Equal(0, lengths[0]);
+        Assert.Equal("Thispagehasrealtextonit.".Length, lengths[1]);
+    }
 }

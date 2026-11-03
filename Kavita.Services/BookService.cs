@@ -965,6 +965,19 @@ public partial class BookService(
         return 0;
     }
 
+    public int[] GetPdfPageTextLengths(string filePath)
+    {
+        using var docReader = DocLib.Instance.GetDocReader(filePath, new PageDimensions(1080, 1920));
+        var lengths = new int[docReader.GetPageCount()];
+        for (var i = 0; i < lengths.Length; i++)
+        {
+            using var pageReader = docReader.GetPageReader(i);
+            lengths[i] = pageReader.GetText().Count(c => !char.IsWhiteSpace(c));
+        }
+
+        return lengths;
+    }
+
     private static string EscapeTags(string content)
     {
         content = Regex.Replace(content, @"<script(.*)(/>)", "<script$1></script>", RegexOptions.None, Parser.RegexTimeout);
