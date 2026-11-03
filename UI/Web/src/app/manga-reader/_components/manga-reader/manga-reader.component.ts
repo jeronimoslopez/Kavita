@@ -28,6 +28,7 @@ import {
   distinctUntilChanged,
   EMPTY,
   filter,
+  firstValueFrom,
   forkJoin,
   fromEvent,
   map,
@@ -49,8 +50,10 @@ import {EVENTS, MessageHubService} from "../../../_services/message-hub.service"
 import {OcrPage} from "../../../_models/ocr/ocr";
 import {OcrStatus} from "../../../_models/ocr-status";
 import {OCR_LAYER_CLASS} from "../../../reader-shared/_helpers/ocr-overlay";
-import {MangaOcrOverlay} from "../../_helpers/manga-ocr-overlay";
-import {FITTING_OPTION, PAGING_DIRECTION} from '../../_models/reader-enums';
+import {MangaOcrOverlay, OcrTarget} from "../../_helpers/manga-ocr-overlay";
+import {findOcrMatches, lineMatches, OcrFindMatch} from "../../_helpers/manga-ocr-find";
+import {paintOcrMatches} from "../../../reader-shared/_helpers/ocr-overlay";
+import {FITTING_OPTION, PAGING_DIRECTION, SPLIT_PAGE_PART} from '../../_models/reader-enums';
 import {ReaderSetting} from '../../_models/reader-setting';
 import {MangaReaderService} from '../../_service/manga-reader.service';
 import {CanvasRendererComponent} from '../canvas-renderer/canvas-renderer.component';
@@ -256,6 +259,18 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly ocrPagesLoading = new Set<string>();
   private readonly ocrChaptersChecked = new Set<number>();
   private ocrOverlay: MangaOcrOverlay | null = null;
+
+  findOpen = signal(false);
+  /**
+   * Matches of the last search in the chapter it ran on. Find only searches the chapter being read
+   */
+  private readonly findResult = signal<{chapterId: number, matches: OcrFindMatch[]} | null>(null);
+  readonly findIndex = signal(-1);
+  readonly findCount = computed(() => this.findResult()?.matches.length ?? 0);
+  readonly findSearched = computed(() => this.findResult() !== null);
+  private readonly findInput = viewChild<ElementRef<HTMLInputElement>>('findInput');
+  private findPages: {chapterId: number, pages: Promise<OcrPage[]>} | null = null;
+  private findSearchId = 0;
 
 
   libraryId!: number;
@@ -846,6 +861,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       filter(() => this.readerMode() !== ReaderMode.Webtoon),
       filter(img => !!img),
       tap(() => {
+        // Find turns pages too, and Enter in its box has to keep going to the next match
+        if (this.findOpen() && document.activeElement === this.findInput()?.nativeElement) return;
         this.imageElement()?.nativeElement?.focus();
       }),
     ).subscribe();
@@ -875,12 +892,20 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }, {injector: this.injector});
 
-    // The host only exists outside webtoon mode, so the overlay comes and goes with it
+    // A split page that turns to its other half keeps its canvas and size, so nothing the overlay watches changes
+    effect(() => {
+      this.pageNum();
+      untracked(() => this.ocrOverlay?.refresh());
+    }, {injector: this.injector});
+
     effect(() => {
       const host = this.ocrHost()?.nativeElement;
       untracked(() => {
         this.ocrOverlay?.dispose();
-        this.ocrOverlay = host ? new MangaOcrOverlay(this.readingArea().nativeElement, host, img => this.ocrPageFor(img)) : null;
+        this.ocrOverlay = host
+          ? new MangaOcrOverlay(this.readingArea().nativeElement, host, () => this.ocrTargets(), src => this.ocrPageFor(src),
+              (layer, page, src) => this.paintFindMatches(layer, page, src))
+          : null;
         this.ocrOverlay?.setOutlined(this.ocrOutlines());
       });
     }, {injector: this.injector});
@@ -892,6 +917,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       const body = message.payload as {chapterId: number, pages: number[]};
       if (!this.ocrChaptersChecked.has(body.chapterId)) return;
       body.pages.forEach(page => this.ocrPageCache.delete(`${body.chapterId}:${page}`));
+      // The next search fetches the chapter again and sees the new pages
+      if (this.findPages?.chapterId === body.chapterId) this.findPages = null;
       this.addOcrPages(body.chapterId, body.pages);
     });
   }
@@ -916,11 +943,31 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   /**
-   * The lines for a page image, or null while it has none or they're loading. A load redraws the overlay when it lands
+   * The pages on screen: the single and double renderers' images, webtoon mode's images, and the canvas when it shows
+   * half of a split page
    */
-  private ocrPageFor(img: HTMLImageElement) {
-    const chapterId = this.readerService.imageUrlToChapterId(img.src);
-    const pageNum = this.readerService.imageUrlToPageNum(img.src) + 1;
+  private ocrTargets(): OcrTarget[] {
+    const images = this.readingArea().nativeElement.querySelectorAll(
+      'app-single-renderer img, app-double-renderer img, app-double-reverse-renderer img, app-double-no-cover-renderer img, app-infinite-scroller img');
+    const targets: OcrTarget[] = Array.from(images as NodeListOf<HTMLImageElement>)
+      .filter(img => img.complete && img.naturalWidth > 0)
+      .map(img => ({element: img, src: img.src}));
+
+    const renderer = this.canvasRenderer();
+    const canvas = renderer?.canvas()?.nativeElement;
+    const part = renderer?.currentImageSplitPart;
+    if (canvas && renderer?.renderWithCanvas() && renderer.canvasImage && part !== SPLIT_PAGE_PART.NO_SPLIT) {
+      targets.push({element: canvas, src: renderer.canvasImage.src, half: part === SPLIT_PAGE_PART.LEFT_PART ? 'left' : 'right'});
+    }
+    return targets;
+  }
+
+  /**
+   * The lines for a page URL, or null while it has none or they're loading. A load redraws the overlay when it lands
+   */
+  private ocrPageFor(src: string) {
+    const chapterId = this.readerService.imageUrlToChapterId(src);
+    const pageNum = this.readerService.imageUrlToPageNum(src) + 1;
     const key = `${chapterId}:${pageNum}`;
     if (!this.ocrPages().has(key)) return null;
 
@@ -958,6 +1005,98 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
 
   toggleYomitan() {
     this.yomitanEnabled.update(enabled => !enabled);
+  }
+
+  toggleFind() {
+    if (this.findOpen()) {
+      this.closeFind();
+      return;
+    }
+    this.findOpen.set(true);
+    this.cancelMenuCloseTimer();
+    setTimeout(() => this.findInput()?.nativeElement.focus());
+  }
+
+  closeFind() {
+    this.findOpen.set(false);
+    if (this.menuOpen()) this.startMenuCloseTimer();
+    this.findResult.set(null);
+    this.findIndex.set(-1);
+    this.ocrOverlay?.repaint();
+  }
+
+  /**
+   * Searches every OCR'd page of the chapter and goes to the first match on or after the page being read
+   */
+  async find(query: string) {
+    const chapterId = this.chapterId();
+    const searchId = ++this.findSearchId;
+    if (query.trim() === '') {
+      this.findResult.set(null);
+      this.findIndex.set(-1);
+      this.ocrOverlay?.repaint();
+      return;
+    }
+
+    if (this.findPages?.chapterId !== chapterId) {
+      this.findPages = {chapterId, pages: firstValueFrom(this.ocrService.getChapterPages(chapterId)).then(pages => pages ?? [])};
+    }
+    const pages = await this.findPages.pages;
+    // A newer search started while the pages were loading
+    if (searchId !== this.findSearchId) return;
+
+    // These were fetched just now, so they're at least as new as anything cached
+    pages.forEach(page => this.ocrPageCache.set(`${chapterId}:${page.pageNumber}`, page));
+    const matches = findOcrMatches(pages, query);
+    this.findResult.set({chapterId, matches});
+    const next = matches.findIndex(match => match.pageNumber - 1 >= this.pageNum());
+    this.selectFindMatch(matches.length === 0 ? -1 : Math.max(next, 0));
+  }
+
+  findStep(step: number) {
+    const count = this.findCount();
+    if (count === 0) return;
+    this.selectFindMatch((this.findIndex() + step + count) % count);
+  }
+
+  onFindKeydown(event: KeyboardEvent, query: string) {
+    // The reader's key bindings listen on the document and would turn pages while typing
+    event.stopPropagation();
+    if (event.key === 'Enter') {
+      if (this.findSearched()) this.findStep(event.shiftKey ? -1 : 1);
+      else void this.find(query);
+    } else if (event.key === 'Escape') {
+      this.closeFind();
+    }
+  }
+
+  private selectFindMatch(index: number) {
+    this.findIndex.set(index);
+    const match = this.findResult()?.matches[index];
+    if (match) this.goToPageIndex(match.pageNumber - 1);
+    this.ocrOverlay?.repaint();
+  }
+
+  /**
+   * Goes to a 0-based page. goToPage takes the number someone types in its prompt, which is 1-based except at the
+   * first and last page
+   */
+  private goToPageIndex(index: number) {
+    if (index === this.pageNum() || index < 0 || index >= this.maxPages()) return;
+    this.pagingDirectionSubject.next(index > this.pageNum() ? PAGING_DIRECTION.FORWARD : PAGING_DIRECTION.BACKWARDS);
+    this.setPageNum(this.adjustPagesForDoubleRenderer(index));
+    this.goToPageEvent.next(index);
+    this.render();
+  }
+
+  private paintFindMatches(layer: HTMLElement, page: OcrPage, src: string) {
+    const result = this.findResult();
+    if (!result || this.readerService.imageUrlToChapterId(src) !== result.chapterId) {
+      paintOcrMatches(layer, []);
+      return;
+    }
+    const selected = result.matches[this.findIndex()] ?? null;
+    paintOcrMatches(layer, lineMatches(page, result.matches, selected));
   }
 
   toggleOcrOutlines() {
@@ -1444,7 +1583,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   startMenuCloseTimer() {
-    if (!this.autoCloseMenu()) { return; }
+    // Someone typing a search keeps the menu, and the find bar in it, open
+    if (!this.autoCloseMenu() || this.findOpen()) { return; }
 
     this.menuTimeout = setTimeout(() => {
       this.toggleMenu();

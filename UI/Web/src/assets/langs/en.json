@@ -3599,6 +3599,13 @@
         "yomitan-off": "Yomitan lookups are off. Click to turn them on",
         "ocr-outlines-on": "Hide OCR outlines",
         "ocr-outlines-off": "Outline OCR text",
+        "find-tooltip": "Find in OCR text",
+        "find-placeholder": "Find in chapter",
+        "find-count": "{{current}} of {{total}}",
+        "find-no-matches": "No matches",
+        "find-previous": "Previous match",
+        "find-next": "Next match",
+        "find-close": "Close find",
         "unbookmark-page-tooltip": "Unbookmark Page",
         "bookmarks-title": "Bookmarks",
 

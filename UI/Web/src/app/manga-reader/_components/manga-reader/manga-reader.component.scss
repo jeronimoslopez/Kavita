@@ -269,8 +269,8 @@ $pointer-offset: 0.3125rem;
     }
   }
 
-// One box per page image, placed in viewport coordinates by MangaOcrOverlay. Above the page-turn areas (z-index 100)
-// and below the menus, and only the text itself takes clicks
+// One box per page, placed in viewport coordinates by MangaOcrOverlay. Above the page-turn areas (z-index 100) and
+// below the menus, and only the text itself takes clicks
 .ocr-host {
   position: fixed;
   inset: 0;
@@ -280,6 +280,20 @@ $pointer-offset: 0.3125rem;
 
 :host ::ng-deep .kavita-ocr-slot {
   position: fixed;
+
+  // Half of a split page: the layer spans the whole page and the box shows the half on screen
+  &.half {
+    overflow: hidden;
+
+    > .kavita-ocr-layer {
+      width: 200%;
+      right: auto;
+    }
+  }
+
+  &.right-half > .kavita-ocr-layer {
+    left: -100%;
+  }
 }
 
 :host ::ng-deep .kavita-ocr-layer {
@@ -288,4 +302,21 @@ $pointer-offset: 0.3125rem;
   > span {
     pointer-events: auto;
   }
+}
+
+.ocr-find-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 3% 0.5rem;
+
+  input {
+    max-width: 20rem;
+  }
+}
+
+.ocr-find-count {
+  min-width: 5rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
 }
