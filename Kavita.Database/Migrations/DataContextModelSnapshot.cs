@@ -792,6 +792,9 @@ namespace Kavita.Database.Migrations
                     b.Property<string>("Name")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("OcrEngine")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("PrimaryColor")
                         .HasColumnType("TEXT");
 

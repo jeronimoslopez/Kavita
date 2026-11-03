@@ -7,6 +7,7 @@ using Hangfire;
 using Kavita.API.Database;
 using Kavita.API.Services;
 using Kavita.API.Services.SignalR;
+using Kavita.Common;
 using Kavita.Models.DTOs.Ocr;
 using Kavita.Models.DTOs.SignalR;
 using Kavita.Models.Entities;
@@ -18,7 +19,7 @@ namespace Kavita.Services.Ocr;
 
 public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBookService bookService,
     IDirectoryService directoryService, IOcrSidecarClient sidecarClient, IEventHub eventHub,
-    IOcrWorkerSignal workerSignal) : IOcrService
+    IOcrWorkerSignal workerSignal, ICacheService cacheService) : IOcrService
 {
     /// <summary>
     /// A page with fewer non-whitespace characters than this is treated as a scan. Scans often carry a stray page number
@@ -135,7 +136,9 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
         byte[] image;
         try
         {
-            (image, _, _) = bookService.RenderPdfPageForOcr(file.FilePath, page.PageNumber);
+            image = info.Format == MangaFormat.Archive
+                ? await ReadArchivePageAsync(info.ChapterId, page.PageNumber, ct)
+                : bookService.RenderPdfPageForOcr(file.FilePath, page.PageNumber).Png;
         }
         catch (Exception ex)
         {
@@ -150,7 +153,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
         OcrSidecarResponseDto response;
         try
         {
-            response = await sidecarClient.RecognizeAsync(sidecarUrl, image, ct);
+            response = await sidecarClient.RecognizeAsync(sidecarUrl, image, SidecarEngine(info), ct);
         }
         catch (OcrSidecarUnavailableException ex)
         {
@@ -184,7 +187,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
 
     public async Task<OcrChapterStatusDto?> GetChapterStatusAsync(int chapterId, CancellationToken ct = default)
     {
-        var file = await unitOfWork.OcrRepository.GetPdfFileForChapterAsync(chapterId, ct);
+        var file = await unitOfWork.OcrRepository.GetOcrSourceFileForChapterAsync(chapterId, ct);
         if (file == null) return null;
 
         var counts = await unitOfWork.OcrRepository.GetPageStateCountsAsync(file.Id, ct);
@@ -200,7 +203,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
 
     public async Task<OcrPageDto?> GetPageAsync(int chapterId, int pageNum, CancellationToken ct = default)
     {
-        var file = await unitOfWork.OcrRepository.GetPdfFileForChapterAsync(chapterId, ct);
+        var file = await unitOfWork.OcrRepository.GetOcrSourceFileForChapterAsync(chapterId, ct);
         if (file == null || pageNum < 1) return null;
 
         var page = await unitOfWork.OcrRepository.GetDonePageAsync(file.Id, pageNum - 1, ct);
@@ -209,7 +212,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
 
     public async Task<IList<OcrPageDto>?> GetChapterPagesAsync(int chapterId, CancellationToken ct = default)
     {
-        var file = await unitOfWork.OcrRepository.GetPdfFileForChapterAsync(chapterId, ct);
+        var file = await unitOfWork.OcrRepository.GetOcrSourceFileForChapterAsync(chapterId, ct);
         if (file == null) return null;
 
         var pages = await unitOfWork.OcrRepository.GetDonePagesAsync(file.Id, ct);
@@ -228,7 +231,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
 
     public async Task PrioritizeChapterAsync(int chapterId, CancellationToken ct = default)
     {
-        var chapterFile = await unitOfWork.OcrRepository.GetPdfFileForChapterAsync(chapterId, ct);
+        var chapterFile = await unitOfWork.OcrRepository.GetOcrSourceFileForChapterAsync(chapterId, ct);
         if (chapterFile == null) return;
 
         // Only files in OCR libraries are worth moving up
@@ -316,7 +319,10 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
         int[] textLengths;
         try
         {
-            textLengths = bookService.GetPdfPageTextLengths(file.FilePath);
+            // An archive's pages are images with no text of their own
+            textLengths = file.Format == MangaFormat.Archive
+                ? new int[file.Pages]
+                : bookService.GetPdfPageTextLengths(file.FilePath);
         }
         catch (Exception ex)
         {
@@ -402,6 +408,7 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
                 Kind = ToKind(l.Kind),
                 DetectionConfidence = l.DetConf,
                 RecognitionConfidence = l.RecConf,
+                Block = l.Block,
             })
             .ToList();
     }
@@ -415,6 +422,42 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
         "folio" => OcrLineKind.Folio,
         _ => OcrLineKind.Body,
     };
+
+    /// <summary>
+    /// The sidecar's name for the engine that reads this file's library
+    /// </summary>
+    public static string SidecarEngine(OcrFileInfoDto info)
+    {
+        var engine = info.OcrEngine;
+        if (engine == OcrEngine.Auto)
+        {
+            engine = info.LibraryType is LibraryType.Manga or LibraryType.Comic or LibraryType.ComicVine
+                ? OcrEngine.Manga
+                : OcrEngine.Books;
+        }
+
+        return engine == OcrEngine.Manga ? "manga" : "ndlocr";
+    }
+
+    /// <summary>
+    /// Reads a page from the chapter's cache folder, the one the reader serves pages from, so OCR sees the same image
+    /// at the same page number. The sidecar decodes JPEG, PNG and WebP, and anything else goes as PNG
+    /// </summary>
+    private async Task<byte[]> ReadArchivePageAsync(int chapterId, int pageNumber, CancellationToken ct)
+    {
+        if (await cacheService.Ensure(chapterId, ct: ct) == null)
+            throw new KavitaException($"Chapter {chapterId} couldn't be extracted to the cache");
+
+        var path = cacheService.GetCachedPagePath(chapterId, pageNumber);
+        if (string.IsNullOrEmpty(path)) throw new KavitaException($"Chapter {chapterId} has no page {pageNumber + 1}");
+
+        var extension = directoryService.FileSystem.Path.GetExtension(path).ToLowerInvariant();
+        if (extension is ".jpg" or ".jpeg" or ".png" or ".webp")
+            return await directoryService.FileSystem.File.ReadAllBytesAsync(path, ct);
+
+        using var image = NetVips.Image.NewFromFile(path, access: NetVips.Enums.Access.Sequential);
+        return image.WriteToBuffer(".png");
+    }
 
     /// <remarks>A missing file counts as unchanged, so a file on an unmounted drive keeps its OCR</remarks>
     private bool HasFileChangedSinceCheck(MangaFile file)

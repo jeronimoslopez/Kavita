@@ -62,9 +62,13 @@ public class Library : IEntityDate, IHasCoverImage
     /// </summary>
     public bool InheritWebLinksFromFirstChapter { get; set; } = false;
     /// <summary>
-    /// Should Kavita OCR scanned PDFs in this library so their pages get a text layer
+    /// Should Kavita OCR scanned PDFs and manga archives in this library so their pages get a text layer
     /// </summary>
     public bool EnableOcr { get; set; } = false;
+    /// <summary>
+    /// Which OCR engine reads this library's pages
+    /// </summary>
+    public OcrEngine OcrEngine { get; set; } = OcrEngine.Auto;
     /// <summary>
     /// Language to assign to series if none is set in the metadata
     /// </summary>

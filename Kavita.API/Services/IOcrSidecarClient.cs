@@ -9,7 +9,8 @@ public interface IOcrSidecarClient
 {
     /// <exception cref="OcrSidecarUnavailableException">The sidecar didn't answer</exception>
     /// <exception cref="OcrSidecarRejectedException">The sidecar answered with an error for this image</exception>
-    Task<OcrSidecarResponseDto> RecognizeAsync(string sidecarUrl, byte[] image, CancellationToken ct = default);
+    /// <param name="engine">The sidecar's engine name, <c>ndlocr</c> or <c>manga</c></param>
+    Task<OcrSidecarResponseDto> RecognizeAsync(string sidecarUrl, byte[] image, string engine, CancellationToken ct = default);
 }
 
 /// <summary>

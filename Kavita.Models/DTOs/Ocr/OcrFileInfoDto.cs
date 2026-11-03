@@ -16,4 +16,7 @@ public sealed record OcrFileInfoDto
     public string SeriesName { get; init; } = string.Empty;
     public OcrStatus OcrStatus { get; init; }
     public DateTime? OcrSourceWriteTimeUtc { get; init; }
+    public MangaFormat Format { get; init; }
+    public LibraryType LibraryType { get; init; }
+    public OcrEngine OcrEngine { get; init; }
 }
