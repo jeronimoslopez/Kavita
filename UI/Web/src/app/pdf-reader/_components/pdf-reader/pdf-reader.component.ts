@@ -54,7 +54,7 @@ import {OcrService} from "../../../_services/ocr.service";
 import {OcrPage} from "../../../_models/ocr/ocr";
 import {OcrStatus} from "../../../_models/ocr-status";
 import {EVENTS, MessageHubService} from "../../../_services/message-hub.service";
-import {drawOcrLayer, OCR_LAYER_CLASS, setOcrOutlines} from "../../_helpers/ocr-overlay";
+import {drawOcrLayer, OCR_LAYER_CLASS, setOcrOutlines} from "../../../reader-shared/_helpers/ocr-overlay";
 import {OcrFind} from "../../_helpers/ocr-find";
 
 const KEYBIND_TARGETS = [

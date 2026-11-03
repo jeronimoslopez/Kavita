@@ -1,3 +1,5 @@
+@use '../../../reader-shared/_helpers/ocr-layer';
+
 $center-width: 50%;
 $side-width: 25%;
 
@@ -266,3 +268,24 @@ $pointer-offset: 0.3125rem;
         z-index: 100;
     }
   }
+
+// One box per page image, placed in viewport coordinates by MangaOcrOverlay. Above the page-turn areas (z-index 100)
+// and below the menus, and only the text itself takes clicks
+.ocr-host {
+  position: fixed;
+  inset: 0;
+  z-index: 101;
+  pointer-events: none;
+}
+
+:host ::ng-deep .kavita-ocr-slot {
+  position: fixed;
+}
+
+:host ::ng-deep .kavita-ocr-layer {
+  @include ocr-layer.layer;
+
+  > span {
+    pointer-events: auto;
+  }
+}
