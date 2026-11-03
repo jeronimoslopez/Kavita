@@ -11,6 +11,7 @@ using Kavita.Models.Entities.Enums;
 using Kavita.Services.Helpers;
 using Kavita.Services.HostedServices;
 using Kavita.Services.Metadata;
+using Kavita.Services.Ocr;
 using Kavita.Services.Plus;
 using Kavita.Services.Plus.ScrobbleService;
 using Kavita.Services.Reading;
@@ -72,6 +73,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IProcessSeries, ProcessSeries>();
         services.AddScoped<IMetadataService, MetadataService>();
         services.AddScoped<IWordCountAnalyzerService, WordCountAnalyzerService>();
+        services.AddScoped<IOcrService, OcrService>();
         services.AddScoped<ILibraryWatcher, LibraryWatcher>();
         services.AddScoped<ITachiyomiService, TachiyomiService>();
         services.AddScoped<ICollectionTagService, CollectionTagService>();

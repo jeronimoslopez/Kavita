@@ -92,6 +92,7 @@ public interface IDataContext : IDisposable
     DbSet<KavitaPlusAuditLog> KavitaPlusAuditLogs { get; }
 
     DbSet<ScrobbleRuleHistory> ScrobbleRuleHistory { get; }
+    DbSet<OcrPage> OcrPage { get; }
 
     // Change Tracking and Saving
     ChangeTracker ChangeTracker { get; }

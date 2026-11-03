@@ -1,5 +1,6 @@
 ﻿
 using System;
+using System.Collections.Generic;
 using Kavita.Models.Entities.Enums;
 using Kavita.Models.Entities.Interfaces;
 
@@ -62,6 +63,21 @@ public class MangaFile : IEntityDate
     /// The file's write time when its words were last counted. Null until the first analysis after v0.9.2
     /// </summary>
     public DateTime? AnalyzedFileWriteTimeUtc { get; set; }
+
+    public OcrStatus OcrStatus { get; set; } = OcrStatus.NotChecked;
+    /// <summary>
+    /// Higher runs first. Raised when someone opens the file or an admin queues it
+    /// </summary>
+    public int OcrPriority { get; set; }
+    /// <summary>
+    /// When the file was queued for OCR. Breaks ties between files of the same priority
+    /// </summary>
+    public DateTime? OcrRequestedUtc { get; set; }
+    /// <summary>
+    /// The file's write time when its pages were checked for text. A different write time means the stored OCR is stale
+    /// </summary>
+    public DateTime? OcrSourceWriteTimeUtc { get; set; }
+    public ICollection<OcrPage> OcrPages { get; set; } = [];
 
 
     // Relationship Mapping

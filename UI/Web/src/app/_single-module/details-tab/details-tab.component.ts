@@ -15,6 +15,7 @@ import {MangaFormat} from '../../_models/manga-format';
 import {SafeUrlPipe} from '../../_pipes/safe-url.pipe';
 import {AccountService} from '../../_services/account.service';
 import {MangaFile} from '../../_models/manga-file';
+import {OcrStatus, ocrStatusKeys} from '../../_models/ocr-status';
 import {Series} from '../../_models/series';
 import {Volume} from '../../_models/volume';
 import {Chapter} from '../../_models/chapter';
@@ -87,6 +88,8 @@ export class DetailsTabComponent {
   protected readonly FilterField = SeriesFilterField;
   protected readonly MangaFormat = MangaFormat;
   protected readonly TagBadgeCursor = TagBadgeCursor;
+  protected readonly OcrStatus = OcrStatus;
+  protected readonly ocrStatusKeys = ocrStatusKeys;
 
   metadata = input.required<IHasCast>();
   entity = input<Series | Volume | Chapter>();

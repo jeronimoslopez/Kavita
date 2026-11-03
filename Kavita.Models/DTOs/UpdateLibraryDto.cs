@@ -50,6 +50,9 @@ public sealed record UpdateLibraryDto
     /// <inheritdoc cref="Library.InheritWebLinksFromFirstChapter"/>
     [Required]
     public bool InheritWebLinksFromFirstChapter { get; init; }
+    /// <inheritdoc cref="Library.EnableOcr"/>
+    [Required]
+    public bool EnableOcr { get; init; }
     /// <inheritdoc cref="Library.DefaultLanguage"/>
     public string DefaultLanguage { get; init; }
     /// <inheritdoc cref="Library.MetadataProvider"/>

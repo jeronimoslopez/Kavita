@@ -243,6 +243,16 @@
           </div>
 
           <div class="row g-0 mt-4 mb-4">
+            <app-setting-switch [title]="t('enable-ocr-label')" [subtitle]="t('enable-ocr-tooltip')">
+              <ng-template>
+                <div class="form-check form-switch float-end">
+                  <input type="checkbox" role="switch" [formField]="formGroup.enableOcr" class="form-check-input">
+                </div>
+              </ng-template>
+            </app-setting-switch>
+          </div>
+
+          <div class="row g-0 mt-4 mb-4">
             <app-setting-item [title]="t('default-language-label')" [subtitle]="t('default-language-tooltip')" [toggleOnViewClick]="false" [showEdit]="false">
               <ng-template #view>
                 @let langConfig = languageSettings();

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using Kavita.Database;
+using Kavita.Models.Entities;
 using Kavita.Models.Entities.MetadataMatching;
 using Kavita.Models.Entities.Progress;
 using Microsoft.EntityFrameworkCore;
@@ -752,6 +753,9 @@ namespace Kavita.Database.Migrations
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(true);
 
+                    b.Property<bool>("EnableOcr")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("FolderWatching")
                         .HasColumnType("INTEGER");
 
@@ -894,6 +898,18 @@ namespace Kavita.Database.Migrations
                     b.Property<DateTime>("LastModifiedUtc")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("OcrPriority")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("OcrRequestedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("OcrSourceWriteTimeUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OcrStatus")
+                        .HasColumnType("INTEGER");
+
                     b.Property<int>("Pages")
                         .HasColumnType("INTEGER");
 
@@ -903,6 +919,8 @@ namespace Kavita.Database.Migrations
 
                     b.HasIndex("FilePath")
                         .HasDatabaseName("IX_MangaFile_FilePath");
+
+                    b.HasIndex("OcrStatus");
 
                     b.ToTable("MangaFile");
                 });
@@ -1500,6 +1518,62 @@ namespace Kavita.Database.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("MetadataSettings");
+                });
+
+            modelBuilder.Entity("Kavita.Models.Entities.OcrPage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("Created")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Engine")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EngineVersion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ImageHeight")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ImageWidth")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastModified")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastModifiedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Lines")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("[]");
+
+                    b.Property<int>("MangaFileId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PageNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MangaFileId", "PageNumber")
+                        .IsUnique();
+
+                    b.ToTable("OcrPage");
                 });
 
             modelBuilder.Entity("Kavita.Models.Entities.Person.ChapterPeople", b =>
@@ -4295,6 +4369,17 @@ namespace Kavita.Database.Migrations
                     b.Navigation("MetadataSettings");
                 });
 
+            modelBuilder.Entity("Kavita.Models.Entities.OcrPage", b =>
+                {
+                    b.HasOne("Kavita.Models.Entities.MangaFile", "MangaFile")
+                        .WithMany("OcrPages")
+                        .HasForeignKey("MangaFileId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("MangaFile");
+                });
+
             modelBuilder.Entity("Kavita.Models.Entities.Person.ChapterPeople", b =>
                 {
                     b.HasOne("Kavita.Models.Entities.Chapter", "Chapter")
@@ -5024,6 +5109,11 @@ namespace Kavita.Database.Migrations
                     b.Navigation("LibraryFileTypes");
 
                     b.Navigation("Series");
+                });
+
+            modelBuilder.Entity("Kavita.Models.Entities.MangaFile", b =>
+                {
+                    b.Navigation("OcrPages");
                 });
 
             modelBuilder.Entity("Kavita.Models.Entities.Metadata.SeriesMetadata", b =>

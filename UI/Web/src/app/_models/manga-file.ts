@@ -1,4 +1,5 @@
 import {MangaFormat} from './manga-format';
+import {OcrStatus} from './ocr-status';
 
 export interface MangaFile {
   id: number;
@@ -8,4 +9,5 @@ export interface MangaFile {
   created: string;
   bytes: number;
   koreaderHash: string;
+  ocrStatus: OcrStatus;
 }

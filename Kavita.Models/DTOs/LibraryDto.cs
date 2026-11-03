@@ -88,6 +88,8 @@ public sealed record LibraryDto : LiteLibraryDto
     public bool RemovePrefixForSortName { get; set; } = false;
     /// <inheritdoc cref="Library.InheritWebLinksFromFirstChapter"/>
     public bool InheritWebLinksFromFirstChapter { get; init; }
+    /// <inheritdoc cref="Library.EnableOcr"/>
+    public bool EnableOcr { get; init; }
     /// <inheritdoc cref="Library.DefaultLanguage"/>
     public string DefaultLanguage { get; init; }
     /// <inheritdoc cref="Library.MetadataProvider"/>

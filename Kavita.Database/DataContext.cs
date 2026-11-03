@@ -108,6 +108,7 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
     public DbSet<KavitaPlusAuditLog> KavitaPlusAuditLogs { get; set; } = null!;
 
     public DbSet<ScrobbleRuleHistory> ScrobbleRuleHistory { get; set; } = null!;
+    public DbSet<OcrPage> OcrPage { get; set; } = null!;
 
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -634,6 +635,21 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         {
             entity.HasIndex(f => f.FilePath)
                 .HasDatabaseName("IX_MangaFile_FilePath");
+            entity.HasIndex(f => f.OcrStatus);
+        });
+
+        builder.Entity<OcrPage>(entity =>
+        {
+            entity.HasOne(p => p.MangaFile)
+                .WithMany(f => f.OcrPages)
+                .HasForeignKey(p => p.MangaFileId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(p => new { p.MangaFileId, p.PageNumber })
+                .IsUnique();
+            entity.Property(p => p.Lines)
+                .HasJsonConversion([])
+                .HasColumnType("TEXT")
+                .HasDefaultValue(new List<OcrLine>());
         });
 
         // AppUserBookmark composite for user lookups
