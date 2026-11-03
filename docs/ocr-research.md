@@ -68,11 +68,27 @@ The OCR'd copy should never overwrite the user's file. Kavita treats the library
 
 At 1–2.5 seconds a page, the 352-page Quartet would take roughly 6–15 minutes on one process on this Mac, against 30–45 minutes with YomiToku lite. A library's first pass will still take hours. That's why the UX below has a time window and a queue.
 
+## Which PDFs get OCR'd, and when
+
+**Detection.** Only libraries with OCR turned on are considered. Within those, Kavita already opens every PDF with PDFium (Docnet) to count pages, and the same reader can pull each page's text without rendering anything, so the check is cheap. A page with next to no text is a scan. A file where every page has text gets skipped, because a digital book's own text beats anything OCR would produce. A file with no text on any page, like both test books, gets queued whole. A mixed file, such as a digital book with scanned appendix pages, gets only its textless pages OCR'd. The one case this misses is a PDF with a bad text layer already in it, for example a Japanese scan someone ran through English-only OCR. Kavita could warn when a Japanese library's text layer is nearly all Latin characters, but the dependable fix is a "Re-run OCR and replace existing text" action on the series.
+
+**Timing.** OCR can't run inline in the scan the way covers and word counts do (`ScannerService.cs:364-365`). At 1–2.5 s a page, one 352-page textbook would hold up the rest of a library scan for 6–15 minutes. So the scan only records that a file needs OCR, and a separate job works through those files afterwards. The book shows up and is readable right away with its page images, and it gets selectable text and Yomitan lookups the next time it's opened after the job finishes.
+
+**Restarts.** Kavita's Hangfire runs on in-memory storage (`Kavita.Server/Startup.cs:205`), so a restart forgets every queued job. That's harmless for jobs that take seconds and not for an OCR backlog that might take a day. The "needs OCR" state should live in the database on `MangaFile`, next to `LastFileAnalysis`, with a recurring job that picks up whatever is still pending. The job should also save results page by page, so a restart at page 300 of 352 resumes at page 300.
+
+**CPU.** OCR uses all the CPU it's given, and Kavita serves pages and thumbnails from the same machine. That's the main argument for the sidecar, since Docker can cap its CPU without touching Kavita. I'd also run one book at a time by default, with the optional time window letting big imports catch up overnight.
+
+**Queue order.** Without a priority, a book added today waits behind a 5,000-page backlog. A book someone opens should jump to the front of the queue, and so should one queued from the series "Run OCR" action.
+
+**Swapping in the result.** Kavita copies a PDF into its cache folder when someone opens it (`cacheService.Ensure` in `GET reader/pdf`). When OCR finishes, Kavita has to clear that cache entry so the next open copies the OCR'd version. Someone with the book open at that moment keeps the old copy until they reopen it. Showing text page by page as OCR goes would mean rewriting the PDF over and over, so I'd swap the file in once, at the end. If the source PDF's modified time has changed since the job started, the result belongs to the old file and gets thrown away.
+
+**Disk space.** The OCR'd copy is the whole PDF plus a small text layer, so each OCR'd book takes about twice its original space. That's acceptable for a personal library, and the setting should say so. Storing only the text and drawing it over the page in the reader would avoid the copy, but it means building a custom overlay, so I'd leave it for later.
+
 ## How the UX would work
 
 **Turning it on.** OCR is a per-library switch in the library settings modal, next to the existing file-type options, called "Add a text layer to PDFs (OCR)". Under it sit a language preset ("Japanese + English" by default, or "English only") and a "Skip furigana" checkbox that's on by default for Japanese. It's per library because a Japanese-textbooks library and an English-comics library generally want different settings, and OCRing comics is wasted CPU. Server settings (Media page, beside the existing PDF render resolution) hold the engine choice and sidecar URL, a cap on concurrent OCR jobs, and an "only run between these hours" window.
 
-**What happens on import.** After a scan, every PDF in an OCR library that has no existing text layer gets queued. PDFs that already carry text are skipped, because most digital-native books already have a better text layer than OCR would produce. Progress shows in the events widget the same way cover generation does, as "OCR: Quartet 1, page 42 of 352". The book stays readable the whole time with its page images, and text appears once the job finishes.
+**What happens on import.** After a scan, every PDF in an OCR library with pages that lack text gets queued, as described above. Progress shows in the events widget the same way cover generation does, as "OCR: Quartet 1, page 42 of 352". The book stays readable the whole time with its page images, and text appears once the job finishes.
 
 **Per-series control.** The series action menu gets "Run OCR", "Re-run OCR" (after changing a setting, or for one bad book in a good library) and "Remove OCR text". The series info tab shows the text-layer state, which is one of "Original text", "OCR'd with NDLOCR-Lite on 2026-11-03", "Queued" or "None". That line is how someone debugging a bad lookup finds out whether the text was ever real.
 
