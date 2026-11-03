@@ -16,6 +16,7 @@ import {
 import {ActivatedRoute, Router} from '@angular/router';
 import {
   NgxExtendedPdfViewerModule,
+  PageRenderedEvent,
   PageViewModeType,
   pdfDefaultOptions,
   ProgressBarEvent,
@@ -23,7 +24,7 @@ import {
   SpreadType
 } from 'ngx-extended-pdf-viewer';
 import {ToastrService} from '@openng/ngx-toastr';
-import {take} from 'rxjs';
+import {filter, take} from 'rxjs';
 import {NgbTooltip} from '@ng-bootstrap/ng-bootstrap';
 import {DOCUMENT, NgStyle} from '@angular/common';
 import {translate, TranslocoDirective} from "@jsverse/transloco";
@@ -48,6 +49,11 @@ import {UtilityService} from "../../../shared/_services/utility.service";
 import {Chapter} from "../../../_models/chapter";
 import {User} from "../../../_models/user/user";
 import {YomitanService} from "../../../_services/yomitan.service";
+import {OcrService} from "../../../_services/ocr.service";
+import {OcrPage} from "../../../_models/ocr/ocr";
+import {OcrStatus} from "../../../_models/ocr-status";
+import {EVENTS, MessageHubService} from "../../../_services/message-hub.service";
+import {drawOcrLayer, OCR_LAYER_CLASS, setOcrOutlines} from "../../_helpers/ocr-overlay";
 
 const KEYBIND_TARGETS = [
   {keyBindTarget: KeyBindTarget.OpenHelp},
@@ -82,6 +88,8 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
   private readonly keyBindService = inject(KeyBindService);
   protected readonly breakpointService = inject(BreakpointService);
   private readonly yomitanService = inject(YomitanService);
+  private readonly ocrService = inject(OcrService);
+  private readonly messageHub = inject(MessageHubService);
 
 
   readonly container = viewChild.required<ElementRef>('container');
@@ -154,6 +162,20 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
    */
   yomitanEnabled = signal(false);
 
+  /**
+   * 1-based pages that have OCR text. Empty for PDFs that carry their own text
+   */
+  ocrPages = signal<ReadonlySet<number>>(new Set());
+  /**
+   * Outlines the OCR'd lines, tinted by how sure the OCR was, so a misread kanji can be told from a missing dictionary entry
+   */
+  ocrOutlines = signal(false);
+  private readonly ocrPageCache = new Map<number, OcrPage>();
+  /**
+   * The latest div pdf.js rendered for each 1-based page. pdf.js replaces a page's contents on every render
+   */
+  private readonly renderedPageDivs = new Map<number, HTMLElement>();
+
   constructor() {
       this.navService.hideNavBar();
       this.themeService.clearThemes();
@@ -196,8 +218,10 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
 
       effect(() => {
         if (this.yomitanEnabled()) {
-          // pdf.js positions every text run absolutely, so layout-aware scanning would end each word at its span
-          this.yomitanService.enableReaderScanning('ngx-extended-pdf-viewer .textLayer', {layoutAwareScan: false}).catch(err => {
+          // pdf.js positions every text run absolutely, and so does the OCR layer, so layout-aware scanning would end
+          // each word at its span. One :is() keeps Yomitan's "selector, selector *" check matching inside both layers
+          const selector = `ngx-extended-pdf-viewer :is(.textLayer, .${OCR_LAYER_CLASS})`;
+          this.yomitanService.enableReaderScanning(selector, {layoutAwareScan: false}).catch(err => {
             console.error('Yomitan failed to start', err);
             this.toastr.error(translate('book-reader.yomitan-failed'));
           });
@@ -365,6 +389,66 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
       this.cdRef.markForCheck();
     });
     setTimeout(() => this.readerService.enableWakeLock(this.container().nativeElement), 1000);
+
+    this.initOcr();
+  }
+
+  private initOcr() {
+    this.ocrService.getChapterStatus(this.chapterId).subscribe(status => {
+      if (!status) return;
+      if ([OcrStatus.NotChecked, OcrStatus.Pending, OcrStatus.Processing].includes(status.status)) {
+        this.ocrService.prioritizeChapter(this.chapterId).subscribe();
+      }
+      this.addOcrPages(status.pages);
+    });
+
+    this.messageHub.messages$.pipe(
+      filter(message => message.event === EVENTS.OcrPagesReady),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(message => {
+      const body = message.payload as {chapterId: number, pages: number[]};
+      if (body.chapterId !== this.chapterId) return;
+      body.pages.forEach(page => this.ocrPageCache.delete(page));
+      this.addOcrPages(body.pages);
+    });
+  }
+
+  private addOcrPages(pages: number[]) {
+    if (pages.length === 0) return;
+    this.ocrPages.update(existing => new Set([...existing, ...pages]));
+    pages.forEach(page => this.drawOcrPage(page));
+    this.cdRef.markForCheck();
+  }
+
+  onPageRendered(event: PageRenderedEvent) {
+    // Rotation is only set by the file itself, since the reader hides the rotate button, and the overlay doesn't handle it yet
+    if (event.source.rotation !== 0) return;
+    this.renderedPageDivs.set(event.pageNumber, event.source.div);
+    this.drawOcrPage(event.pageNumber);
+  }
+
+  private drawOcrPage(pageNum: number) {
+    const div = this.renderedPageDivs.get(pageNum);
+    if (!div || !div.isConnected || !this.ocrPages().has(pageNum)) return;
+
+    const cached = this.ocrPageCache.get(pageNum);
+    if (cached) {
+      drawOcrLayer(div, cached, this.ocrOutlines());
+      return;
+    }
+
+    this.ocrService.getPage(this.chapterId, pageNum).subscribe(page => {
+      if (!page) return;
+      this.ocrPageCache.set(pageNum, page);
+      // The page may have been re-rendered while its lines were loading
+      const current = this.renderedPageDivs.get(pageNum);
+      if (current?.isConnected) drawOcrLayer(current, page, this.ocrOutlines());
+    });
+  }
+
+  toggleOcrOutlines() {
+    this.ocrOutlines.update(outlined => !outlined);
+    setOcrOutlines(this.container().nativeElement, this.ocrOutlines());
   }
 
   /**

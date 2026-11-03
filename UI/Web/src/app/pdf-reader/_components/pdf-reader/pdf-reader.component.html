@@ -44,6 +44,7 @@
         (progress)="updateLoadProgress($event)"
         (zoomChange)="calcScrollbarNeeded()"
         (findbarVisibleChange)="updateSearchOpen($event)"
+        (pageRendered)="onPageRendered($event)"
        />
 
       @if (scrollMode === ScrollModeType.page && !isLoading) {
@@ -72,6 +73,14 @@
               <i class="toolbar-icon fa fa-language" [ngStyle]="{color: fontColor, opacity: yomitanEnabled() ? 1 : 0.5}" aria-hidden="true"></i>
               <span class="visually-hidden">{{yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')}}</span>
             </button>
+
+            @if (ocrPages().size > 0) {
+              <button [ngbTooltip]="ocrOutlines() ? t('ocr-outlines-on') : t('ocr-outlines-off')" (click)="toggleOcrOutlines()"
+                      [attr.aria-pressed]="ocrOutlines()" class="btn-icon mt-0 mb-0 pt-1 pb-0 toolbarButton">
+                <i class="toolbar-icon fa-solid fa-vector-square" [ngStyle]="{color: fontColor, opacity: ocrOutlines() ? 1 : 0.5}" aria-hidden="true"></i>
+                <span class="visually-hidden">{{ocrOutlines() ? t('ocr-outlines-on') : t('ocr-outlines-off')}}</span>
+              </button>
+            }
 
             @if (incognitoMode) {
               <button [ngbTooltip]="t('toggle-incognito')" (click)="turnOffIncognito()" class="btn-icon mt-0 mb-0 pt-1 pb-0 toolbarButton">
