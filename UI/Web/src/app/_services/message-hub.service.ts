@@ -87,6 +87,14 @@ export enum EVENTS {
     */
   WordCountAnalyzerProgress = 'WordCountAnalyzerProgress',
    /**
+    * The OCR worker's progress through a scanned PDF
+    */
+  OcrProgress = 'OcrProgress',
+   /**
+    * Pages of a chapter got OCR text
+    */
+  OcrPagesReady = 'OcrPagesReady',
+   /**
     * When the user needs to be informed, but it's not a big deal
     */
   Info = 'Info',
@@ -212,6 +220,7 @@ const bodyPayloadEvents = [
   EVENTS.LicenseInfoUpdate,
   EVENTS.ExternalMetadataUpdate,
   EVENTS.ScanRescheduled,
+  EVENTS.OcrPagesReady,
 ];
 
 const envelopePayloadEvents = [

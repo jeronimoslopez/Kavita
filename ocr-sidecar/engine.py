@@ -22,7 +22,7 @@ NDLOCR_SRC = Path(os.environ.get("NDLOCR_SRC", "/opt/ndlocr-lite/src"))
 NDLOCR_COMMIT = os.environ.get("NDLOCR_COMMIT", "e57f7c6")
 # Bump when the adapter changes what it returns for the same page, so Kavita
 # can tell old stored lines from new ones.
-ADAPTER_VERSION = "1"
+ADAPTER_VERSION = "2"
 
 sys.path.insert(0, str(NDLOCR_SRC))
 
@@ -139,6 +139,47 @@ def _inside_fraction(inner, outer):
     return ix * iy / area if area else 0.0
 
 
+def _vertical_order(lines):
+    """Order vertical columns: tiers top to bottom, columns right to left within a tier.
+
+    Columns whose vertical spans overlap share a tier, so a two-tier page keeps
+    reading the whole upper tier before the lower one.
+    """
+    tiers = []
+    for line in sorted(lines, key=lambda l: l.box[1]):
+        top, bottom = line.box[1], line.box[1] + line.box[3]
+        if tiers and top < tiers[-1][1]:
+            tiers[-1][1] = max(tiers[-1][1], bottom)
+            tiers[-1][2].append(line)
+        else:
+            tiers.append([top, bottom, [line]])
+    return [line for _, _, members in tiers for line in sorted(members, key=lambda l: -(l.box[0] + l.box[2]))]
+
+
+def _reading_order(entries):
+    """Put lines in reading order from (rank, doc_index, block, line) entries.
+
+    Blocks keep NDLOCR-Lite's order, taken from the lowest ORDER among their
+    lines. Inside a block of mostly vertical lines, the columns are re-ordered
+    by position. NDLOCR-Lite's own ORDER can shuffle the columns of one block
+    when a column is taller than its neighbours, for example with a margin number
+    fused onto its top, and the order changed with small differences in how a
+    page was rendered. Horizontal blocks keep NDLOCR-Lite's order.
+    """
+    groups = {}
+    for entry in entries:
+        key = entry[2] if entry[2] is not None else ("own", entry[1])
+        groups.setdefault(key, []).append(entry)
+
+    ordered = []
+    for members in sorted(groups.values(), key=lambda g: min((e[0], e[1]) for e in g)):
+        lines = [e[3] for e in sorted(members, key=lambda e: (e[0], e[1]))]
+        if len(lines) > 1 and 2 * sum(l.vertical for l in lines) > len(lines):
+            lines = _vertical_order(lines)
+        ordered.extend(lines)
+    return ordered
+
+
 def _ruby_anchor(ruby, lines):
     """Pick the line a ruby box annotates.
 
@@ -211,6 +252,7 @@ class NdlocrEngine:
         # json_lines and page_xml both come from root.findall(".//LINE") on one
         # tree, so they line up index for index.
         line_elems = page.findall(".//LINE")
+        block_of = {id(line): b for b, block in enumerate(page.iter("TEXTBLOCK")) for line in block.iter("LINE")}
         texts = [entry["text"] for entry in result["json_lines"]]
         if len(line_elems) != len(texts):
             raise RuntimeError(f"NDLOCR-Lite returned {len(texts)} texts for {len(line_elems)} lines")
@@ -221,7 +263,7 @@ class NdlocrEngine:
             if box is None or not str(text):
                 continue
             rank = int(elem.get("ORDER", doc_index))
-            ranked.append((rank, doc_index, Line(
+            ranked.append((rank, doc_index, block_of.get(id(elem)), Line(
                 order=0,
                 text=str(text),
                 box=box,
@@ -230,7 +272,7 @@ class NdlocrEngine:
                 det_conf=float(elem.get("CONF", 0.0)),
                 rec_conf=min(getattr(text, "probs", None) or [0.0]),
             )))
-        lines = [line for _, _, line in sorted(ranked, key=lambda r: (r[0], r[1]))]
+        lines = _reading_order(ranked)
 
         rubies, extras = self._read_blocks(page, img, lines)
 

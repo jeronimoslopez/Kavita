@@ -63,6 +63,9 @@ export class EventTitlePipe implements PipeTransform {
       case EVENTS.WordCountAnalyzerProgress:
         if (!libraryName) return source.title;
         return this.translocoService.translate(`${PREFIX}.word-count-analyzer-progress`, {libraryName});
+      case EVENTS.OcrProgress:
+        if (!libraryName) return source.title;
+        return this.translocoService.translate(`${PREFIX}.ocr-progress`, {libraryName});
       case EVENTS.BackupDatabaseProgress:
         return this.translocoService.translate(`${PREFIX}.backup-database-progress`);
       case EVENTS.CleanupProgress:

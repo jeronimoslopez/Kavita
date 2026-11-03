@@ -74,6 +74,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<IMetadataService, MetadataService>();
         services.AddScoped<IWordCountAnalyzerService, WordCountAnalyzerService>();
         services.AddScoped<IOcrService, OcrService>();
+        services.AddSingleton<IOcrSidecarClient, OcrSidecarClient>();
         services.AddScoped<ILibraryWatcher, LibraryWatcher>();
         services.AddScoped<ITachiyomiService, TachiyomiService>();
         services.AddScoped<ICollectionTagService, CollectionTagService>();
@@ -130,6 +131,11 @@ public static class ApplicationServiceExtensions
         services.AddSingleton<IYomitanFetchService, YomitanFetchService>();
         services.AddScoped<IYomitanOptionsService, YomitanOptionsService>();
         services.AddHostedService<YomitanDictionaryImportHostedService>();
+
+        // The worker is also the signal services use to wake it when they queue OCR work
+        services.AddSingleton<OcrWorkerHostedService>();
+        services.AddSingleton<IOcrWorkerSignal>(sp => sp.GetRequiredService<OcrWorkerHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<OcrWorkerHostedService>());
     }
 
 }

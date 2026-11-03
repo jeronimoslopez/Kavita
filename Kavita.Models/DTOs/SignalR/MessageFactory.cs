@@ -123,6 +123,14 @@ public static class MessageFactory
     /// </summary>
     private const string WordCountAnalyzerProgress = "WordCountAnalyzerProgress";
     /// <summary>
+    /// The OCR worker's progress through a file
+    /// </summary>
+    private const string OcrProgress = "OcrProgress";
+    /// <summary>
+    /// Pages of a chapter got OCR text, so an open reader can draw it
+    /// </summary>
+    public const string OcrPagesReady = "OcrPagesReady";
+    /// <summary>
     /// A generic message that can occur in background processing to inform user, but no direct action is needed
     /// </summary>
     public const string Info = "Info";
@@ -322,6 +330,33 @@ public static class MessageFactory
             EventType = eventType,
             Progress = ProgressType.Determinate,
             Body = new WordCountAnalyzerProgressEventBodyDto(libraryId, progress, DateTime.Now)
+        };
+    }
+
+    public static SignalRMessageDto OcrProgressEvent(int libraryId, float progress, string eventType, string subtitle = "")
+    {
+        return new SignalRMessageDto()
+        {
+            Name = OcrProgress,
+            Priority = MessageEventPriority.Activity,
+            Title = "Running OCR",
+            SubTitle = subtitle,
+            EventType = eventType,
+            Progress = ProgressType.Determinate,
+            Body = new OcrProgressEventBodyDto(libraryId, progress, DateTime.Now)
+        };
+    }
+
+    /// <param name="pages">1-based page numbers</param>
+    public static SignalRMessageDto OcrPagesReadyEvent(int seriesId, int chapterId, IList<int> pages)
+    {
+        return new SignalRMessageDto()
+        {
+            Name = OcrPagesReady,
+            Priority = MessageEventPriority.Silent,
+            Title = "OCR text ready",
+            Progress = ProgressType.None,
+            Body = new OcrPagesReadyEventBodyDto(seriesId, chapterId, pages)
         };
     }
 

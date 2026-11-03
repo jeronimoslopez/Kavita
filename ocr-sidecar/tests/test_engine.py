@@ -41,6 +41,32 @@ def test_ruby_anchors_to_line_below_when_horizontal(engine_module):
     assert engine_module._ruby_anchor([50, 132, 60, 15], [upper, lower]) is lower
 
 
+def test_vertical_block_reads_right_to_left_whatever_ndlocr_ranked(engine_module):
+    Line = engine_module.Line
+    columns = [Line(0, str(i), [800 - 40 * i, 120, 30, 500], True, "body", 1, 1) for i in range(4)]
+    # The order NDLOCR-Lite gave the essay page in Kavita's render: 0, 6, 5, 1
+    entries = [(0, 0, 0, columns[0]), (6, 1, 0, columns[1]), (5, 2, 0, columns[2]), (1, 3, 0, columns[3])]
+    assert [l.text for l in engine_module._reading_order(entries)] == ["0", "1", "2", "3"]
+
+
+def test_two_tier_block_reads_the_upper_tier_first(engine_module):
+    Line = engine_module.Line
+    upper = [Line(0, f"u{i}", [800 - 40 * i, 100, 30, 400], True, "body", 1, 1) for i in range(2)]
+    lower = [Line(0, f"l{i}", [800 - 40 * i, 600, 30, 400], True, "body", 1, 1) for i in range(2)]
+    entries = [(i, i, 0, line) for i, line in enumerate([lower[1], upper[1], lower[0], upper[0]])]
+    assert [l.text for l in engine_module._reading_order(entries)] == ["u0", "u1", "l0", "l1"]
+
+
+def test_blocks_and_horizontal_lines_keep_ndlocr_order(engine_module):
+    Line = engine_module.Line
+    title = Line(0, "title", [100, 50, 600, 30], False, "title", 1, 1)
+    second = Line(0, "second", [100, 300, 600, 30], False, "body", 1, 1)
+    first = Line(0, "first", [100, 400, 600, 30], False, "body", 1, 1)
+    # Horizontal lines stay as ranked even when that isn't top to bottom
+    entries = [(2, 0, 1, first), (3, 1, 1, second), (0, 2, None, title)]
+    assert [l.text for l in engine_module._reading_order(entries)] == ["title", "first", "second"]
+
+
 @pytest.mark.slow
 def test_real_page_with_vertical_text_and_ruby(validator):
     import app as sidecar

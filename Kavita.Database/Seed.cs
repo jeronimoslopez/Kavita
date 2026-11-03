@@ -198,6 +198,9 @@ public static class Seed
                 new() {Key = ServerSettingKey.FirstInstallVersion, Value = BuildInfo.Version.ToString()},
                 new() {Key = ServerSettingKey.FirstInstallDate, Value = DateTime.UtcNow.ToString(CultureInfo.InvariantCulture)},
                 new() {Key = ServerSettingKey.StatsApiHits, Value = "0"},
+                new() {Key = ServerSettingKey.OcrSidecarUrl, Value = string.Empty},
+                new() {Key = ServerSettingKey.OcrWindowStart, Value = string.Empty},
+                new() {Key = ServerSettingKey.OcrWindowEnd, Value = string.Empty},
             }.ToArray()
         ];
 

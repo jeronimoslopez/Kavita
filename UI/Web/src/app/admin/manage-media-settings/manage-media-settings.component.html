@@ -56,6 +56,40 @@
       </app-setting-item>
     </div>
 
+    <div class="row g-0 mt-2">
+      <app-setting-item [title]="t('ocr-sidecar-url-label')" [subtitle]="t('ocr-sidecar-url-tooltip')"
+                        [control]="settingsForm.ocrSidecarUrl" labelId="settings-ocr-sidecar-url">
+        <ng-template #view>
+          {{settingsForm.ocrSidecarUrl().value() || t('ocr-off')}}
+        </ng-template>
+        <ng-template #edit>
+          <input id="settings-ocr-sidecar-url" class="form-control" [formField]="settingsForm.ocrSidecarUrl" type="text"
+                 placeholder="http://ocr:8000" [appFormField]="settingsForm.ocrSidecarUrl">
+        </ng-template>
+      </app-setting-item>
+    </div>
+
+    <div class="row g-0 mt-2">
+      <app-setting-item [title]="t('ocr-window-label')" [subtitle]="t('ocr-window-tooltip')"
+                        [control]="settingsForm.ocrWindowStart" labelId="settings-ocr-window-start">
+        <ng-template #view>
+          @if (settingsForm.ocrWindowStart().value() && settingsForm.ocrWindowEnd().value()) {
+            {{settingsForm.ocrWindowStart().value()}} – {{settingsForm.ocrWindowEnd().value()}}
+          } @else {
+            {{t('ocr-window-any')}}
+          }
+        </ng-template>
+        <ng-template #edit>
+          <div class="input-group">
+            <input id="settings-ocr-window-start" class="form-control" [formField]="settingsForm.ocrWindowStart" type="text"
+                   placeholder="01:00" [attr.aria-label]="t('ocr-window-start')" [appFormField]="settingsForm.ocrWindowStart">
+            <input class="form-control" [formField]="settingsForm.ocrWindowEnd" type="text"
+                   placeholder="07:00" [attr.aria-label]="t('ocr-window-end')" [appFormField]="settingsForm.ocrWindowEnd">
+          </div>
+        </ng-template>
+      </app-setting-item>
+    </div>
+
     @let bookmarksDirectory = settingsForm.bookmarksDirectory;
     <div class="row g-0 mt-2">
       <app-setting-item [title]="t('bookmark-dir-label')" [subtitle]="t('bookmark-dir-tooltip')"

@@ -28,6 +28,9 @@ export interface ServerSettings {
   onDeckUpdateDays: number;
   coverImageSize: CoverImageSize;
   pdfRenderResolution: PdfRenderResolution;
+  ocrSidecarUrl: string;
+  ocrWindowStart: string;
+  ocrWindowEnd: string;
   smtpConfig: SmtpConfig;
   oidcConfig: OidcConfig;
   installId: string;
