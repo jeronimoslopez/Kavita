@@ -53,6 +53,7 @@ import {ModalService} from "../../../_services/modal.service";
 import {Tabs} from "../../../_models/tabs";
 import {TabTitlePipe} from "../../../_pipes/tab-title.pipe";
 import {MetadataProvider} from "../../../_models/kavitaplus/metadata-provider.enum";
+import {OcrEngine} from "../../../_models/ocr/ocr";
 import {MetadataProviderTitlePipe} from "../../../_pipes/metadata-provider-title.pipe";
 import {UtcToLocalTimePipe} from "../../../_pipes/utc-to-local-time.pipe";
 import {UtilityService} from "../../../shared/_services/utility.service";
@@ -94,6 +95,7 @@ interface FormModel {
   removePrefixForSortName: boolean;
   inheritWebLinksFromFirstChapter: boolean;
   enableOcr: boolean;
+  ocrEngine: OcrEngine;
   defaultLanguage: string;
   metadataProvider: MetadataProvider;
   excludePatterns: string[];
@@ -155,6 +157,7 @@ export class LibrarySettingsModalComponent implements OnInit {
     includeInSearch: true,
     inheritWebLinksFromFirstChapter: false,
     enableOcr: false,
+    ocrEngine: OcrEngine.Auto,
     fileGroupTypes: this.getLibraryFileTypes(LibraryType.Manga),
     manageCollections: false,
     manageReadingLists: false,
@@ -206,7 +209,15 @@ export class LibrarySettingsModalComponent implements OnInit {
     return {title: this.libraryTypePipe.transform(f), value: f};
   }).sort((a, b) => a.title.localeCompare(b.title));
 
+  ocrEngines = [OcrEngine.Auto, OcrEngine.Books, OcrEngine.Manga].map(value => {
+    return {value, title: translate('library-settings-modal.ocr-engine-' + OcrEngine[value].toLowerCase())};
+  });
+
   languageSettings = signal<TypeaheadConfig<Language> | null>(null);
+
+  ocrEngineKey(engine: OcrEngine) {
+    return OcrEngine[engine].toLowerCase();
+  }
 
   setupStep = signal<StepID>(StepID.General);
   isAddLibrary= signal<boolean>(true);
@@ -302,6 +313,7 @@ export class LibrarySettingsModalComponent implements OnInit {
       includeInSearch: library.includeInSearch,
       inheritWebLinksFromFirstChapter: library.inheritWebLinksFromFirstChapter,
       enableOcr: library.enableOcr,
+      ocrEngine: library.ocrEngine,
       fileGroupTypes: library.libraryFileTypes,
       manageCollections: library.manageCollections,
       manageReadingLists: library.manageReadingLists,

@@ -20,7 +20,7 @@ public class OcrRepository(DataContext context) : IOcrRepository
     public async Task<IList<MangaFile>> GetOcrFilesForSeriesAsync(int seriesId, bool includeLibrariesWithoutOcr = false,
         CancellationToken ct = default)
     {
-        var files = includeLibrariesWithoutOcr ? PdfFiles() : OcrFiles();
+        var files = includeLibrariesWithoutOcr ? OcrSourceFiles() : OcrFiles();
         return await files
             .Where(f => f.Chapter.Volume.SeriesId == seriesId)
             .ToListAsync(ct);
@@ -39,9 +39,9 @@ public class OcrRepository(DataContext context) : IOcrRepository
         return await OcrFiles().FirstOrDefaultAsync(f => f.Id == mangaFileId, ct);
     }
 
-    public async Task<MangaFile?> GetPdfFileForChapterAsync(int chapterId, CancellationToken ct = default)
+    public async Task<MangaFile?> GetOcrSourceFileForChapterAsync(int chapterId, CancellationToken ct = default)
     {
-        return await PdfFiles()
+        return await OcrSourceFiles()
             .Where(f => f.ChapterId == chapterId)
             .OrderBy(f => f.Id)
             .FirstOrDefaultAsync(ct);
@@ -79,6 +79,9 @@ public class OcrRepository(DataContext context) : IOcrRepository
                 SeriesName = f.Chapter.Volume.Series.Name,
                 OcrStatus = f.OcrStatus,
                 OcrSourceWriteTimeUtc = f.OcrSourceWriteTimeUtc,
+                Format = f.Format,
+                LibraryType = f.Chapter.Volume.Series.Library.Type,
+                OcrEngine = f.Chapter.Volume.Series.Library.OcrEngine,
             })
             .FirstOrDefaultAsync(ct);
     }
@@ -124,13 +127,18 @@ public class OcrRepository(DataContext context) : IOcrRepository
             .ToListAsync(ct);
     }
 
-    private IQueryable<MangaFile> PdfFiles()
+    /// <summary>
+    /// Files OCR can read. An archive only counts when it's its chapter's only file, because its page numbers are then
+    /// the reader's page numbers
+    /// </summary>
+    private IQueryable<MangaFile> OcrSourceFiles()
     {
-        return context.MangaFile.Where(f => f.Format == MangaFormat.Pdf);
+        return context.MangaFile.Where(f => f.Format == MangaFormat.Pdf ||
+                                            (f.Format == MangaFormat.Archive && f.Chapter.Files.Count == 1));
     }
 
     private IQueryable<MangaFile> OcrFiles()
     {
-        return PdfFiles().Where(f => f.Chapter.Volume.Series.Library.EnableOcr);
+        return OcrSourceFiles().Where(f => f.Chapter.Volume.Series.Library.EnableOcr);
     }
 }

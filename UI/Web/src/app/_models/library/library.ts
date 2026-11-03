@@ -1,3 +1,4 @@
+import {OcrEngine} from '../ocr/ocr';
 import {FileTypeGroup} from "./file-type-group.enum";
 import {MetadataProvider} from "../kavitaplus/metadata-provider.enum";
 
@@ -41,6 +42,7 @@ export interface Library extends LiteLibrary{
     collapseSeriesRelationships: boolean;
     inheritWebLinksFromFirstChapter: boolean;
     enableOcr: boolean;
+    ocrEngine: OcrEngine;
     defaultLanguage: string;
     metadataProvider: MetadataProvider;
     libraryFileTypes: Array<FileTypeGroup>;

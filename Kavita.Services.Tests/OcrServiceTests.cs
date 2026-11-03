@@ -1,4 +1,6 @@
 using System.IO.Abstractions.TestingHelpers;
+using Flurl.Http;
+using Flurl.Http.Content;
 using Flurl.Http.Testing;
 using Kavita.API.Database;
 using Kavita.API.Services;
@@ -8,6 +10,7 @@ using Kavita.Common;
 using Kavita.Database;
 using Kavita.Database.Tests;
 using Kavita.Models.Builders;
+using Kavita.Models.DTOs.Ocr;
 using Kavita.Models.Entities;
 using Kavita.Models.Entities.Enums;
 using Kavita.Services.Builders;
@@ -23,6 +26,7 @@ namespace Kavita.Services.Tests;
 public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(outputHelper), IDisposable
 {
     private const string PdfPath = "/books/Quartet/Quartet 1.pdf";
+    private const string CbzPath = "/manga/Frieren/Frieren 01.cbz";
     private const string SidecarUrl = "http://ocr:8000";
     private static readonly DateTime WriteTime = new(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
     /// <summary>
@@ -33,6 +37,7 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
 
     private readonly IBookService _bookService = Substitute.For<IBookService>();
     private readonly IOcrWorkerSignal _workerSignal = Substitute.For<IOcrWorkerSignal>();
+    private readonly ICacheService _cacheService = Substitute.For<ICacheService>();
     private readonly MockFileSystem _fileSystem = new();
     private readonly HttpTest _httpTest = new();
 
@@ -52,8 +57,46 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
 
         var service = new OcrService(Substitute.For<ILogger<OcrService>>(), unitOfWork, _bookService,
             new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), _fileSystem), new OcrSidecarClient(),
-            Substitute.For<IEventHub>(), _workerSignal);
+            Substitute.For<IEventHub>(), _workerSignal, _cacheService);
         return (unitOfWork, context, service, file);
+    }
+
+    /// <summary>
+    /// A Manga library holding one series whose only chapter is <paramref name="archives"/> CBZs of 5 pages each
+    /// </summary>
+    private async Task<(IUnitOfWork, DataContext, OcrService, MangaFile)> SetupManga(int archives = 1,
+        OcrEngine engine = OcrEngine.Auto)
+    {
+        var (unitOfWork, context, _) = await CreateDatabase();
+        var chapter = new ChapterBuilder("1").Build();
+        for (var i = 0; i < archives; i++)
+        {
+            var path = i == 0 ? CbzPath : $"/manga/Frieren/Frieren 01 part {i + 1}.cbz";
+            _fileSystem.AddFile(path, new MockFileData("zip") { LastWriteTime = WriteTime });
+            chapter.Files.Add(new MangaFileBuilder(path, MangaFormat.Archive, 5).Build());
+        }
+
+        var series = new SeriesBuilder("Frieren")
+            .WithFormat(MangaFormat.Archive)
+            .WithVolume(new VolumeBuilder("1").WithChapter(chapter).Build())
+            .Build();
+        var library = new LibraryBuilder("Manga", LibraryType.Manga).WithSeries(series).Build();
+        library.EnableOcr = true;
+        library.OcrEngine = engine;
+        context.Library.Add(library);
+        await context.SaveChangesAsync();
+
+        var service = new OcrService(Substitute.For<ILogger<OcrService>>(), unitOfWork, _bookService,
+            new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), _fileSystem), new OcrSidecarClient(),
+            Substitute.For<IEventHub>(), _workerSignal, _cacheService);
+        return (unitOfWork, context, service, chapter.Files.OrderBy(f => f.Id).First());
+    }
+
+    private static string? MultipartField(FlurlCall call, string name)
+    {
+        var part = (call.HttpRequestMessage.Content as CapturedMultipartContent)?.Parts
+            .FirstOrDefault(p => p.Headers.ContentDisposition?.Name?.Trim('"') == name);
+        return part is CapturedStringContent text ? text.Content : null;
     }
 
     private static Series BuildSeries(string name, MangaFile file)
@@ -180,9 +223,94 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
         Assert.Equal(OcrStatus.Removed, file.OcrStatus);
     }
 
+    [Fact]
+    public async Task DetectNewFiles_Archive_QueuesEveryPageWithoutReadingText()
+    {
+        var (_, context, service, file) = await SetupManga();
+
+        await service.DetectNewFilesAsync();
+
+        await context.Entry(file).ReloadAsync();
+        Assert.Equal(OcrStatus.Pending, file.OcrStatus);
+        var pages = await context.OcrPage.Where(p => p.MangaFileId == file.Id).OrderBy(p => p.PageNumber).ToListAsync();
+        Assert.Equal([0, 1, 2, 3, 4], pages.Select(p => p.PageNumber));
+        _bookService.DidNotReceiveWithAnyArgs().GetPdfPageTextLengths(default!);
+        _workerSignal.Received().Wake();
+    }
+
+    [Fact]
+    public async Task DetectNewFiles_ChapterOfTwoArchives_IsLeftAlone()
+    {
+        var (_, context, service, file) = await SetupManga(archives: 2);
+
+        await service.DetectNewFilesAsync();
+
+        await context.Entry(file).ReloadAsync();
+        Assert.Equal(OcrStatus.NotChecked, file.OcrStatus);
+        Assert.Empty(context.OcrPage);
+    }
+
     #endregion
 
     #region Processing
+
+    [Fact]
+    public async Task ProcessNextPage_Archive_SendsTheReadersCachedPageToTheMangaEngine()
+    {
+        var (_, context, service, file) = await SetupManga();
+        await QueuePages(context, file, 2);
+        const string pagePath = "/cache/1/003.jpg";
+        _fileSystem.AddFile(pagePath, new MockFileData([0xFF, 0xD8, 0xFF]));
+        _cacheService.Ensure(file.ChapterId, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(new ChapterBuilder("1").Build());
+        _cacheService.GetCachedPagePath(file.ChapterId, 2).Returns(pagePath);
+        _httpTest.RespondWith("""
+            {"engine": "pp-ocrv6-manga", "engineVersion": "v0.2-02af751+adapter.1", "imageWidth": 764, "imageHeight": 1200,
+             "lines": [
+               {"order": 0, "text": "王様が広場に", "box": [653, 106, 19, 115], "vertical": true, "kind": "body",
+                "detConf": 0.9, "recConf": 0.98, "block": 0},
+               {"order": 1, "text": "おうさまひろば", "box": [673, 106, 9, 92], "vertical": true, "kind": "ruby",
+                "detConf": 0.8, "recConf": 0.9, "block": 0}
+             ]}
+            """);
+
+        var result = await service.ProcessNextPageAsync(file.Id, SidecarUrl);
+
+        Assert.Equal(OcrPageOutcome.PageDone, result.Outcome);
+        Assert.Equal(3, result.PageNum);
+        _bookService.DidNotReceiveWithAnyArgs().RenderPdfPageForOcr(default!, default);
+        var call = Assert.Single(_httpTest.CallLog);
+        Assert.Equal("manga", MultipartField(call, "engine"));
+
+        var page = await context.OcrPage.AsNoTracking().SingleAsync();
+        Assert.Equal("pp-ocrv6-manga", page.Engine);
+        Assert.Equal([0, 0], page.Lines.Select(l => l.Block));
+        Assert.Equal(OcrLineKind.Ruby, page.Lines[1].Kind);
+    }
+
+    [Fact]
+    public async Task ProcessNextPage_ArchivePageMissingFromTheCache_FailsThePage()
+    {
+        var (_, context, service, file) = await SetupManga();
+        await QueuePages(context, file, 4);
+        _cacheService.Ensure(file.ChapterId, Arg.Any<bool>(), Arg.Any<CancellationToken>()).Returns(new ChapterBuilder("1").Build());
+        _cacheService.GetCachedPagePath(file.ChapterId, 4).Returns(string.Empty);
+
+        var result = await service.ProcessNextPageAsync(file.Id, SidecarUrl);
+
+        Assert.Equal(OcrPageOutcome.PageFailed, result.Outcome);
+        Assert.Empty(_httpTest.CallLog);
+    }
+
+    [Theory]
+    [InlineData(LibraryType.Manga, OcrEngine.Auto, "manga")]
+    [InlineData(LibraryType.Comic, OcrEngine.Auto, "manga")]
+    [InlineData(LibraryType.Book, OcrEngine.Auto, "ndlocr")]
+    [InlineData(LibraryType.Manga, OcrEngine.Books, "ndlocr")]
+    [InlineData(LibraryType.Book, OcrEngine.Manga, "manga")]
+    public void SidecarEngine_FollowsTheLibrary(LibraryType type, OcrEngine engine, string expected)
+    {
+        Assert.Equal(expected, OcrService.SidecarEngine(new OcrFileInfoDto { LibraryType = type, OcrEngine = engine }));
+    }
 
     [Fact]
     public async Task ProcessNextPage_StoresLinesAsFractionsOfThePage()
@@ -196,6 +324,7 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
         Assert.Equal(OcrPageOutcome.PageDone, result.Outcome);
         Assert.Equal(2, result.PageNum);
         _httpTest.ShouldHaveCalled($"{SidecarUrl}/ocr").WithVerb(HttpMethod.Post);
+        Assert.Equal("ndlocr", MultipartField(_httpTest.CallLog.Single(), "engine"));
 
         var page = await context.OcrPage.AsNoTracking().SingleAsync();
         Assert.Equal(OcrPageState.Done, page.State);
@@ -268,7 +397,7 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new OcrSidecarClient().RecognizeAsync(SidecarUrl, [1], cts.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new OcrSidecarClient().RecognizeAsync(SidecarUrl, [1], "ndlocr", cts.Token));
     }
 
     [Fact]

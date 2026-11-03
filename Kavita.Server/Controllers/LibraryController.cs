@@ -96,6 +96,7 @@ public class LibraryController(
         library.DefaultLanguage = dto.DefaultLanguage;
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
         library.EnableOcr = dto.EnableOcr;
+        library.OcrEngine = dto.OcrEngine;
 
         // Override Scrobbling for Comic libraries since there are no providers to scrobble to
         if (library.Type == LibraryType.Comic)
@@ -433,6 +434,7 @@ public class LibraryController(
                 RemovePrefixForSortName = sourceLibrary.RemovePrefixForSortName,
                 InheritWebLinksFromFirstChapter = sourceLibrary.InheritWebLinksFromFirstChapter,
                 EnableOcr = sourceLibrary.EnableOcr,
+                OcrEngine = sourceLibrary.OcrEngine,
                 DefaultLanguage = sourceLibrary.DefaultLanguage,
                 MetadataProvider = sourceLibrary.MetadataProvider,
                 ExcludePatterns = sourceLibrary.LibraryExcludePatterns.Select(p => p.Pattern).ToList(),
@@ -755,6 +757,7 @@ public class LibraryController(
         library.RemovePrefixForSortName = dto.RemovePrefixForSortName;
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
         library.EnableOcr = dto.EnableOcr;
+        library.OcrEngine = dto.OcrEngine;
         library.DefaultLanguage = dto.DefaultLanguage;
         library.MetadataProvider = dto.MetadataProvider;
 

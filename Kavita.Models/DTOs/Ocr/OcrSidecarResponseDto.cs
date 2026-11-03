@@ -43,4 +43,9 @@ public sealed record OcrSidecarLineDto
     public float DetConf { get; init; }
     [JsonPropertyName("recConf")]
     public float RecConf { get; init; }
+    /// <summary>
+    /// The speech bubble or caption the line belongs to. Only the manga engine sends it
+    /// </summary>
+    [JsonPropertyName("block")]
+    public int? Block { get; init; }
 }

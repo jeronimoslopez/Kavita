@@ -30,4 +30,8 @@ public sealed record OcrLine
     /// How sure the recognizer was of its least certain character, 0 to 1
     /// </summary>
     public float RecognitionConfidence { get; init; }
+    /// <summary>
+    /// Lines with the same number are one speech bubble or caption. Only the manga engine groups lines
+    /// </summary>
+    public int? Block { get; init; }
 }

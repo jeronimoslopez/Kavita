@@ -53,6 +53,8 @@ public sealed record UpdateLibraryDto
     /// <inheritdoc cref="Library.EnableOcr"/>
     [Required]
     public bool EnableOcr { get; init; }
+    /// <inheritdoc cref="Library.OcrEngine"/>
+    public OcrEngine OcrEngine { get; init; }
     /// <inheritdoc cref="Library.DefaultLanguage"/>
     public string DefaultLanguage { get; init; }
     /// <inheritdoc cref="Library.MetadataProvider"/>

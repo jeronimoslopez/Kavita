@@ -15,13 +15,15 @@ public class OcrSidecarClient : IOcrSidecarClient
     /// </summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(120);
 
-    public async Task<OcrSidecarResponseDto> RecognizeAsync(string sidecarUrl, byte[] image, CancellationToken ct = default)
+    public async Task<OcrSidecarResponseDto> RecognizeAsync(string sidecarUrl, byte[] image, string engine, CancellationToken ct = default)
     {
         try
         {
             return await $"{sidecarUrl.TrimEnd('/')}/ocr"
                 .WithTimeout(Timeout)
-                .PostMultipartAsync(content => content.AddFile("image", new MemoryStream(image), "page.png", "image/png"),
+                .PostMultipartAsync(content => content
+                        .AddFile("image", new MemoryStream(image), "page", "application/octet-stream")
+                        .AddString("engine", engine),
                     cancellationToken: ct)
                 .ReceiveJson<OcrSidecarResponseDto>();
         }

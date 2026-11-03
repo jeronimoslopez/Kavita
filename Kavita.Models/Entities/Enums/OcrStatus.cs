@@ -1,7 +1,8 @@
 namespace Kavita.Models.Entities.Enums;
 
 /// <summary>
-/// Where a file stands in OCR. Only PDFs in libraries with OCR turned on move past <see cref="NotChecked"/>
+/// Where a file stands in OCR. Only PDFs and single-archive chapters in libraries with OCR turned on move past
+/// <see cref="NotChecked"/>
 /// </summary>
 public enum OcrStatus
 {
@@ -10,7 +11,7 @@ public enum OcrStatus
     /// </summary>
     NotChecked = 0,
     /// <summary>
-    /// Every page already has text, so there's nothing to OCR
+    /// Every page of a PDF already has text, so there's nothing to OCR
     /// </summary>
     HasText = 1,
     /// <summary>

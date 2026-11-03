@@ -20,9 +20,10 @@ public interface IOcrRepository
     Task<IList<int>> GetFileIdsNeedingCheckAsync(CancellationToken ct = default);
     Task<MangaFile?> GetOcrFileAsync(int mangaFileId, CancellationToken ct = default);
     /// <summary>
-    /// The chapter's PDF, whether or not its library has OCR turned on, so text already stored stays readable
+    /// The chapter's PDF or only archive, whether or not its library has OCR turned on, so text already stored stays
+    /// readable
     /// </summary>
-    Task<MangaFile?> GetPdfFileForChapterAsync(int chapterId, CancellationToken ct = default);
+    Task<MangaFile?> GetOcrSourceFileForChapterAsync(int chapterId, CancellationToken ct = default);
     Task DeletePagesForFileAsync(int mangaFileId, CancellationToken ct = default);
     /// <summary>
     /// The file to OCR next: highest priority first, then the one queued longest ago
