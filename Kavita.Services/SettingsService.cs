@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -404,6 +405,28 @@ public class SettingsService(
             {
                 setting.Value = ((int)updateSettingsDto.PdfRenderResolution).ToString();
                 unitOfWork.SettingsRepository.Update(setting);
+            }
+
+            if (setting.Key == ServerSettingKey.OcrSidecarUrl && (updateSettingsDto.OcrSidecarUrl + string.Empty).Trim() != setting.Value)
+            {
+                var url = UrlHelper.RemoveEndingSlash((updateSettingsDto.OcrSidecarUrl + string.Empty).Trim());
+                if (url.Length > 0 && !(Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"))
+                    throw new KavitaException("ocr-sidecar-url-invalid");
+                setting.Value = url;
+                unitOfWork.SettingsRepository.Update(setting);
+            }
+
+            if (setting.Key is ServerSettingKey.OcrWindowStart or ServerSettingKey.OcrWindowEnd)
+            {
+                var time = ((setting.Key == ServerSettingKey.OcrWindowStart
+                    ? updateSettingsDto.OcrWindowStart : updateSettingsDto.OcrWindowEnd) + string.Empty).Trim();
+                if (time != setting.Value)
+                {
+                    if (time.Length > 0 && !TimeOnly.TryParseExact(time, "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                        throw new KavitaException("ocr-window-invalid");
+                    setting.Value = time;
+                    unitOfWork.SettingsRepository.Update(setting);
+                }
             }
 
             if (setting.Key == ServerSettingKey.HostName && updateSettingsDto.HostName + string.Empty != setting.Value)

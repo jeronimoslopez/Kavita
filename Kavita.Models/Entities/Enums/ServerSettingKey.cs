@@ -198,5 +198,20 @@ public enum ServerSettingKey
     /// When the CBL Sync task should run
     /// </summary>
     [Description("TaskCblSync")]
-    TaskCblSync = 43
+    TaskCblSync = 43,
+    /// <summary>
+    /// Base URL of the OCR sidecar. Empty turns OCR off for the whole server
+    /// </summary>
+    [Description("OcrSidecarUrl")]
+    OcrSidecarUrl = 44,
+    /// <summary>
+    /// Local time (HH:mm) OCR may start each day. Empty, along with <see cref="OcrWindowEnd"/>, means any time
+    /// </summary>
+    [Description("OcrWindowStart")]
+    OcrWindowStart = 45,
+    /// <summary>
+    /// Local time (HH:mm) OCR stops each day. A window that ends before it starts runs overnight
+    /// </summary>
+    [Description("OcrWindowEnd")]
+    OcrWindowEnd = 46,
 }

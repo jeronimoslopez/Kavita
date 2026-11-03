@@ -87,6 +87,15 @@ public class ServerSettingConverter : ITypeConverter<IEnumerable<ServerSetting>,
                 case ServerSettingKey.PdfRenderResolution:
                     destination.PdfRenderResolution = Enum.Parse<PdfRenderResolution>(row.Value);
                     break;
+                case ServerSettingKey.OcrSidecarUrl:
+                    destination.OcrSidecarUrl = row.Value;
+                    break;
+                case ServerSettingKey.OcrWindowStart:
+                    destination.OcrWindowStart = row.Value;
+                    break;
+                case ServerSettingKey.OcrWindowEnd:
+                    destination.OcrWindowEnd = row.Value;
+                    break;
                 case ServerSettingKey.EncodeMediaAs:
                     destination.EncodeMediaAs = Enum.Parse<EncodeFormat>(row.Value);
                     break;

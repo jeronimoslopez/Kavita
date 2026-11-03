@@ -95,6 +95,12 @@ public sealed record ServerSettingDto
     /// </summary>
     [EnumDataType(typeof(PdfRenderResolution))]
     public PdfRenderResolution PdfRenderResolution { get; set; }
+    /// <inheritdoc cref="ServerSettingKey.OcrSidecarUrl"/>
+    public string OcrSidecarUrl { get; set; } = string.Empty;
+    /// <inheritdoc cref="ServerSettingKey.OcrWindowStart"/>
+    public string OcrWindowStart { get; set; } = string.Empty;
+    /// <inheritdoc cref="ServerSettingKey.OcrWindowEnd"/>
+    public string OcrWindowEnd { get; set; } = string.Empty;
     /// <summary>
     /// SMTP Configuration
     /// </summary>
