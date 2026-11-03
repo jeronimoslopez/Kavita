@@ -20,6 +20,11 @@ export class OcrService {
     return this.httpClient.get<OcrPage | null>(this.baseUrl + `ocr/page?chapterId=${chapterId}&pageNum=${pageNum}`);
   }
 
+  /** Every page of the chapter that has OCR text, for find */
+  getChapterPages(chapterId: number) {
+    return this.httpClient.get<OcrPage[] | null>(this.baseUrl + 'ocr/chapter/pages?chapterId=' + chapterId);
+  }
+
   prioritizeChapter(chapterId: number) {
     return this.httpClient.post(this.baseUrl + 'ocr/chapter/prioritize?chapterId=' + chapterId, {});
   }
