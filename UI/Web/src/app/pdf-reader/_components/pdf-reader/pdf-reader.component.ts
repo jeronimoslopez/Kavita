@@ -10,6 +10,7 @@ import {
   inject,
   OnDestroy,
   OnInit,
+  signal,
   viewChild
 } from '@angular/core';
 import {ActivatedRoute, Router} from '@angular/router';
@@ -46,6 +47,7 @@ import {CHAPTER_ID_DOESNT_EXIST, ReaderService} from "../../../_services/reader.
 import {UtilityService} from "../../../shared/_services/utility.service";
 import {Chapter} from "../../../_models/chapter";
 import {User} from "../../../_models/user/user";
+import {YomitanService} from "../../../_services/yomitan.service";
 
 const KEYBIND_TARGETS = [
   {keyBindTarget: KeyBindTarget.OpenHelp},
@@ -79,6 +81,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
   public readonly document = inject(DOCUMENT);
   private readonly keyBindService = inject(KeyBindService);
   protected readonly breakpointService = inject(BreakpointService);
+  private readonly yomitanService = inject(YomitanService);
 
 
   readonly container = viewChild.required<ElementRef>('container');
@@ -146,6 +149,11 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
     this.accountService.hasDownloadRole()
   );
 
+  /**
+   * Click-to-look-up with Yomitan. Starts from the reading profile, the toolbar button changes it for this session only.
+   */
+  yomitanEnabled = signal(false);
+
   constructor() {
       this.navService.hideNavBar();
       this.themeService.clearThemes();
@@ -156,6 +164,10 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
         (e) => {
           switch (e.target) {
             case KeyBindTarget.Escape:
+              if (this.yomitanService.isPopupVisible()) {
+                this.yomitanService.hidePopup();
+                return;
+              }
               this.closeReader();
               break;
             case KeyBindTarget.FirstPage:
@@ -181,6 +193,18 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
           this.cdRef.markForCheck();
         }
       });
+
+      effect(() => {
+        if (this.yomitanEnabled()) {
+          // pdf.js positions every text run absolutely, so layout-aware scanning would end each word at its span
+          this.yomitanService.enableReaderScanning('ngx-extended-pdf-viewer .textLayer', {layoutAwareScan: false}).catch(err => {
+            console.error('Yomitan failed to start', err);
+            this.toastr.error(translate('book-reader.yomitan-failed'));
+          });
+        } else {
+          void this.yomitanService.disableReaderScanning();
+        }
+      });
   }
 
   @HostListener('window:resize', ['$event'])
@@ -198,6 +222,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
     this.navService.showNavBar();
     this.navService.showSideNav();
     this.readerService.disableWakeLock();
+    void this.yomitanService.disableReaderScanning();
 
     window.removeEventListener('keydown', this.downloadHandler, { capture: true });
   }
@@ -310,6 +335,7 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
     this.scrollMode = this.convertPdfScrollMode(this.readingProfile.pdfScrollMode || PdfScrollMode.Vertical);
     this.spreadMode = this.convertPdfSpreadMode(this.readingProfile.pdfSpreadMode || PdfSpreadMode.None);
     this.theme = this.convertPdfTheme(this.readingProfile.pdfTheme || PdfTheme.Dark);
+    this.yomitanEnabled.set(this.readingProfile.bookReaderYomitanEnabled);
   }
 
   init() {
@@ -378,6 +404,10 @@ export class PdfReaderComponent implements OnInit, OnDestroy {
       this.currentPage = currPage;
       this.cdRef.markForCheck();
     }, 100);
+  }
+
+  toggleYomitan() {
+    this.yomitanEnabled.update(enabled => !enabled);
   }
 
   toggleSpreadMode() {

@@ -3505,6 +3505,8 @@
         "dark-theme-alt": "Dark Theme",
         "close-reader-alt": "Close Reader",
         "toggle-incognito": "Turn off Incognito Mode",
+        "yomitan-on": "Yomitan lookups are on. Click to turn them off",
+        "yomitan-off": "Yomitan lookups are off. Click to turn them on",
         "shortcuts-menu-alt": "{{manga-reader.shortcuts-menu-alt}}"
     },
 
@@ -4864,7 +4866,7 @@
         "disable-bookmark-icon-label": "Disable Bookmark Icon",
         "disable-bookmark-icon-tooltip": "Removes bookmark icons from images in the reader",
         "yomitan-enabled-label": "Yomitan Dictionary",
-        "yomitan-enabled-tooltip": "Click a Japanese word in the book to look it up in Yomitan's pop-up dictionary",
+        "yomitan-enabled-tooltip": "Click a Japanese word in a book or PDF to look it up in Yomitan's pop-up dictionary",
 
         "pdf-scroll-mode-label": "Scroll Mode",
         "pdf-scroll-mode-tooltip": "How you scroll through pages. Vertical/Horizontal and Tap to Paginate (no scroll)",
