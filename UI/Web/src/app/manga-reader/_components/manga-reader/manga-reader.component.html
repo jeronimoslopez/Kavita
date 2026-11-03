@@ -32,6 +32,18 @@
           </div>
 
           <div style="margin-left: auto; padding-right: 3%;">
+            @if (hasOcr()) {
+              <button class="btn btn-icon" [ngbTooltip]="yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')"
+                      [attr.aria-pressed]="yomitanEnabled()" (click)="toggleYomitan()">
+                <i class="fa fa-language" [style.opacity]="yomitanEnabled() ? 1 : 0.5" aria-hidden="true"></i>
+                <span class="visually-hidden">{{yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')}}</span>
+              </button>
+              <button class="btn btn-icon" [ngbTooltip]="ocrOutlines() ? t('ocr-outlines-on') : t('ocr-outlines-off')"
+                      [attr.aria-pressed]="ocrOutlines()" (click)="toggleOcrOutlines()">
+                <i class="fa-solid fa-vector-square" [style.opacity]="ocrOutlines() ? 1 : 0.5" aria-hidden="true"></i>
+                <span class="visually-hidden">{{ocrOutlines() ? t('ocr-outlines-on') : t('ocr-outlines-off')}}</span>
+              </button>
+            }
             <button class="btn btn-icon" [ngbTooltip]="t('shortcuts-menu-alt')" (click)="openShortcutModal()">
               <i class="fa-solid fa-clipboard-question" aria-hidden="true"></i>
               <span class="visually-hidden">{{t('shortcuts-menu-alt')}}</span>
@@ -85,6 +97,9 @@
             }
           </div>
         </div>
+
+        <!-- OCR text for Yomitan, over the page-turn areas. MangaOcrOverlay fills it -->
+        <div class="ocr-host" #ocrHost (click)="onOcrClick($event)"></div>
 
         <div appDblClick (doubleClick)="bookmarkPage($event)" (singleClick)="toggleMenu()">
           <app-single-renderer [image$]="currentImage$"

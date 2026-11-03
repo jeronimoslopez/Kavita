@@ -3595,6 +3595,10 @@
         "swipe-enabled-label": "Swipe Enabled",
         "brightness-label": "Brightness",
         "bookmark-page-tooltip": "Bookmark Page",
+        "yomitan-on": "Yomitan lookups are on. Click to turn them off",
+        "yomitan-off": "Yomitan lookups are off. Click to turn them on",
+        "ocr-outlines-on": "Hide OCR outlines",
+        "ocr-outlines-off": "Outline OCR text",
         "unbookmark-page-tooltip": "Unbookmark Page",
         "bookmarks-title": "Bookmarks",
 

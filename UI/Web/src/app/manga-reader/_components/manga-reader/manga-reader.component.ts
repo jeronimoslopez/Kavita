@@ -43,6 +43,13 @@ import {ChangeContext, LabelType, NgxSliderModule, Options} from '@angular-slide
 import {NgbTooltip} from '@ng-bootstrap/ng-bootstrap';
 import {ToastrService} from '@openng/ngx-toastr';
 import {LayoutMode} from '../../_models/layout-mode';
+import {OcrService} from "../../../_services/ocr.service";
+import {YomitanService} from "../../../_services/yomitan.service";
+import {EVENTS, MessageHubService} from "../../../_services/message-hub.service";
+import {OcrPage} from "../../../_models/ocr/ocr";
+import {OcrStatus} from "../../../_models/ocr-status";
+import {OCR_LAYER_CLASS} from "../../../reader-shared/_helpers/ocr-overlay";
+import {MangaOcrOverlay} from "../../_helpers/manga-ocr-overlay";
 import {FITTING_OPTION, PAGING_DIRECTION} from '../../_models/reader-enums';
 import {ReaderSetting} from '../../_models/reader-setting';
 import {MangaReaderService} from '../../_service/manga-reader.service';
@@ -227,6 +234,28 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly entityTitleService = inject(EntityTitleService);
   private readonly modalService = inject(ModalService);
   private readonly reviewService = inject(ReviewService);
+  private readonly ocrService = inject(OcrService);
+  private readonly yomitanService = inject(YomitanService);
+  private readonly messageHub = inject(MessageHubService);
+
+  readonly ocrHost = viewChild<ElementRef<HTMLElement>>('ocrHost');
+  /**
+   * Click-to-look-up with Yomitan. Starts from the reading profile, and the menu button changes it for this session only
+   */
+  yomitanEnabled = signal(false);
+  /**
+   * Outlines the OCR'd lines, tinted by how sure the OCR was, so a misread kanji can be told from a missing dictionary entry
+   */
+  ocrOutlines = signal(false);
+  /**
+   * `chapterId:page` keys, with 1-based pages, of the pages that have OCR text
+   */
+  private readonly ocrPages = signal<ReadonlySet<string>>(new Set());
+  readonly hasOcr = computed(() => this.ocrPages().size > 0);
+  private readonly ocrPageCache = new Map<string, OcrPage>();
+  private readonly ocrPagesLoading = new Set<string>();
+  private readonly ocrChaptersChecked = new Set<number>();
+  private ocrOverlay: MangaOcrOverlay | null = null;
 
 
   libraryId!: number;
@@ -676,6 +705,10 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
       async (e) => {
         switch (e.target) {
           case KeyBindTarget.Escape:
+            if (this.yomitanService.isPopupVisible()) {
+              this.yomitanService.hidePopup();
+              return;
+            }
             if (this.menuOpen()) {
               this.toggleMenu();
               return;
@@ -745,6 +778,7 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.initOcr();
     const libraryId = this.route.snapshot.paramMap.get('libraryId');
     const seriesId = this.route.snapshot.paramMap.get('seriesId');
     const chapterId = this.route.snapshot.paramMap.get('chapterId');
@@ -817,6 +851,120 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
     ).subscribe();
   }
 
+  private initOcr() {
+    effect(() => {
+      const chapterId = this.chapterId();
+      if (chapterId > 0) untracked(() => this.loadOcrStatus(chapterId));
+    }, {injector: this.injector});
+
+    effect(() => {
+      const profile = this.readingProfile();
+      if (profile) untracked(() => this.yomitanEnabled.set(profile.bookReaderYomitanEnabled));
+    }, {injector: this.injector});
+
+    effect(() => {
+      // Loading Yomitan is only worth it once a page has text to look up
+      if (this.yomitanEnabled() && this.hasOcr()) {
+        // Every OCR line is positioned on its own, so layout-aware scanning would end each word at its span
+        this.yomitanService.enableReaderScanning(`app-manga-reader .${OCR_LAYER_CLASS}`, {layoutAwareScan: false}).catch(err => {
+          console.error('Yomitan failed to start', err);
+          this.toastr.error(translate('book-reader.yomitan-failed'));
+        });
+      } else {
+        void this.yomitanService.disableReaderScanning();
+      }
+    }, {injector: this.injector});
+
+    // The host only exists outside webtoon mode, so the overlay comes and goes with it
+    effect(() => {
+      const host = this.ocrHost()?.nativeElement;
+      untracked(() => {
+        this.ocrOverlay?.dispose();
+        this.ocrOverlay = host ? new MangaOcrOverlay(this.readingArea().nativeElement, host, img => this.ocrPageFor(img)) : null;
+        this.ocrOverlay?.setOutlined(this.ocrOutlines());
+      });
+    }, {injector: this.injector});
+
+    this.messageHub.messages$.pipe(
+      filter(message => message.event === EVENTS.OcrPagesReady),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(message => {
+      const body = message.payload as {chapterId: number, pages: number[]};
+      if (!this.ocrChaptersChecked.has(body.chapterId)) return;
+      body.pages.forEach(page => this.ocrPageCache.delete(`${body.chapterId}:${page}`));
+      this.addOcrPages(body.chapterId, body.pages);
+    });
+  }
+
+  private loadOcrStatus(chapterId: number) {
+    if (this.ocrChaptersChecked.has(chapterId)) return;
+    this.ocrChaptersChecked.add(chapterId);
+
+    this.ocrService.getChapterStatus(chapterId).subscribe(status => {
+      if (!status) return;
+      if ([OcrStatus.NotChecked, OcrStatus.Pending, OcrStatus.Processing].includes(status.status)) {
+        this.ocrService.prioritizeChapter(chapterId).subscribe();
+      }
+      this.addOcrPages(chapterId, status.pages);
+    });
+  }
+
+  private addOcrPages(chapterId: number, pages: number[]) {
+    if (pages.length === 0) return;
+    this.ocrPages.update(existing => new Set([...existing, ...pages.map(page => `${chapterId}:${page}`)]));
+    this.ocrOverlay?.refresh();
+  }
+
+  /**
+   * The lines for a page image, or null while it has none or they're loading. A load redraws the overlay when it lands
+   */
+  private ocrPageFor(img: HTMLImageElement) {
+    const chapterId = this.readerService.imageUrlToChapterId(img.src);
+    const pageNum = this.readerService.imageUrlToPageNum(img.src) + 1;
+    const key = `${chapterId}:${pageNum}`;
+    if (!this.ocrPages().has(key)) return null;
+
+    const cached = this.ocrPageCache.get(key);
+    if (cached) return cached;
+
+    if (!this.ocrPagesLoading.has(key)) {
+      this.ocrPagesLoading.add(key);
+      this.ocrService.getPage(chapterId, pageNum).subscribe({
+        next: page => {
+          this.ocrPagesLoading.delete(key);
+          if (!page) return;
+          this.ocrPageCache.set(key, page);
+          this.ocrOverlay?.refresh();
+        },
+        error: () => this.ocrPagesLoading.delete(key),
+      });
+    }
+    return null;
+  }
+
+  /**
+   * The text sits above the page-turn areas so Yomitan can reach it. A click that isn't a lookup or the end of a
+   * selection goes on to whatever is under the text, so pages still turn
+   */
+  onOcrClick(event: MouseEvent) {
+    if (this.yomitanService.isLookupClick(event)) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && !this.yomitanService.isScanSelection(selection)) return;
+
+    const host = this.ocrHost()?.nativeElement;
+    const below = document.elementsFromPoint(event.clientX, event.clientY).find(el => !host?.contains(el));
+    below?.dispatchEvent(new MouseEvent('click', event));
+  }
+
+  toggleYomitan() {
+    this.yomitanEnabled.update(enabled => !enabled);
+  }
+
+  toggleOcrOutlines() {
+    this.ocrOutlines.update(outlined => !outlined);
+    this.ocrOverlay?.setOutlined(this.ocrOutlines());
+  }
+
   ngAfterViewInit() {
     fromEvent(this.readingArea().nativeElement, 'scroll').pipe(debounceTime(20), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       if (this.isReaderModeWebtoon()) return;
@@ -833,6 +981,8 @@ export class MangaReaderComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.ocrOverlay?.dispose();
+    void this.yomitanService.disableReaderScanning();
     this.readerService.resetOverrideStyles();
     this.navService.showNavBar();
     this.navService.showSideNav();
