@@ -25,6 +25,10 @@ export class MangaOcrOverlay {
   private readonly resizeObserver = new ResizeObserver(() => this.schedule());
   private readonly mutationObserver: MutationObserver;
   private readonly onChange = () => this.schedule();
+  private readonly onWheel = (event: WheelEvent) => this.forwardWheel(event);
+  private readonly onTouchStart = (event: TouchEvent) => this.startTouch(event);
+  private readonly onTouchMove = (event: TouchEvent) => this.forwardTouch(event);
+  private touch: {x: number, y: number, scroller: HTMLElement | null} | null = null;
   private frame = 0;
   private outlined = false;
 
@@ -49,6 +53,11 @@ export class MangaOcrOverlay {
     document.addEventListener('scroll', this.onChange, {capture: true, passive: true});
     root.addEventListener('load', this.onChange, true);
     window.addEventListener('resize', this.onChange);
+    // The boxes are fixed, so the browser hands a scroll that starts on their text to the root scroller, which the
+    // reader doesn't use. These pass it on to whatever scrolls under the text
+    host.addEventListener('wheel', this.onWheel, {passive: false});
+    host.addEventListener('touchstart', this.onTouchStart, {passive: true});
+    host.addEventListener('touchmove', this.onTouchMove, {passive: false});
     this.schedule();
   }
 
@@ -78,6 +87,9 @@ export class MangaOcrOverlay {
     document.removeEventListener('scroll', this.onChange, {capture: true});
     this.root.removeEventListener('load', this.onChange, true);
     window.removeEventListener('resize', this.onChange);
+    this.host.removeEventListener('wheel', this.onWheel);
+    this.host.removeEventListener('touchstart', this.onTouchStart);
+    this.host.removeEventListener('touchmove', this.onTouchMove);
     this.slots.forEach(slot => slot.remove());
     this.slots.clear();
     this.drawn.clear();
@@ -136,5 +148,41 @@ export class MangaOcrOverlay {
       this.drawn.delete(slot);
       this.resizeObserver.unobserve(element);
     }
+  }
+
+  private forwardWheel(event: WheelEvent) {
+    const scroller = this.scrollerBelow(event.clientX, event.clientY);
+    if (!scroller) return;
+    // Lines and pages are rare outside Firefox, and a line of text is about 16 px
+    const unit = event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? scroller.clientHeight
+      : event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+    scroller.scrollBy({left: event.deltaX * unit, top: event.deltaY * unit});
+    event.preventDefault();
+  }
+
+  private startTouch(event: TouchEvent) {
+    const t = event.touches[0];
+    this.touch = event.touches.length === 1 ? {x: t.clientX, y: t.clientY, scroller: this.scrollerBelow(t.clientX, t.clientY)} : null;
+  }
+
+  /** One-finger drags only, so pinch zoom stays the browser's */
+  private forwardTouch(event: TouchEvent) {
+    if (!this.touch?.scroller || event.touches.length !== 1) return;
+    const t = event.touches[0];
+    this.touch.scroller.scrollBy({left: this.touch.x - t.clientX, top: this.touch.y - t.clientY});
+    this.touch = {...this.touch, x: t.clientX, y: t.clientY};
+    event.preventDefault();
+  }
+
+  /** The nearest element under a point, outside the host, that can scroll */
+  private scrollerBelow(x: number, y: number): HTMLElement | null {
+    let element = document.elementsFromPoint(x, y).find(el => !this.host.contains(el)) as HTMLElement | undefined;
+    for (; element; element = element.parentElement ?? undefined) {
+      const style = getComputedStyle(element);
+      const canScrollY = element.scrollHeight > element.clientHeight && /auto|scroll/.test(style.overflowY);
+      const canScrollX = element.scrollWidth > element.clientWidth && /auto|scroll/.test(style.overflowX);
+      if (canScrollY || canScrollX) return element;
+    }
+    return null;
   }
 }
