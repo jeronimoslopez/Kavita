@@ -978,6 +978,33 @@ public partial class BookService(
         return lengths;
     }
 
+    public (byte[] Png, int Width, int Height) RenderPdfPageForOcr(string filePath, int pageNumber)
+    {
+        const double scale = 150 / 72d;
+        const int maxSide = 2400;
+
+        using var docReader = DocLib.Instance.GetDocReader(filePath, new PageDimensions(scale));
+        using var pageReader = docReader.GetPageReader(pageNumber);
+        var longSide = Math.Max(pageReader.GetPageWidth(), pageReader.GetPageHeight());
+        if (longSide <= maxSide) return RenderOcrPng(pageReader);
+
+        using var smallerReader = DocLib.Instance.GetDocReader(filePath, new PageDimensions(scale * maxSide / longSide));
+        using var smallerPage = smallerReader.GetPageReader(pageNumber);
+        return RenderOcrPng(smallerPage);
+    }
+
+    private static (byte[] Png, int Width, int Height) RenderOcrPng(IPageReader pageReader)
+    {
+        var rawBytes = pageReader.GetImage(new NaiveTransparencyRemover());
+        var width = pageReader.GetPageWidth();
+        var height = pageReader.GetPageHeight();
+
+        // Docnet gives BGRA. OCR has no use for alpha, so keep R, G and B in that order
+        using var bgra = Image.NewFromMemory(rawBytes, width, height, 4, Enums.BandFormat.Uchar);
+        using var rgb = bgra[2].Bandjoin(bgra[1], bgra[0]);
+        return (rgb.WriteToBuffer(".png"), width, height);
+    }
+
     private static string EscapeTags(string content)
     {
         content = Regex.Replace(content, @"<script(.*)(/>)", "<script$1></script>", RegexOptions.None, Parser.RegexTimeout);

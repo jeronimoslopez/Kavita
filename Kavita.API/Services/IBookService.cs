@@ -18,6 +18,16 @@ public interface IBookService
     /// </summary>
     /// <exception cref="System.Exception">The PDF cannot be opened</exception>
     int[] GetPdfPageTextLengths(string filePath);
+    /// <summary>
+    /// Renders one PDF page as a PNG for OCR, at 150 dpi with the long side capped at 2400 px
+    /// </summary>
+    /// <remarks>
+    /// The size doesn't follow the PDF render resolution setting, so changing that setting can't move stored OCR boxes.
+    /// PDFium renders the page's CropBox, the same area pdf.js shows
+    /// </remarks>
+    /// <param name="pageNumber">0-based</param>
+    /// <exception cref="System.Exception">The PDF or the page cannot be read</exception>
+    (byte[] Png, int Width, int Height) RenderPdfPageForOcr(string filePath, int pageNumber);
     string GetCoverImage(string fileFilePath, string fileName, string outputDirectory, EncodeFormat encodeFormat, CoverImageSize size = CoverImageSize.Default);
     /// <param name="strictOpenError">Set when an epub only opened with lenient parsing, why the strict open failed</param>
     /// <exception cref="System.Exception">The file or its metadata cannot be read</exception>
