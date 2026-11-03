@@ -33,6 +33,10 @@
 
           <div style="margin-left: auto; padding-right: 3%;">
             @if (hasOcr()) {
+              <button class="btn btn-icon" [ngbTooltip]="t('find-tooltip')" [attr.aria-pressed]="findOpen()" (click)="toggleFind()">
+                <i class="fa fa-magnifying-glass" aria-hidden="true"></i>
+                <span class="visually-hidden">{{t('find-tooltip')}}</span>
+              </button>
               <button class="btn btn-icon" [ngbTooltip]="yomitanEnabled() ? t('yomitan-on') : t('yomitan-off')"
                       [attr.aria-pressed]="yomitanEnabled()" (click)="toggleYomitan()">
                 <i class="fa fa-language" [style.opacity]="yomitanEnabled() ? 1 : 0.5" aria-hidden="true"></i>
@@ -57,6 +61,30 @@
             }
           </div>
         </div>
+        @if (findOpen()) {
+          <div class="ocr-find-bar">
+            <input #findInput type="search" class="form-control form-control-sm" [placeholder]="t('find-placeholder')"
+                   [attr.aria-label]="t('find-placeholder')"
+                   (input)="find(findInput.value)" (keydown)="onFindKeydown($event, findInput.value)">
+            <span class="ocr-find-count" aria-live="polite">
+              @if (findSearched()) {
+                {{ findCount() === 0 ? t('find-no-matches') : t('find-count', {current: findIndex() + 1, total: findCount()}) }}
+              }
+            </span>
+            <button class="btn btn-icon" [title]="t('find-previous')" [disabled]="findCount() === 0" (click)="findStep(-1)">
+              <i class="fa fa-chevron-up" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('find-previous')}}</span>
+            </button>
+            <button class="btn btn-icon" [title]="t('find-next')" [disabled]="findCount() === 0" (click)="findStep(1)">
+              <i class="fa fa-chevron-down" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('find-next')}}</span>
+            </button>
+            <button class="btn btn-icon" [title]="t('find-close')" (click)="closeFind()">
+              <i class="fa fa-xmark" aria-hidden="true"></i>
+              <span class="visually-hidden">{{t('find-close')}}</span>
+            </button>
+          </div>
+        }
       </div>
     }
 
@@ -97,9 +125,6 @@
             }
           </div>
         </div>
-
-        <!-- OCR text for Yomitan, over the page-turn areas. MangaOcrOverlay fills it -->
-        <div class="ocr-host" #ocrHost (click)="onOcrClick($event)"></div>
 
         <div appDblClick (doubleClick)="bookmarkPage($event)" (singleClick)="toggleMenu()">
           <app-single-renderer [image$]="currentImage$"
@@ -146,6 +171,9 @@
           </div>
         }
       }
+
+      <!-- OCR text for Yomitan, over the page-turn areas. MangaOcrOverlay fills it -->
+      <div class="ocr-host" #ocrHost (click)="onOcrClick($event)"></div>
     </div>
 
     @if (menuOpen()) {
