@@ -93,6 +93,7 @@ interface FormModel {
   enableMetadata: boolean;
   removePrefixForSortName: boolean;
   inheritWebLinksFromFirstChapter: boolean;
+  enableOcr: boolean;
   defaultLanguage: string;
   metadataProvider: MetadataProvider;
   excludePatterns: string[];
@@ -153,6 +154,7 @@ export class LibrarySettingsModalComponent implements OnInit {
     includeInRecommended: true,
     includeInSearch: true,
     inheritWebLinksFromFirstChapter: false,
+    enableOcr: false,
     fileGroupTypes: this.getLibraryFileTypes(LibraryType.Manga),
     manageCollections: false,
     manageReadingLists: false,
@@ -299,6 +301,7 @@ export class LibrarySettingsModalComponent implements OnInit {
       includeInRecommended: library.includeInRecommended,
       includeInSearch: library.includeInSearch,
       inheritWebLinksFromFirstChapter: library.inheritWebLinksFromFirstChapter,
+      enableOcr: library.enableOcr,
       fileGroupTypes: library.libraryFileTypes,
       manageCollections: library.manageCollections,
       manageReadingLists: library.manageReadingLists,

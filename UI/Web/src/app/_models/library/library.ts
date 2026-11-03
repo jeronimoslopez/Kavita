@@ -40,6 +40,7 @@ export interface Library extends LiteLibrary{
     removePrefixForSortName: boolean;
     collapseSeriesRelationships: boolean;
     inheritWebLinksFromFirstChapter: boolean;
+    enableOcr: boolean;
     defaultLanguage: string;
     metadataProvider: MetadataProvider;
     libraryFileTypes: Array<FileTypeGroup>;

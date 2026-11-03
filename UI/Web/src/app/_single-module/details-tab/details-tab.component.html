@@ -27,6 +27,9 @@
                   @if (fp.koreaderHash) {
                     <span class="file-meta-item file-meta-hash" [ngbTooltip]="fp.koreaderHash">KOReader ✓</span>
                   }
+                  @if (fp.format === MangaFormat.PDF && fp.ocrStatus !== OcrStatus.NotChecked) {
+                    <span class="file-meta-item">{{t(ocrStatusKeys[fp.ocrStatus])}}</span>
+                  }
                 </div>
               </div>
             }
