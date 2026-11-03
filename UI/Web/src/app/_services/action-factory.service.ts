@@ -681,6 +681,39 @@ export class ActionFactoryService {
             children: [],
           },
           {
+            action: Action.RunOcr,
+            title: 'run-ocr',
+            description: 'run-ocr-tooltip',
+
+            callback: this.dummyCallback,
+            shouldRender: this.dummyShouldRender,
+
+            requiredRoles: [Role.Admin],
+            children: [],
+          },
+          {
+            action: Action.RerunOcr,
+            title: 'rerun-ocr',
+            description: 'rerun-ocr-tooltip',
+
+            callback: this.dummyCallback,
+            shouldRender: this.dummyShouldRender,
+
+            requiredRoles: [Role.Admin],
+            children: [],
+          },
+          {
+            action: Action.RemoveOcr,
+            title: 'remove-ocr',
+            description: 'remove-ocr-tooltip',
+
+            callback: this.dummyCallback,
+            shouldRender: this.dummyShouldRender,
+
+            requiredRoles: [Role.Admin],
+            children: [],
+          },
+          {
             action: Action.Delete,
             title: 'delete',
             description: 'delete-tooltip',

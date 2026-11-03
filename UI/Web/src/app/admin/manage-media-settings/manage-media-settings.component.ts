@@ -18,7 +18,7 @@ import {PdfRenderResolutionPipe} from "../../_pipes/pdf-render-resolution.pipe"
 import {takeUntilDestroyed, toObservable} from "@angular/core/rxjs-interop";
 import {ModalService} from "../../_services/modal.service";
 import {FormFieldDirective} from "../../_directives/form-field.directive";
-import {form, FormField, readonly, required} from "@angular/forms/signals";
+import {form, FormField, pattern, readonly, required} from "@angular/forms/signals";
 import {SettingSelectComponent} from "../../settings/_components/setting-enum-select/setting-select.component";
 
 interface FormModel {
@@ -26,7 +26,14 @@ interface FormModel {
   bookmarksDirectory: string;
   coverImageSize: CoverImageSize;
   pdfRenderResolution: PdfRenderResolution;
+  ocrSidecarUrl: string;
+  ocrWindowStart: string;
+  ocrWindowEnd: string;
 }
+
+const sidecarUrlPattern = /^(https?:\/\/\S+)?$/;
+// Empty means OCR may run at any hour
+const timeOfDayPattern = /^(([01]\d|2[0-3]):[0-5]\d)?$/;
 
 
 @Component({
@@ -54,13 +61,19 @@ export class ManageMediaSettingsComponent implements OnInit {
     encodeMediaAs: EncodeFormat.PNG,
     bookmarksDirectory: '',
     coverImageSize: CoverImageSize.Default,
-    pdfRenderResolution: PdfRenderResolution.Default
+    pdfRenderResolution: PdfRenderResolution.Default,
+    ocrSidecarUrl: '',
+    ocrWindowStart: '',
+    ocrWindowEnd: '',
   });
   protected readonly settingsForm = form(this.formModel, p => {
     required(p.encodeMediaAs);
     readonly(p.bookmarksDirectory);
     required(p.coverImageSize);
     required(p.pdfRenderResolution);
+    pattern(p.ocrSidecarUrl, sidecarUrlPattern);
+    pattern(p.ocrWindowStart, timeOfDayPattern);
+    pattern(p.ocrWindowEnd, timeOfDayPattern);
   });
 
   constructor() {
@@ -70,7 +83,10 @@ export class ManageMediaSettingsComponent implements OnInit {
       distinctUntilChanged((a, b) => a.encodeMediaAs === b.encodeMediaAs
         && a.bookmarksDirectory === b.bookmarksDirectory
         && a.coverImageSize === b.coverImageSize
-        && a.pdfRenderResolution === b.pdfRenderResolution),
+        && a.pdfRenderResolution === b.pdfRenderResolution
+        && a.ocrSidecarUrl === b.ocrSidecarUrl
+        && a.ocrWindowStart === b.ocrWindowStart
+        && a.ocrWindowEnd === b.ocrWindowEnd),
       filter(() => this.settingsForm().dirty() && this.settingsForm().valid()),
       switchMap(() => this.settingsService.updateServerSettings(this.packData()).pipe(catchError(err => {
         console.error(err);
@@ -113,6 +129,9 @@ export class ManageMediaSettingsComponent implements OnInit {
       bookmarksDirectory: settings.bookmarksDirectory,
       coverImageSize: (settings.coverImageSize || CoverImageSize.Default),
       pdfRenderResolution: (settings.pdfRenderResolution || PdfRenderResolution.Default),
+      ocrSidecarUrl: settings.ocrSidecarUrl ?? '',
+      ocrWindowStart: settings.ocrWindowStart ?? '',
+      ocrWindowEnd: settings.ocrWindowEnd ?? '',
     });
     this.settingsForm().reset();
   }
@@ -124,6 +143,9 @@ export class ManageMediaSettingsComponent implements OnInit {
     modelSettings.bookmarksDirectory = model.bookmarksDirectory;
     modelSettings.coverImageSize = model.coverImageSize;
     modelSettings.pdfRenderResolution = model.pdfRenderResolution;
+    modelSettings.ocrSidecarUrl = model.ocrSidecarUrl.trim();
+    modelSettings.ocrWindowStart = model.ocrWindowStart.trim();
+    modelSettings.ocrWindowEnd = model.ocrWindowEnd.trim();
 
     return modelSettings;
   }

@@ -126,4 +126,16 @@ export enum Action {
   Navigate = 38,
   AddToDashboard = 39,
   AddToSideNav = 40,
+  /**
+   * Queue a series' scanned PDF pages for OCR
+   */
+  RunOcr = 41,
+  /**
+   * OCR every page of a series' PDFs again, replacing any text they already have
+   */
+  RerunOcr = 42,
+  /**
+   * Delete a series' OCR text
+   */
+  RemoveOcr = 43,
 }
