@@ -12,11 +12,12 @@ import sys
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
 import numpy as np
+
+from page import Line, PageResult, vertical_order as _vertical_order
 
 NDLOCR_SRC = Path(os.environ.get("NDLOCR_SRC", "/opt/ndlocr-lite/src"))
 NDLOCR_COMMIT = os.environ.get("NDLOCR_COMMIT", "e57f7c6")
@@ -51,24 +52,6 @@ BLOCK_KINDS = {
     "柱": "header",
     "ノンブル": "folio",
 }
-
-
-@dataclass
-class Line:
-    order: int
-    text: str
-    box: list[int]
-    vertical: bool
-    kind: str
-    det_conf: float
-    rec_conf: float
-
-
-@dataclass
-class PageResult:
-    image_width: int
-    image_height: int
-    lines: list[Line]
 
 
 class ScoredText(str):
@@ -137,23 +120,6 @@ def _inside_fraction(inner, outer):
     iy = max(0, min(inner[1] + inner[3], outer[1] + outer[3]) - max(inner[1], outer[1]))
     area = inner[2] * inner[3]
     return ix * iy / area if area else 0.0
-
-
-def _vertical_order(lines):
-    """Order vertical columns: tiers top to bottom, columns right to left within a tier.
-
-    Columns whose vertical spans overlap share a tier, so a two-tier page keeps
-    reading the whole upper tier before the lower one.
-    """
-    tiers = []
-    for line in sorted(lines, key=lambda l: l.box[1]):
-        top, bottom = line.box[1], line.box[1] + line.box[3]
-        if tiers and top < tiers[-1][1]:
-            tiers[-1][1] = max(tiers[-1][1], bottom)
-            tiers[-1][2].append(line)
-        else:
-            tiers.append([top, bottom, [line]])
-    return [line for _, _, members in tiers for line in sorted(members, key=lambda l: -(l.box[0] + l.box[2]))]
 
 
 def _reading_order(entries):

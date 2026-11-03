@@ -58,6 +58,11 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1
+        },
+        "block": {
+          "description": "Lines with the same number are one speech bubble or caption, and ruby takes its base line's number. Only the manga engine sends it.",
+          "type": "integer",
+          "minimum": 0
         }
       }
     }
