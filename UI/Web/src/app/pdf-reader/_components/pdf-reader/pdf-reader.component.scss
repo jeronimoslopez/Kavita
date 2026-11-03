@@ -106,4 +106,30 @@ $loading-bar-height: 1.5rem;
   }
 }
 
+// Spans are added to pdf.js's page divs at runtime, outside this component's view encapsulation
+:host ::ng-deep .kavita-ocr-layer {
+  position: absolute;
+  inset: 0;
+  container-type: size;
+  overflow: clip;
+  z-index: 1;
+  line-height: 1;
 
+  span {
+    position: absolute;
+    color: transparent;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0 0;
+    user-select: text;
+  }
+
+  span::selection {
+    background: rgb(0 0 255 / 25%);
+  }
+
+  &.outlined span {
+    outline: 1px solid hsl(var(--ocr-hue) 80% 45%);
+    background: hsl(var(--ocr-hue) 80% 45% / 10%);
+  }
+}

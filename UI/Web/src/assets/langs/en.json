@@ -3524,6 +3524,8 @@
         "close-reader-alt": "Close Reader",
         "toggle-incognito": "Turn off Incognito Mode",
         "yomitan-on": "Yomitan lookups are on. Click to turn them off",
+        "ocr-outlines-on": "Hide OCR outlines",
+        "ocr-outlines-off": "Outline OCR text",
         "yomitan-off": "Yomitan lookups are off. Click to turn them on",
         "shortcuts-menu-alt": "{{manga-reader.shortcuts-menu-alt}}"
     },
