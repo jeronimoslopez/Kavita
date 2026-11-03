@@ -31,5 +31,7 @@ public sealed record MangaFileDto
     /// A hash of the document using Koreader's unique hashing algorithm
     /// </summary>
     public string? KoreaderHash { get; set; }
+    [EnumDataType(typeof(OcrStatus))]
+    public OcrStatus OcrStatus { get; init; }
 
 }

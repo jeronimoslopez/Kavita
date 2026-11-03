@@ -36,6 +36,7 @@ public class UnitOfWork : IUnitOfWork
         TagRepository = new TagRepository(_context, mapper);
         SiteThemeRepository = new SiteThemeRepository(_context, mapper);
         MangaFileRepository = new MangaFileRepository(_context);
+        OcrRepository = new OcrRepository(_context);
         DeviceRepository = new DeviceRepository(_context, mapper);
         MediaErrorRepository = new MediaErrorRepository(_context, mapper);
         ScrobbleRepository = new ScrobbleRepository(_context, mapper);
@@ -72,6 +73,7 @@ public class UnitOfWork : IUnitOfWork
     public ITagRepository TagRepository { get; }
     public ISiteThemeRepository SiteThemeRepository { get; }
     public IMangaFileRepository MangaFileRepository { get; }
+    public IOcrRepository OcrRepository { get; }
     public IDeviceRepository DeviceRepository { get; }
     public IMediaErrorRepository MediaErrorRepository { get; }
     public IScrobbleRepository ScrobbleRepository { get; }

@@ -22,6 +22,7 @@ public interface IUnitOfWork
     ITagRepository TagRepository { get; }
     ISiteThemeRepository SiteThemeRepository { get; }
     IMangaFileRepository MangaFileRepository { get; }
+    IOcrRepository OcrRepository { get; }
     IDeviceRepository DeviceRepository { get; }
     IMediaErrorRepository MediaErrorRepository { get; }
     IScrobbleRepository ScrobbleRepository { get; }
