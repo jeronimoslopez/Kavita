@@ -358,6 +358,31 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
     }
 
     [Fact]
+    public async Task GetChapterPages_ReturnsOnlyDonePagesOneBasedInOrder()
+    {
+        var (_, context, service, file) = await Setup();
+        context.OcrPage.AddRange(
+            new OcrPage { MangaFileId = file.Id, PageNumber = 2, State = OcrPageState.Done, Lines = [new OcrLine { Text = "三" }] },
+            new OcrPage { MangaFileId = file.Id, PageNumber = 1, State = OcrPageState.Failed },
+            new OcrPage { MangaFileId = file.Id, PageNumber = 0, State = OcrPageState.Done, Lines = [new OcrLine { Text = "一" }] });
+        await context.SaveChangesAsync();
+
+        var pages = await service.GetChapterPagesAsync(file.ChapterId);
+
+        Assert.NotNull(pages);
+        Assert.Equal([1, 3], pages.Select(p => p.PageNumber));
+        Assert.Equal("三", Assert.Single(pages[1].Lines).Text);
+    }
+
+    [Fact]
+    public async Task GetChapterPages_ChapterWithoutPdf_ReturnsNull()
+    {
+        var (_, _, service, _) = await Setup();
+
+        Assert.Null(await service.GetChapterPagesAsync(999));
+    }
+
+    [Fact]
     public async Task PrioritizeChapter_RaisesAQueuedFile()
     {
         var (_, context, service, file) = await Setup();

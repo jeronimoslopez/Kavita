@@ -106,6 +106,15 @@ public class OcrRepository(DataContext context) : IOcrRepository
             .FirstOrDefaultAsync(p => p.MangaFileId == mangaFileId && p.PageNumber == pageNumber && p.State == OcrPageState.Done, ct);
     }
 
+    public async Task<IList<OcrPage>> GetDonePagesAsync(int mangaFileId, CancellationToken ct = default)
+    {
+        return await context.OcrPage
+            .AsNoTracking()
+            .Where(p => p.MangaFileId == mangaFileId && p.State == OcrPageState.Done)
+            .OrderBy(p => p.PageNumber)
+            .ToListAsync(ct);
+    }
+
     public async Task<IList<int>> GetDonePageNumbersAsync(int mangaFileId, CancellationToken ct = default)
     {
         return await context.OcrPage

@@ -33,6 +33,10 @@ public interface IOcrRepository
     Task<IReadOnlyDictionary<OcrPageState, int>> GetPageStateCountsAsync(int mangaFileId, CancellationToken ct = default);
     /// <param name="pageNumber">0-based</param>
     Task<OcrPage?> GetDonePageAsync(int mangaFileId, int pageNumber, CancellationToken ct = default);
+    /// <summary>
+    /// Every page with OCR text, in page order
+    /// </summary>
+    Task<IList<OcrPage>> GetDonePagesAsync(int mangaFileId, CancellationToken ct = default);
     /// <returns>0-based page numbers</returns>
     Task<IList<int>> GetDonePageNumbersAsync(int mangaFileId, CancellationToken ct = default);
 }

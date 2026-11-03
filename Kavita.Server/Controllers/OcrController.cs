@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Kavita.API.Services;
 using Kavita.Models.Constants;
@@ -37,6 +38,18 @@ public class OcrController(IOcrService ocrService) : BaseApiController
     {
         var page = await ocrService.GetPageAsync(chapterId, pageNum, HttpContext.RequestAborted);
         return page == null ? NoContent() : Ok(page);
+    }
+
+    /// <summary>
+    /// The OCR lines for every page of the chapter that has them, for the reader's find
+    /// </summary>
+    /// <returns>No content when the chapter has no PDF</returns>
+    [ChapterAccess]
+    [HttpGet("chapter/pages")]
+    public async Task<ActionResult<IList<OcrPageDto>>> GetChapterPages(int chapterId)
+    {
+        var pages = await ocrService.GetChapterPagesAsync(chapterId, HttpContext.RequestAborted);
+        return pages == null ? NoContent() : Ok(pages);
     }
 
     /// <summary>

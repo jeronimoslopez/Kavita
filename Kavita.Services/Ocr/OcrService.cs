@@ -204,11 +204,23 @@ public class OcrService(ILogger<OcrService> logger, IUnitOfWork unitOfWork, IBoo
         if (file == null || pageNum < 1) return null;
 
         var page = await unitOfWork.OcrRepository.GetDonePageAsync(file.Id, pageNum - 1, ct);
-        if (page == null) return null;
+        return page == null ? null : ToDto(page);
+    }
 
+    public async Task<IList<OcrPageDto>?> GetChapterPagesAsync(int chapterId, CancellationToken ct = default)
+    {
+        var file = await unitOfWork.OcrRepository.GetPdfFileForChapterAsync(chapterId, ct);
+        if (file == null) return null;
+
+        var pages = await unitOfWork.OcrRepository.GetDonePagesAsync(file.Id, ct);
+        return pages.Select(ToDto).ToList();
+    }
+
+    private static OcrPageDto ToDto(OcrPage page)
+    {
         return new OcrPageDto
         {
-            PageNumber = pageNum,
+            PageNumber = page.PageNumber + 1,
             Version = page.LastModifiedUtc.Ticks,
             Lines = page.Lines,
         };
