@@ -22,15 +22,15 @@ namespace Kavita.Services.Tests.Dictionary;
 /// </summary>
 public class EpubPageBlocksTests
 {
-    private const string VerticalCss = """
+    private static readonly string VerticalCss = """
         html { writing-mode: vertical-rl; -epub-writing-mode: vertical-rl; -webkit-writing-mode: vertical-rl; }
         .tcy { text-combine-upright: all; }
-        """;
+        """.ReplaceLineEndings("\n");
 
     /// <summary>
     /// A first chapter in the shape most Japanese EPUBs take, with entities that EPUB 2 books still carry
     /// </summary>
-    private const string JapanesePage = """
+    private static readonly string JapanesePage = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
         <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja" class="vrtl">
@@ -51,7 +51,7 @@ public class EpubPageBlocksTests
         </div>
         </body>
         </html>
-        """;
+        """.ReplaceLineEndings("\n");
 
     private static readonly string JapaneseCrLfPage = """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -68,9 +68,9 @@ public class EpubPageBlocksTests
         <aside id="n1" epub:type="footnote"><p>注釈の本文。</p></aside>
         </body>
         </html>
-        """.Replace("\n", "\r\n");
+        """.ReplaceLineEndings("\r\n");
 
-    private const string StructuresPage = """
+    private static readonly string StructuresPage = """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head><title>Structures</title><script type="text/javascript" src="x.js"/></head>
@@ -95,15 +95,15 @@ public class EpubPageBlocksTests
         <h3>The end</h3>
         </body>
         </html>
-        """;
+        """.ReplaceLineEndings("\n");
 
-    private const string BodyOnlyPage = """
+    private static readonly string BodyOnlyPage = """
         <?xml version="1.0" encoding="UTF-8"?>
         <html xmlns="http://www.w3.org/1999/xhtml">
         <head><title>Body only</title></head>
         <body>本文だけの頁。<br/>二行目は<em>ここ</em>。</body>
         </html>
-        """;
+        """.ReplaceLineEndings("\n");
 
     private readonly BookService _bookService = CreateBookService(new EpubTextBlocks());
 

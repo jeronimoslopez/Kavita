@@ -25,7 +25,7 @@ public sealed class EpubFixture : IDisposable
                 <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
               </rootfiles>
             </container>
-            """);
+            """.ReplaceLineEndings("\n"));
 
         var manifest = new StringBuilder();
         var spine = new StringBuilder();
@@ -52,14 +52,14 @@ public sealed class EpubFixture : IDisposable
               </manifest>
               <spine page-progression-direction="{(language == "ja" ? "rtl" : "ltr")}">{spine}</spine>
             </package>
-            """);
+            """.ReplaceLineEndings("\n"));
         Add(zip, "OEBPS/nav.xhtml", """
             <?xml version="1.0" encoding="UTF-8"?>
             <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
             <head><title>Nav</title></head>
             <body><nav epub:type="toc"><ol><li><a href="page0.xhtml">Start</a></li></ol></nav></body>
             </html>
-            """);
+            """.ReplaceLineEndings("\n"));
         Add(zip, "OEBPS/style.css", css);
     }
 
