@@ -50,6 +50,36 @@ public class TokenizeWorkerHostedServiceTests
     }
 
     [Fact]
+    public async Task RunPass_SweepsForFilesAtStartAndThenOnlyHourly()
+    {
+        await _worker.RunPassAsync(CancellationToken.None);
+        _time.Advance(TimeSpan.FromMinutes(59));
+        await _worker.RunPassAsync(CancellationToken.None);
+
+        // The queue was empty both times, and only the first pass looked at the library's files
+        await _tokenizeService.Received(1).DetectNewFilesAsync();
+        await _tokenizeService.Received(2).GetNextUnitAsync(Arg.Any<CancellationToken>());
+
+        _time.Advance(TimeSpan.FromMinutes(1));
+        await _worker.RunPassAsync(CancellationToken.None);
+
+        await _tokenizeService.Received(2).DetectNewFilesAsync();
+    }
+
+    [Fact]
+    public async Task RunPass_FileUnavailable_EndsThePassWithoutBackingOff()
+    {
+        _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(Unit(0));
+        _tokenizeService.ProcessUnitAsync(Arg.Any<ReadingUnitRef>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new TokenizeUnitResult(TokenizeUnitOutcome.FileUnavailable));
+
+        var unavailable = await _worker.RunPassAsync(CancellationToken.None);
+
+        Assert.False(unavailable);
+        await _tokenizeService.ReceivedWithAnyArgs(1).ProcessUnitAsync(default!, default!);
+    }
+
+    [Fact]
     public async Task RunPass_TokenizesUntilTheQueueIsEmpty()
     {
         _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(Unit(0), Unit(1), null);

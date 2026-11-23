@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using Hangfire;
 using Kavita.API.Database;
 using Kavita.API.Services;
@@ -15,6 +16,7 @@ using Kavita.Models.DTOs.Dictionary;
 using Kavita.Models.Entities.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using VersOne.Epub;
 
 namespace Kavita.Services.Dictionary;
 
@@ -87,32 +89,19 @@ public class TokenizeService : ITokenizeService
 
     public async Task MarkSeriesForCheckAsync(int seriesId, CancellationToken ct = default)
     {
-        var files = await GetFilesAsync(f => f.Chapter.Volume.SeriesId == seriesId, ct);
-        if (files.Count == 0) return;
+        // The scanner calls this for every series, so it only compares stamps and leaves opening EPUBs and deleting
+        // rows to the detection job it queues
+        var settings = await _unitOfWork.SettingsRepository.GetSettingsDtoAsync(ct);
+        if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return;
 
-        if (!await DetectionLock.WaitAsync(0, ct))
-        {
-            // The check that holds the lock may already be past this series
-            QueueDetection();
-            return;
-        }
+        var eligible = (await GetFilesAsync(f => f.Chapter.Volume.SeriesId == seriesId &&
+                                                 f.Chapter.Volume.Series.Library.EnableDictionary, ct))
+            .Where(IsEligible)
+            .ToList();
+        if (eligible.Count == 0) return;
 
-        try
-        {
-            var stamps = await _readingStore.GetFileStampsAsync(ct);
-            var eligible = files.Where(IsEligible).ToList();
-            var queued = await SeedChangedFilesAsync(eligible, stamps, ReadingPriority.WholeBook, ct);
-
-            var eligibleIds = eligible.Select(f => f.Id).ToHashSet();
-            var removed = files.Select(f => f.Id).Where(id => stamps.ContainsKey(id) && !eligibleIds.Contains(id)).ToList();
-            if (removed.Count > 0) await _readingStore.DeleteFilesAsync(removed, ct);
-
-            if (queued) _workerSignal.Wake();
-        }
-        finally
-        {
-            DetectionLock.Release();
-        }
+        var stamps = await _readingStore.GetFileStampsAsync(ct);
+        if (eligible.Any(file => NeedsSeeding(file, stamps) != null)) QueueDetection();
     }
 
     [AutomaticRetry(Attempts = 0)]
@@ -155,8 +144,8 @@ public class TokenizeService : ITokenizeService
             return new TokenizeUnitResult(TokenizeUnitOutcome.FileChanged, file?.SeriesId ?? 0, file?.ChapterId ?? 0, unit.Page);
         }
 
-        if (await ReseedIfChangedAsync(file, unit, ct))
-            return new TokenizeUnitResult(TokenizeUnitOutcome.FileChanged, file.SeriesId, file.ChapterId, unit.Page);
+        if (await CheckFileAsync(file, unit, ct) is { } before)
+            return new TokenizeUnitResult(before, file.SeriesId, file.ChapterId, unit.Page);
 
         try
         {
@@ -178,8 +167,8 @@ public class TokenizeService : ITokenizeService
                 Validate(blocks, response);
 
                 // Tokenizing took a moment, and the file could have been replaced meanwhile
-                if (await ReseedIfChangedAsync(file, unit, ct))
-                    return new TokenizeUnitResult(TokenizeUnitOutcome.FileChanged, file.SeriesId, file.ChapterId, unit.Page);
+                if (await CheckFileAsync(file, unit, ct) is { } after)
+                    return new TokenizeUnitResult(after, file.SeriesId, file.ChapterId, unit.Page);
 
                 var wordIds = await _readingStore.UpsertWordsAsync(response.Words.ToList(), LexiconVersion(response.Version), ct);
                 (stored, ambiguous) = ToStored(blocks, response, wordIds);
@@ -264,13 +253,13 @@ public class TokenizeService : ITokenizeService
     }
 
     /// <summary>
-    /// Japanese as an ISO 639 code, alone or with a region or script, such as <c>ja</c>, <c>ja-JP</c> or <c>jpn</c>
-    /// </summary>
-    /// <summary>
     /// Lets tests that reuse file ids and paths start from an empty <see cref="UnusableFiles"/>
     /// </summary>
     internal static void ForgetUnusableFiles() => UnusableFiles.Clear();
 
+    /// <summary>
+    /// Japanese as an ISO 639 code, alone or with a region or script, such as <c>ja</c>, <c>ja-JP</c> or <c>jpn</c>
+    /// </summary>
     public static bool IsJapanese(string? language)
     {
         if (string.IsNullOrWhiteSpace(language)) return false;
@@ -305,32 +294,57 @@ public class TokenizeService : ITokenizeService
         var seeded = false;
         foreach (var file in files)
         {
-            // A file on an unmounted drive keeps its units
-            var stamp = GetStamp(file.FilePath);
-            if (stamp == null) continue;
-            if (stamps.TryGetValue(file.Id, out var stored) && stored == stamp) continue;
-            if (UnusableFiles.TryGetValue(file.FilePath, out var unusable) && unusable == stamp) continue;
-
-            seeded |= await SeedFileAsync(file, stamp, priority, ct);
+            if (NeedsSeeding(file, stamps) is not { } stamp) continue;
+            seeded |= await SeedFileAsync(file, stamp, priority, ct) == SeedResult.Seeded;
         }
 
         return seeded;
     }
 
-    private async Task<bool> SeedFileAsync(EpubFile file, string stamp, int priority, CancellationToken ct)
+    /// <returns>The file's current stamp when it has no units or its units have another stamp, and null otherwise</returns>
+    private string? NeedsSeeding(EpubFile file, IReadOnlyDictionary<int, string> stamps)
+    {
+        // A file on an unmounted drive keeps its units
+        var stamp = GetStamp(file.FilePath);
+        if (stamp == null) return null;
+        if (stamps.TryGetValue(file.Id, out var stored) && stored == stamp) return null;
+        if (UnusableFiles.TryGetValue(file.FilePath, out var unusable) && unusable == stamp) return null;
+        return stamp;
+    }
+
+    private enum SeedResult
+    {
+        Seeded,
+        /// <summary>
+        /// The file isn't a readable EPUB or has no pages, so it has no units now
+        /// </summary>
+        NoPages,
+        /// <summary>
+        /// The file couldn't be read this time, and its units were left as they were
+        /// </summary>
+        Unavailable,
+    }
+
+    private async Task<SeedResult> SeedFileAsync(EpubFile file, string stamp, int priority, CancellationToken ct)
     {
         int pageCount;
         try
         {
             pageCount = await _pageSource.GetEpubPageCountAsync(file.FilePath, ct);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is EpubReaderException or InvalidDataException or XmlException)
         {
             // Units left from before the file broke would hold text it no longer has
-            _logger.LogWarning(ex, "[TokenizeService] Couldn't count the pages of {FilePath}, so it won't be tokenized", file.FilePath);
+            _logger.LogWarning(ex, "[TokenizeService] {FilePath} isn't a readable EPUB, so it won't be tokenized", file.FilePath);
             UnusableFiles[file.FilePath] = stamp;
             await _readingStore.DeleteFilesAsync([file.Id], ct);
-            return false;
+            return SeedResult.NoPages;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A locked file or a dropped network share says nothing about the book, so its answers stay
+            _logger.LogWarning(ex, "[TokenizeService] Couldn't read {FilePath} this time: {Message}", file.FilePath, ex.Message);
+            return SeedResult.Unavailable;
         }
 
         if (pageCount <= 0) UnusableFiles[file.FilePath] = stamp;
@@ -338,18 +352,28 @@ public class TokenizeService : ITokenizeService
 
         await _readingStore.SeedFileAsync(file.Id, Math.Max(pageCount, 0), stamp, priority, ct);
         _logger.LogInformation("[TokenizeService] Queued {Pages} pages of {FilePath}", pageCount, file.FilePath);
-        return pageCount > 0;
+        return pageCount > 0 ? SeedResult.Seeded : SeedResult.NoPages;
     }
 
-    /// <returns>True when the file on disk no longer matches the stamp the unit was seeded with, and was seeded again</returns>
-    private async Task<bool> ReseedIfChangedAsync(EpubFile file, ReadingUnitRef unit, CancellationToken ct)
+    /// <summary>
+    /// Compares the file on disk with the stamp the unit was seeded with, and seeds the file again when they differ
+    /// </summary>
+    /// <returns>Null when the unit can be tokenized, or the outcome that ends this attempt</returns>
+    private async Task<TokenizeUnitOutcome?> CheckFileAsync(EpubFile file, ReadingUnitRef unit, CancellationToken ct)
     {
         var stamp = GetStamp(file.FilePath);
-        if (stamp == null || stamp == unit.SourceStamp) return false;
+        if (stamp == null)
+        {
+            _logger.LogWarning("[TokenizeService] {FilePath} isn't on disk, so tokenizing waits for it", file.FilePath);
+            return TokenizeUnitOutcome.FileUnavailable;
+        }
+
+        if (stamp == unit.SourceStamp) return null;
 
         _logger.LogInformation("[TokenizeService] {FilePath} changed, so its pages will be tokenized again", file.FilePath);
-        await SeedFileAsync(file, stamp, ReadingPriority.WholeBook, ct);
-        return true;
+        return await SeedFileAsync(file, stamp, ReadingPriority.WholeBook, ct) == SeedResult.Unavailable
+            ? TokenizeUnitOutcome.FileUnavailable
+            : TokenizeUnitOutcome.FileChanged;
     }
 
     /// <summary>

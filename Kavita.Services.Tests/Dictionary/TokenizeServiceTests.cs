@@ -57,7 +57,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     /// no language and whose metadata says Japanese, and an English series. Then a library without the dictionary
     /// holding a Japanese EPUB
     /// </summary>
-    private async Task<(DataContext, TokenizeService, Files)> Setup()
+    private async Task<(DataContext, TokenizeService, Files)> Setup(bool sidecarUrl = true)
     {
         var (unitOfWork, context, _) = await CreateDatabase();
         TokenizeService.ForgetUnusableFiles();
@@ -93,6 +93,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         context.Library.Add(library);
         context.Library.Add(otherLibrary);
+        if (sidecarUrl) context.ServerSetting.Single(s => s.Key == ServerSettingKey.TextSidecarUrl).Value = SidecarUrl;
         await context.SaveChangesAsync();
 
         _pages.GetEpubPageCountAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(PageCount);
@@ -257,44 +258,106 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
     }
 
+    private static bool DetectionQueued() =>
+        Kavita.Services.TaskScheduler.HasAlreadyEnqueuedTask(nameof(ITokenizeService), nameof(ITokenizeService.DetectNewFilesAsync), []);
+
     [Fact]
-    public async Task MarkSeriesForCheck_SeedsTheSeriesAndDeletesItsDisqualifiedFiles()
+    public async Task MarkSeriesForCheck_NewFiles_QueuesDetectionWithoutOpeningThem()
+    {
+        var (context, service, _) = await Setup();
+        var kokoroId = context.Series.Single(s => s.Name == "Kokoro").Id;
+
+        await service.MarkSeriesForCheckAsync(kokoroId);
+
+        Assert.True(DetectionQueued());
+        await _pages.DidNotReceiveWithAnyArgs().GetEpubPageCountAsync(default!);
+        await _store.DidNotReceiveWithAnyArgs().SeedFileAsync(default, default, default!, default);
+        await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
+    }
+
+    [Fact]
+    public async Task MarkSeriesForCheck_UnchangedFiles_QueuesNothing()
     {
         var (context, service, files) = await Setup();
         _store.GetFileStampsAsync(Arg.Any<CancellationToken>()).Returns(new Dictionary<int, string>
         {
-            [files.English.Id] = Stamp, [files.Disabled.Id] = Stamp,
+            [files.Chapter1.Id] = Stamp, [files.Chapter2.Id] = Stamp,
         });
-        var kokoroId = context.Series.Single(s => s.Name == "Kokoro").Id;
-        var draculaId = context.Series.Single(s => s.Name == "Dracula").Id;
 
-        await service.MarkSeriesForCheckAsync(kokoroId);
-        await service.MarkSeriesForCheckAsync(draculaId);
+        await service.MarkSeriesForCheckAsync(context.Series.Single(s => s.Name == "Kokoro").Id);
 
-        await _store.Received(1).SeedFileAsync(files.Chapter1.Id, PageCount, Stamp, ReadingPriority.WholeBook, Arg.Any<CancellationToken>());
-        await _store.Received(1).SeedFileAsync(files.Chapter2.Id, PageCount, Stamp, ReadingPriority.WholeBook, Arg.Any<CancellationToken>());
-        await _store.DidNotReceive().SeedFileAsync(files.SeriesLanguage.Id, Arg.Any<int>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
-        // Only the series checked, so the other library's file waits for a full detection
-        await _store.Received(1).DeleteFilesAsync(Arg.Is<IReadOnlyCollection<int>>(ids => ids.SequenceEqual(new[] { files.English.Id })),
-            Arg.Any<CancellationToken>());
-        _signal.Received(1).Wake();
+        Assert.False(DetectionQueued());
+    }
+
+    [Theory]
+    [InlineData("Botchan", true)] // its library has the dictionary off
+    [InlineData("Dracula", true)] // it's English
+    [InlineData("Kokoro", false)] // no sidecar URL is set
+    public async Task MarkSeriesForCheck_SeriesWithNothingToTokenize_LeavesTheStoreAlone(string series, bool sidecarUrl)
+    {
+        var (context, service, _) = await Setup(sidecarUrl);
+
+        await service.MarkSeriesForCheckAsync(context.Series.Single(s => s.Name == series).Id);
+
+        Assert.Empty(_store.ReceivedCalls());
+        Assert.False(DetectionQueued());
     }
 
     [Fact]
-    public async Task DetectNewFiles_UnreadableEpub_IsDeletedAndNotOpenedAgainUntilItChanges()
+    public async Task DetectNewFiles_UnreadableEpub_IsDeletedAndOpenedAgainOnlyOnceItChanges()
     {
         var (_, service, files) = await Setup();
         _pages.GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>())
-            .ThrowsAsync(new InvalidDataException("not a zip"));
+            .Returns(_ => throw new InvalidDataException("not a zip"), _ => PageCount);
 
         await service.DetectNewFilesAsync();
         await service.DetectNewFilesAsync();
 
         await _pages.Received(1).GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>());
         await _store.DidNotReceive().SeedFileAsync(files.Chapter1.Id, Arg.Any<int>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
-        await _store.Received().DeleteFilesAsync(Arg.Is<IReadOnlyCollection<int>>(ids => ids.SequenceEqual(new[] { files.Chapter1.Id })),
+        await _store.Received(1).DeleteFilesAsync(Arg.Is<IReadOnlyCollection<int>>(ids => ids.SequenceEqual(new[] { files.Chapter1.Id })),
             Arg.Any<CancellationToken>());
+
+        _fileSystem.GetFile(files.Chapter1.FilePath).LastWriteTime = WriteTime.AddHours(1);
+        await service.DetectNewFilesAsync();
+
+        await _pages.Received(2).GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>());
+        await _store.Received(1).SeedFileAsync(files.Chapter1.Id, PageCount, NewerStamp, ReadingPriority.WholeBook, Arg.Any<CancellationToken>());
     }
+
+    [Theory]
+    [MemberData(nameof(TransientReadErrors))]
+    public async Task DetectNewFiles_FileThatCantBeReadThisTime_KeepsItsRowsAndIsTriedAgain(Exception error)
+    {
+        var (_, service, files) = await Setup();
+        _store.GetFileStampsAsync(Arg.Any<CancellationToken>()).Returns(new Dictionary<int, string>
+        {
+            [files.Chapter1.Id] = WriteTime.AddDays(-1).Ticks.ToString(CultureInfo.InvariantCulture),
+        });
+        _pages.GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>()).ThrowsAsync(error);
+
+        await service.DetectNewFilesAsync();
+        await service.DetectNewFilesAsync();
+
+        await _pages.Received(2).GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>());
+        await _store.DidNotReceive().SeedFileAsync(files.Chapter1.Id, Arg.Any<int>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+        await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
+    }
+
+    [Fact]
+    public async Task DetectNewFiles_CancelledRead_KeepsTheFileRows()
+    {
+        var (_, service, files) = await Setup();
+        _pages.GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>()).ThrowsAsync(new OperationCanceledException());
+
+        await Assert.ThrowsAsync<OperationCanceledException>(service.DetectNewFilesAsync);
+
+        await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
+        await _store.DidNotReceive().SeedFileAsync(files.Chapter1.Id, Arg.Any<int>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    public static TheoryData<Exception> TransientReadErrors() =>
+        [new IOException("share dropped"), new UnauthorizedAccessException("locked")];
 
     #endregion
 
@@ -353,13 +416,16 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 0, Arg.Any<CancellationToken>()).Returns(blocks);
         _httpTest
             .RespondWithJson(OneWordAnswer(Enumerable.Range(0, 16), "あ"))
-            .RespondWithJson(OneWordAnswer(Enumerable.Range(16, 4), "あい"));
+            .RespondWithJson(OneWordAnswer(Enumerable.Range(16, 4), "あい", nullWordBlock: 17));
         ReturnWordIds();
 
         var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
 
         Assert.Equal(TokenizeUnitOutcome.UnitDone, result.Outcome);
         Assert.Equal(2, _httpTest.CallLog.Count);
+        Assert.Equal(Enumerable.Range(0, 16).Select(i => i.ToString()), SentIds(_httpTest.CallLog[0]));
+        Assert.Equal(Enumerable.Range(16, 4).Select(i => i.ToString()), SentIds(_httpTest.CallLog[1]));
+
         var (stored, _, _) = SavedUnit();
         Assert.Equal(21, stored.Count);
         Assert.Equal(100, stored[0].Tokens[0].W);
@@ -367,13 +433,23 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         // The second answer's word 0 is the third word overall
         Assert.Equal(102, stored[16].Tokens[0].W);
         Assert.Equal(102, stored[16].Tokens[0].Sub![0].W);
+        Assert.Null(stored[17].Tokens[0].W);
+        Assert.Null(stored[17].Tokens[0].Sub![0].W);
+        Assert.Equal(102, stored[18].Tokens[0].W);
         Assert.Empty(stored[20].Tokens);
     }
 
+    private static IEnumerable<string> SentIds(Flurl.Http.FlurlCall call)
+    {
+        using var body = JsonDocument.Parse(call.RequestBody!);
+        return body.RootElement.GetProperty("blocks").EnumerateArray().Select(b => b.GetProperty("id").GetString()!).ToList();
+    }
+
     /// <summary>
-    /// An answer with two words where every block's one token points at word 0, and its part at word 0 too
+    /// An answer with two words where every block's one token points at word 0, and its part at word 0 too, except in
+    /// <paramref name="nullWordBlock"/>, whose token and part point at no word
     /// </summary>
-    private static object OneWordAnswer(IEnumerable<int> blockIds, string lemma)
+    private static object OneWordAnswer(IEnumerable<int> blockIds, string lemma, int? nullWordBlock = null)
     {
         return new
         {
@@ -383,7 +459,15 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
                 new { lemma, pos = "名詞", isProper = false, reading = "あ", jlpt = (int?) null, readings = new[] { "あ" }, senses = Array.Empty<object>() },
                 new { lemma = "x", pos = "名詞", isProper = false, reading = "x", jlpt = (int?) null, readings = new[] { "x" }, senses = Array.Empty<object>() },
             },
-            blocks = blockIds.Select(id => new { id = id.ToString(CultureInfo.InvariantCulture), tokens = new object[] { new object?[] { 0, 2, 0, null, new object[] { new object?[] { 0, 1, 0, null } } } } }),
+            blocks = blockIds.Select(id =>
+            {
+                int? w = id == nullWordBlock ? null : 0;
+                return new
+                {
+                    id = id.ToString(CultureInfo.InvariantCulture),
+                    tokens = new object[] { new object?[] { 0, 2, w, null, new object[] { new object?[] { 0, 1, w, null } } } },
+                };
+            }),
         };
     }
 
@@ -474,6 +558,65 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
         await _store.Received(1).RecordFailedAttemptAsync(7, TokenizeService.MaxUnitAttempts, Arg.Any<CancellationToken>());
         await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+    }
+
+    [Theory]
+    [InlineData(1, false)] // the answer has one word, so index 1 is past its end
+    [InlineData(-1, false)]
+    [InlineData(1, true)] // the same, in a part of a compound
+    public async Task ProcessUnit_WordIndexOutsideTheAnswer_CountsAnAttemptAndSavesNothing(int w, bool inPart)
+    {
+        var (_, service, files) = await Setup();
+        _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 0, Arg.Any<CancellationToken>()).Returns([Block(0, "上手に")]);
+        _httpTest.RespondWithJson(new
+        {
+            version = "lexicon=x;sidecar=1",
+            words = new[] { new { lemma = "上手", pos = "名詞", isProper = false, reading = "じょうず", jlpt = (int?) null, readings = new[] { "じょうず" }, senses = Array.Empty<object>() } },
+            blocks = new[]
+            {
+                new
+                {
+                    id = "0",
+                    tokens = new object[] { new object?[] { 0, 2, inPart ? 0 : w, null, inPart ? new object[] { new object?[] { 0, 1, w, null } } : null } },
+                },
+            },
+        });
+
+        var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
+
+        Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
+        await _store.DidNotReceiveWithAnyArgs().UpsertWordsAsync(default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+    }
+
+    [Fact]
+    public async Task ProcessUnit_FileMissingFromDisk_WaitsWithoutCountingAnAttempt()
+    {
+        var (_, service, files) = await Setup();
+        _fileSystem.RemoveFile(files.Chapter1.FilePath);
+
+        var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
+
+        Assert.Equal(TokenizeUnitOutcome.FileUnavailable, result.Outcome);
+        await _pages.DidNotReceiveWithAnyArgs().GetEpubPageBlocksAsync(default!, default);
+        await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
+    }
+
+    [Fact]
+    public async Task ProcessUnit_ChangedFileThatCantBeReadThisTime_WaitsWithoutTouchingItsUnits()
+    {
+        var (_, service, files) = await Setup();
+        _fileSystem.GetFile(files.Chapter1.FilePath).LastWriteTime = WriteTime.AddHours(1);
+        _pages.GetEpubPageCountAsync(files.Chapter1.FilePath, Arg.Any<CancellationToken>()).ThrowsAsync(new IOException("locked"));
+
+        var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
+
+        Assert.Equal(TokenizeUnitOutcome.FileUnavailable, result.Outcome);
+        await _store.DidNotReceiveWithAnyArgs().SeedFileAsync(default, default, default!, default);
+        await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
+        await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);
     }
 
     [Fact]
@@ -584,6 +727,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     [Theory]
     [InlineData("ja", true)]
     [InlineData("JA-jp", true)]
+    [InlineData("ja_JP", true)]
     [InlineData("jpn", true)]
     [InlineData(" ja ", true)]
     [InlineData("jam", false)]

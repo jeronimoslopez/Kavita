@@ -364,7 +364,7 @@ public class ScannerService(
                 await metadataServiceScoped.GenerateCoversForSeries(serverSettings, scopedLibrary.Id, result.SeriesId.Value, false, false);
                 await wordCountAnalyzerServiceScoped.ScanSeries(scopedLibrary.Id, result.SeriesId.Value, bypassFolderOptimizationChecks);
                 await scope.ServiceProvider.GetRequiredService<IOcrService>().MarkSeriesForCheckAsync(result.SeriesId.Value);
-                await scope.ServiceProvider.GetRequiredService<ITokenizeService>().MarkSeriesForCheckAsync(result.SeriesId.Value);
+                await MarkSeriesForDictionaryAsync(scope.ServiceProvider, result.SeriesId.Value);
             }
 
             seriesLeftToProcess--;
@@ -854,10 +854,25 @@ public class ScannerService(
             await metadataServiceScoped.GenerateCoversForSeries(serverSettings, libraryId, seriesId, false, false);
             await wordCountAnalyzerServiceScoped.ScanSeries(libraryId, seriesId, forceUpdate);
             await scope.ServiceProvider.GetRequiredService<IOcrService>().MarkSeriesForCheckAsync(seriesId);
-            await scope.ServiceProvider.GetRequiredService<ITokenizeService>().MarkSeriesForCheckAsync(seriesId);
+            await MarkSeriesForDictionaryAsync(scope.ServiceProvider, seriesId);
         }
 
         return sw.ElapsedMilliseconds;
+    }
+
+    /// <summary>
+    /// Queues the series' Japanese EPUBs for the dictionary. A failure there is logged and never fails the scan
+    /// </summary>
+    private async Task MarkSeriesForDictionaryAsync(IServiceProvider serviceProvider, int seriesId)
+    {
+        try
+        {
+            await serviceProvider.GetRequiredService<ITokenizeService>().MarkSeriesForCheckAsync(seriesId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[ScannerService] Couldn't check series {SeriesId} for the dictionary", seriesId);
+        }
     }
 
     /// <summary>

@@ -27,6 +27,11 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     /// Each pages-ready event costs an access check per online user, so pages are sent in batches
     /// </summary>
     private static readonly TimeSpan ReadyEventInterval = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// Scans and library changes queue their own detection job, so the worker's sweep only catches what a job lost to a
+    /// restart or a newly set sidecar URL left behind
+    /// </summary>
+    internal static readonly TimeSpan DetectionInterval = TimeSpan.FromHours(1);
 
     private readonly Channel<bool> _wake = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
     {
@@ -34,6 +39,7 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     });
     private readonly Dictionary<(int SeriesId, int ChapterId), List<int>> _readyPages = new();
     private DateTimeOffset _lastReadyEvent = DateTimeOffset.MinValue;
+    private DateTimeOffset? _lastDetection;
 
     public TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILogger<TokenizeWorkerHostedService> logger)
         : this(scopeFactory, logger, TimeProvider.System)
@@ -63,6 +69,8 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
                 {
                     backoff = TimeSpan.Zero;
                 }
+
+                await FlushReadyPagesAsync(force: true, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -73,7 +81,6 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
                 logger.LogError(ex, "[TokenizeWorker] Tokenize pass failed");
             }
 
-            await FlushReadyPagesAsync(force: true, stoppingToken);
             await WaitAsync(wait, stoppingToken);
         }
     }
@@ -87,14 +94,16 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     /// <returns>True when the pass stopped because the sidecar didn't answer</returns>
     internal async Task<bool> RunPassAsync(CancellationToken ct)
     {
-        using (var scope = scopeFactory.CreateScope())
+        var now = timeProvider.GetUtcNow();
+        if (_lastDetection == null || now - _lastDetection >= DetectionInterval)
         {
+            using var scope = scopeFactory.CreateScope();
             // With no sidecar there's nothing to tokenize with, so the EPUBs aren't opened to count their pages
             var settings = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SettingsRepository.GetSettingsDtoAsync(ct);
             if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return false;
 
-            // Files a scan or a library change should have seeded, in case their Hangfire job was lost to a restart
             await scope.ServiceProvider.GetRequiredService<ITokenizeService>().DetectNewFilesAsync();
+            _lastDetection = now;
         }
 
         while (!ct.IsCancellationRequested)
@@ -113,6 +122,9 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
             {
                 case TokenizeUnitOutcome.SidecarUnavailable:
                     return true;
+                case TokenizeUnitOutcome.FileUnavailable:
+                    // The same unit would be picked again at once, so the pass waits for the poll like an empty queue
+                    return false;
                 case TokenizeUnitOutcome.UnitDone:
                     AddReadyPage(result);
                     await FlushReadyPagesAsync(force: false, ct);
