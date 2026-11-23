@@ -80,8 +80,7 @@ import {
   provideReaderDictionary,
   ReaderDictionaryController
 } from "../../../reader-shared/dictionary/reader-dictionary.controller";
-import {LOOKUP_EXCLUDED_SELECTOR} from "../../../reader-shared/dictionary/epub-locator";
-import {ReaderClick, routeReaderClick} from "./reader-click-route";
+import {DictionaryClick, dictionaryClickAction} from "./dictionary-click-action";
 
 
 interface HistoryPoint {
@@ -1349,16 +1348,17 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
 
   loadPage(part?: string | undefined, scrollTop?: number | undefined) {
 
-    // The open word's range is about to leave the DOM
-    this.dictionary.hidePopup();
     this.isLoading.set(true);
     this.cdRef.markForCheck();
 
-    this.bookService.getBookPage(this.chapterId, this.pageNum()).subscribe(content => {
+    const loaded = {chapterId: this.chapterId, page: this.pageNum()};
+    this.bookService.getBookPage(loaded.chapterId, loaded.page).subscribe(content => {
       this.isSingleImagePage = this.checkSingleImagePage(content); // This needs be performed before we set this.page to avoid image jumping
       this.updateSingleImagePageStyles();
 
       this.page.set(this.domSanitizer.bypassSecurityTrustHtml(content));
+      // The old page's tokens would point into the new DOM until setupPage loads this page's
+      this.dictionary.clearPage();
 
       this.scrollService.unlock();
       this.setupObservers();
@@ -1373,12 +1373,12 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
             .filter(img => !img.complete)
             .map(img => new Promise(resolve => { img.onload = img.onerror = resolve; })))
             .then(() => {
-              this.setupPage(part, scrollTop);
+              this.setupPage(part, scrollTop, loaded);
               this.updateImageSizes();
               this.injectImageBookmarkIndicators();
             });
         } else {
-          this.setupPage(part, scrollTop);
+          this.setupPage(part, scrollTop, loaded);
         }
 
 
@@ -1552,7 +1552,11 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     return images.length === 1;
   }
 
-  setupPage(part?: string | undefined, scrollTop?: number | undefined) {
+  /**
+   * @param loaded The chapter and page the HTML was fetched for. A load that a later one superseded while it waited
+   * for images doesn't hand its page to the dictionary
+   */
+  setupPage(part?: string | undefined, scrollTop?: number | undefined, loaded?: {chapterId: number, page: number}) {
     this.isLoading.set(false);
     this.cdRef.markForCheck();
 
@@ -1580,7 +1584,9 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
       this.setupAnnotationElements();
     });
 
-    if (this.dictionaryActive) this.dictionary.setPage(this.chapterId, this.pageNum());
+    if (this.dictionaryActive && loaded !== undefined && loaded.chapterId === this.chapterId && loaded.page === this.pageNum()) {
+      this.dictionary.setPage(loaded.chapterId, loaded.page);
+    }
   }
 
   private scroll(lambda: () => void) {
@@ -2496,24 +2502,32 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
   /** Runs in the capture phase on the reading section, ahead of every other click handler over the content */
   private routeDictionaryClick(event: MouseEvent) {
     if (!this.dictionaryActive) return;
-    const route = routeReaderClick(this.describeClick(event));
-    if (route === 'drop' || (route === 'dictionary' && this.dictionary.handleClick(event))) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-    }
+    const target = event.target;
+    const onPage = target instanceof Node && this.bookContentElemRef().nativeElement.contains(target);
+    this.applyDictionaryClick(event, {
+      onPage,
+      dismissedPopup: onPage && this.dictionary.consumesClick(event),
+      onWord: onPage && this.dictionary.isLookupClick(event),
+    });
   }
 
-  private describeClick(event: MouseEvent): ReaderClick {
-    const target = event.target instanceof Element ? event.target : null;
-    const selection = this.document.getSelection();
-    return {
-      dictionary: this.dictionaryActive,
-      dismissedPopup: this.dictionaryActive && this.dictionary.consumesClick(event),
-      onWord: this.isLookupClick(event),
-      onLink: target?.closest(LOOKUP_EXCLUDED_SELECTOR) != null,
-      hasSelection: selection !== null && !selection.isCollapsed && selection.toString() !== '',
-      onHighlight: target?.closest('app-epub-highlight') != null,
-    };
+  /** Acts on the dictionary's decision for a click, and returns true when the dictionary took the click */
+  private applyDictionaryClick(event: MouseEvent, click: DictionaryClick): boolean {
+    switch (dictionaryClickAction(click)) {
+      case 'release':
+        this.dictionary.cancelDismissal();
+        return false;
+      case 'lookup':
+        if (!this.dictionary.handleClick(event)) return false;
+        break;
+      case 'drop':
+        break;
+      case 'pass':
+        return false;
+    }
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return true;
   }
 
   /** True when the active dictionary, built-in or Yomitan, will look up a word at this click */
@@ -2523,12 +2537,9 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
 
   /** A tap on a page-turn strip. The tap that closed the dictionary popup doesn't also turn the page */
   paginateClick(event: MouseEvent, direction: PAGING_DIRECTION) {
-    if (this.dictionaryActive && this.dictionary.consumesClick(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
-    this.movePage(direction);
+    const taken = this.dictionaryActive
+      && this.applyDictionaryClick(event, {onPage: true, dismissedPopup: this.dictionary.consumesClick(event), onWord: false});
+    if (!taken) this.movePage(direction);
   }
 
   handleReaderClick(event: MouseEvent) {

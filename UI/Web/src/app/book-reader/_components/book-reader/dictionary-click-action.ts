@@ -1,40 +1,33 @@
-/** What one click on the book reader's content is about, as the reader sees it before any handler runs */
-export interface ReaderClick {
-  /** The built-in dictionary is on for this reader, which turns Yomitan scanning off */
-  dictionary: boolean;
+/** What the built-in dictionary needs to know about one click in the book reader */
+export interface DictionaryClick {
+  /**
+   * The click lands on the page: inside the book content or on a page-turn strip. The reader's own controls, such as
+   * the bottom action bar and the image bookmark icons, are not on the page
+   */
+  onPage: boolean;
   /**
    * The dictionary consumes this click, because its pointer-down closed the popup from outside. A click like that on
    * another word isn't consumed, so it can open that word
    */
   dismissedPopup: boolean;
-  /** The dictionary can open a word at the click. With the dictionary off, Yomitan can */
+  /** The dictionary can open a word at the click. Links, selections and other controls never count as words */
   onWord: boolean;
-  /** The click is inside a link or another element with its own click action */
-  onLink: boolean;
-  hasSelection: boolean;
-  /** The click is inside an annotation highlight */
-  onHighlight: boolean;
 }
 
 /**
- * The one handler a click goes to. `drop` swallows it. `dictionary` opens the popup and `yomitan` leaves the click to
- * Yomitan. `link` and `annotation` leave it to the link's or the highlight's own handler, and `reader` to the
- * reader's page turn and menu toggle
+ * What the reader does with a click while the built-in dictionary is on. `release` lets a click on a control through
+ * and forgets any pending dismissal. `lookup` opens the popup. `drop` swallows the click that closed the popup.
+ * `pass` leaves the click to the link, highlight or reader handler under it
  */
-export type ReaderClickRoute = 'drop' | 'dictionary' | 'yomitan' | 'link' | 'annotation' | 'reader';
+export type DictionaryClickAction = 'release' | 'lookup' | 'drop' | 'pass';
 
 /**
- * Picks the handler for a click. A tap on a word inside a highlight opens the dictionary and not the annotation,
- * because a highlight can cover a whole paragraph and its words would otherwise never be looked up. The annotation
- * stays reachable from the annotations drawer and from a tap on a part of the highlight that isn't a word. With the
- * dictionary off, Yomitan skips highlights and links, so their handlers run as before
+ * A word wins over a highlight, because a highlight can cover a whole paragraph and its words would otherwise never
+ * be looked up. A tap on the rest of the highlight still passes to its handler and opens the annotation
  */
-export function routeReaderClick(click: ReaderClick): ReaderClickRoute {
-  if (click.dictionary && click.dismissedPopup) return 'drop';
-  if (click.onLink) return 'link';
-  if (click.hasSelection) return 'reader';
-  if (click.dictionary && click.onWord) return 'dictionary';
-  if (click.onHighlight) return 'annotation';
-  if (!click.dictionary && click.onWord) return 'yomitan';
-  return 'reader';
+export function dictionaryClickAction(click: DictionaryClick): DictionaryClickAction {
+  if (!click.onPage) return 'release';
+  if (click.onWord) return 'lookup';
+  if (click.dismissedPopup) return 'drop';
+  return 'pass';
 }
