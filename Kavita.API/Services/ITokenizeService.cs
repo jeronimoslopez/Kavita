@@ -61,8 +61,8 @@ public enum TokenizeUnitOutcome
     /// </summary>
     SidecarUnavailable,
     /// <summary>
-    /// The file isn't on disk or couldn't be read this time, such as on an unmounted drive. Nothing was changed and no
-    /// attempt was counted
+    /// The file isn't on disk or couldn't be read this time, such as on an unmounted drive. No attempt was counted, and
+    /// <see cref="IReadingStore.DeferUnitAsync"/> moved the unit behind the others at its priority
     /// </summary>
     FileUnavailable,
 }
