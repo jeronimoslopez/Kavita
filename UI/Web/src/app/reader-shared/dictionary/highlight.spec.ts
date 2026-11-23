@@ -35,6 +35,12 @@ describe('open word highlight', () => {
     expect(supportsHighlights(env())).toBe(true);
   });
 
+  it('leaves the registry alone when CSS.highlights exists but the Highlight constructor does not', () => {
+    const highlights = new Map<string, unknown>();
+    markOpenWord(document.createRange(), {CSS: {highlights}});
+    expect(highlights.size).toBe(0);
+  });
+
   it('is named for the stylesheet', () => {
     expect(OPEN_WORD_HIGHLIGHT).toBe('kavita-dict-open');
   });

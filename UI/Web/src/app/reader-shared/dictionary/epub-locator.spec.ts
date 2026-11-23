@@ -6,7 +6,9 @@ import {locateEpubWord} from './epub-locator';
 const HTML = '<p data-kb="0">今日<ruby>は<rt>わ</rt></ruby><app-epub-highlight>新聞</app-epub-highlight>社へ</p>'
   + '<p data-kb="1"><a href="#n1">注</a></p>'
   + '<p data-kb="2"><span kavita-part="x">部</span></p>'
-  + '<p data-kb="3">長さ違い</p>';
+  + '<p data-kb="3">長さ違い</p>'
+  + '<h2 data-kb="4"><a id="ch1">第一章</a></h2>'
+  + '<p data-kb="5"><span role="button">押</span><span onclick="void 0">引</span></p>';
 
 function page(): EpubPageTokens {
   return {
@@ -21,6 +23,8 @@ function page(): EpubPageTokens {
       {index: 1, length: 1, tokens: [[0, 1, 4, null, null]]},
       {index: 2, length: 1, tokens: [[0, 1, 5, null, null]]},
       {index: 3, length: 9, tokens: [[0, 4, 6, null, null]]},
+      {index: 4, length: 3, tokens: [[0, 3, 7, 'だいいっしょう', null]]},
+      {index: 5, length: 2, tokens: [[0, 1, 8, null, null], [1, 2, 9, null, null]]},
     ],
     words: {},
     analysis: [],
@@ -72,10 +76,18 @@ describe('locateEpubWord', () => {
     expect(locateEpubWord(1, 1, container, page(), {dom: caretOn(text(container, 'わ'), 0)})).toBeNull();
   });
 
-  it('returns null inside links and kavita-part anchors', () => {
+  it('returns null inside links, kavita-part anchors and elements with a role or an onclick', () => {
     const container = setUp();
-    expect(locateEpubWord(1, 1, container, page(), {dom: caretOn(text(container, '注'), 0)})).toBeNull();
-    expect(locateEpubWord(1, 1, container, page(), {dom: caretOn(text(container, '部'), 0)})).toBeNull();
+    for (const data of ['注', '部', '押', '引']) {
+      expect(locateEpubWord(1, 1, container, page(), {dom: caretOn(text(container, data), 0)})).toBeNull();
+    }
+  });
+
+  it('looks words up in a heading inside an anchor with no href', () => {
+    const container = setUp();
+    const hit = locateEpubWord(1, 1, container, page(), {dom: caretOn(text(container, '第一章'), 1)});
+    expect(hit?.blockIndex).toBe(4);
+    expect(hit?.range.toString()).toBe('第一章');
   });
 
   it('returns null and warns once for a block whose length check fails', () => {

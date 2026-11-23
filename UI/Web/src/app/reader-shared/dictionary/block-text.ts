@@ -87,10 +87,10 @@ export function domPositionOf(block: BlockText, offset: number, preferEnd = fals
 
 /**
  * A DOM Range over block offsets `[s, e)`. It can start and end in different text nodes and cross inline wrappers
- * such as ruby or a highlight. Null when the offsets fall outside the block's text or `e` is before `s`
+ * such as ruby or a highlight. Null when the offsets fall outside the block's text or the span is empty
  */
 export function rangeForBlockOffsets(block: BlockText, s: number, e: number): Range | null {
-  if (e < s) return null;
+  if (e <= s) return null;
   const start = domPositionOf(block, s);
   const end = domPositionOf(block, e, true);
   if (start === null || end === null) return null;

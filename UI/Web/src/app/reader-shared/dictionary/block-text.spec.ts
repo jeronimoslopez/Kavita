@@ -47,6 +47,24 @@ describe('blockOffsetOf', () => {
     expect(blockOffsetOf(text, textNode(el, 'f'), 1)).toBe(6);
   });
 
+  it('maps the offset at the end of a node to the start of the next one', () => {
+    const el = block('<p data-kb="1">ab<span>cde</span></p>');
+    const text = readBlockText(el);
+    expect(blockOffsetOf(text, textNode(el, 'ab'), 2)).toBe(2);
+    expect(blockOffsetOf(text, textNode(el, 'cde'), 3)).toBe(5);
+  });
+
+  it('skips an empty text node inside a block', () => {
+    const el = block('<p data-kb="1">ab<span>cd</span></p>');
+    const empty = document.createTextNode('');
+    el.insertBefore(empty, el.lastChild);
+    const text = readBlockText(el);
+    expect(text.text).toBe('abcd');
+    expect(text.nodes.map(n => n.data)).toEqual(['ab', 'cd']);
+    expect(blockOffsetOf(text, empty, 0)).toBeNull();
+    expect(rangeForBlockOffsets(text, 1, 3)?.toString()).toBe('bc');
+  });
+
   it('returns null for a node the walk left out', () => {
     const el = block('<p data-kb="1"><ruby>字<rt>じ</rt></ruby></p>');
     expect(blockOffsetOf(readBlockText(el), textNode(el, 'じ'), 0)).toBeNull();
@@ -73,8 +91,9 @@ describe('rangeForBlockOffsets', () => {
     expect(range.toString()).toBe('cd');
   });
 
-  it('returns null outside the text or for a reversed span', () => {
+  it('returns null outside the text or for an empty or reversed span', () => {
     const text = readBlockText(block('<p data-kb="0">abc</p>'));
+    expect(rangeForBlockOffsets(text, 1, 1)).toBeNull();
     expect(rangeForBlockOffsets(text, 1, 9)).toBeNull();
     expect(rangeForBlockOffsets(text, -1, 1)).toBeNull();
     expect(rangeForBlockOffsets(text, 2, 1)).toBeNull();

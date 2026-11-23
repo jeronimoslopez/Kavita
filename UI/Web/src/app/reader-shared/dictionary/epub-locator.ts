@@ -3,8 +3,11 @@ import {blockIndexOf, blockOffsetOf, enclosingBlock, rangeForBlockOffsets, readB
 import {browserCaretDom, caretFromPoint, CaretDom} from './caret';
 import {blockMatches, hasWord, tokenAt} from './tokens';
 
-/** Clicks inside these go to the element, not the dictionary. Highlights aren't here, they're plain inline wrappers */
-export const LOOKUP_EXCLUDED_SELECTOR = 'a, [kavita-part]';
+/**
+ * Clicks inside these go to the element, not the dictionary. It's the same attribute set the book reader's click
+ * guard checks. Highlights aren't here, they're plain inline wrappers
+ */
+export const LOOKUP_EXCLUDED_SELECTOR = 'a[href], [kavita-part], [onclick], [role]';
 
 export interface EpubHit {
   /** The block's `data-kb` value, sent as `block` in a lookup */
@@ -15,7 +18,10 @@ export interface EpubHit {
   e: number;
   /** Block offset of the character under the point, for picking a compound's part with subAt */
   offset: number;
-  /** The token's text in the DOM, for highlighting and placing the popup */
+  /**
+   * The token's text in the DOM, for highlighting and placing the popup. When the token spans a ruby it also holds
+   * the rt subtree, so take the surface from the block text and use the range only for geometry and highlighting
+   */
   range: Range;
 }
 

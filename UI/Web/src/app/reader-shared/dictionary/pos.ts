@@ -6,8 +6,11 @@ const SURU = 'suru verb';
 const ARCHAIC_VERB = 'archaic verb';
 const ARCHAIC_ADJ = 'archaic adjective';
 
-const POS: Readonly<Record<string, string>> = {
+const POS: ReadonlyMap<string, string> = new Map(Object.entries({
   n: 'noun',
+  'n-adv': 'adverbial noun',
+  'n-t': 'temporal noun',
+  'n-pr': 'proper noun',
   'n-suf': 'noun suffix',
   'n-pref': 'noun prefix',
   pn: 'pronoun',
@@ -38,6 +41,7 @@ const POS: Readonly<Record<string, string>> = {
   'adj-ku': ARCHAIC_ADJ,
   'adj-shiku': ARCHAIC_ADJ,
   'adj-nari': ARCHAIC_ADJ,
+  'adj-kari': ARCHAIC_ADJ,
 
   vt: 'transitive',
   vi: 'intransitive',
@@ -56,6 +60,7 @@ const POS: Readonly<Record<string, string>> = {
   v5t: GODAN,
   v5u: GODAN,
   'v5u-s': GODAN,
+  v5uru: GODAN,
   vs: SURU,
   'vs-s': SURU,
   'vs-i': SURU,
@@ -65,14 +70,14 @@ const POS: Readonly<Record<string, string>> = {
   vr: 'ru verb, irregular',
   vn: 'nu verb, irregular',
   'v-unspec': 'verb',
-};
+}));
 
 /** Codes that start this way are classical verb classes, too rare to list one by one */
 const ARCHAIC_VERB_PREFIXES = ['v2', 'v4'];
 
 /** One code as a label, or the code itself when it isn't mapped */
 export function posLabel(code: string): string {
-  const hit = POS[code];
+  const hit = POS.get(code);
   if (hit !== undefined) return hit;
   if (ARCHAIC_VERB_PREFIXES.some(p => code.startsWith(p))) return ARCHAIC_VERB;
   return code;

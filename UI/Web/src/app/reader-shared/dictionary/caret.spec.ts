@@ -47,6 +47,18 @@ describe('caretFromPoint', () => {
     expect(caretFromPoint(document, 15, 5, dom)).toEqual({node: pair, offset: 1});
     expect(dom.calls[0]).toEqual([1, 3]);
   });
+
+  it('measures the pair whole from a caret on either side of it', () => {
+    const pair = document.createTextNode('a𠮟b');
+    const before = fakeDom(pair, 1);
+    expect(caretFromPoint(document, 15, 5, before)).toEqual({node: pair, offset: 1});
+    expect(before.calls[0]).toEqual([1, 3]);
+
+    const after = fakeDom(pair, 3);
+    expect(caretFromPoint(document, 25, 5, after)).toEqual({node: pair, offset: 1});
+    expect(after.calls).toEqual([[3, 4], [1, 3]]);
+    expect(caretFromPoint(document, 35, 5, fakeDom(pair, 3))).toEqual({node: pair, offset: 3});
+  });
 });
 
 describe('browserCaretDom.caretAt', () => {

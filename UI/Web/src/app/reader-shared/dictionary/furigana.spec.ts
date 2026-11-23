@@ -5,6 +5,24 @@ describe('toHiragana', () => {
     expect(toHiragana('カタカナ')).toBe('かたかな');
     expect(toHiragana('ヴァ漢字ーa')).toBe('ゔぁ漢字ーa');
   });
+
+  it('keeps the long vowel mark as it is', () => {
+    expect(toHiragana('ラーメン')).toBe('らーめん');
+  });
+});
+
+describe('furigana_segments edge cases', () => {
+  it('matches the long vowel mark in the surface against the reading', () => {
+    expect(furigana_segments('コーヒー豆', 'こーひーまめ')).toEqual([
+      {text: 'コーヒー', ruby: null},
+      {text: '豆', ruby: 'まめ'},
+    ]);
+  });
+
+  it('falls back to one ruby when the reading is shorter than the surface kana', () => {
+    expect(furigana_segments('食べる', 'たべ')).toEqual([{text: '食べる', ruby: 'たべ'}]);
+    expect(furigana_segments('お茶', 'お')).toEqual([{text: 'お茶', ruby: 'お'}]);
+  });
 });
 
 describe('furigana_segments', () => {

@@ -4,7 +4,7 @@
 export {locateEpubWord} from './epub-locator';
 /** The hit locateEpubWord returns, with `blockIndex`, `token`, `s`, `e`, `offset` and `range` */
 export type {EpubHit, EpubLocatorOptions} from './epub-locator';
-/** The selector for elements whose clicks never become lookups, currently links and `[kavita-part]` anchors */
+/** The selector for elements whose clicks never become lookups, the ones the book reader treats as controls */
 export {LOOKUP_EXCLUDED_SELECTOR} from './epub-locator';
 
 /** `caretFromPoint(doc, x, y, dom?)` takes a document and client coordinates and returns the text node and offset of the character under the point, or null */
@@ -29,7 +29,7 @@ export type {HighlightEnv} from './highlight';
 
 /** `orderSenses(senses, analysis)` returns the senses with the analysis's choice first and flagged `chosen` */
 export {orderSenses} from './senses';
-/** A sense with its 1-based place in the entry and whether the analysis chose it */
+/** A sense with its number in its own entry (`n`), the number to show (`label`) and whether the analysis chose it */
 export type {OrderedSense} from './senses';
 
 /** `toHiragana(s)` returns `s` with katakana as hiragana. `furigana_segments(surface, reading)` returns the runs to draw, each with its ruby or null */
