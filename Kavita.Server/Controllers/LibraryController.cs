@@ -97,6 +97,7 @@ public class LibraryController(
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
         library.EnableOcr = dto.EnableOcr;
         library.OcrEngine = dto.OcrEngine;
+        library.EnableDictionary = dto.EnableDictionary;
 
         // Override Scrobbling for Comic libraries since there are no providers to scrobble to
         if (library.Type == LibraryType.Comic)
@@ -435,6 +436,7 @@ public class LibraryController(
                 InheritWebLinksFromFirstChapter = sourceLibrary.InheritWebLinksFromFirstChapter,
                 EnableOcr = sourceLibrary.EnableOcr,
                 OcrEngine = sourceLibrary.OcrEngine,
+                EnableDictionary = sourceLibrary.EnableDictionary,
                 DefaultLanguage = sourceLibrary.DefaultLanguage,
                 MetadataProvider = sourceLibrary.MetadataProvider,
                 ExcludePatterns = sourceLibrary.LibraryExcludePatterns.Select(p => p.Pattern).ToList(),
@@ -667,6 +669,7 @@ public class LibraryController(
         var typeUpdate = library.Type != dto.Type;
         var folderWatchingUpdate = library.FolderWatching != dto.FolderWatching;
         var ocrTurnedOn = !library.EnableOcr && dto.EnableOcr;
+        var dictionaryTurnedOn = !library.EnableDictionary && dto.EnableDictionary;
         UpdateLibrarySettings(dto, library);
 
         if (!await unitOfWork.CommitAsync(ct)) return BadRequest(await localizationService.TranslateAsync(userId, "generic-library-update"));
@@ -685,6 +688,11 @@ public class LibraryController(
         if (ocrTurnedOn)
         {
             BackgroundJob.Enqueue<IOcrService>(service => service.DetectNewFilesAsync());
+        }
+
+        if (dictionaryTurnedOn)
+        {
+            BackgroundJob.Enqueue<ITokenizeService>(service => service.DetectNewFilesAsync());
         }
 
         await eventHub.SendMessageAsync(MessageFactory.LibraryModified,
@@ -758,6 +766,7 @@ public class LibraryController(
         library.InheritWebLinksFromFirstChapter = dto.InheritWebLinksFromFirstChapter;
         library.EnableOcr = dto.EnableOcr;
         library.OcrEngine = dto.OcrEngine;
+        library.EnableDictionary = dto.EnableDictionary;
         library.DefaultLanguage = dto.DefaultLanguage;
         library.MetadataProvider = dto.MetadataProvider;
 

@@ -14,6 +14,7 @@
     "prod": "npm run cache-locale && ng build --configuration production && npm run minify-langs",
     "explore": "ng build --stats-json && webpack-bundle-analyzer dist/stats.json",
     "lint": "ng lint",
+    "test": "ng test --watch=false",
     "e2e": "ng e2e"
   },
   "private": true,
@@ -76,11 +77,13 @@
     "angular-eslint": "^22.2.0",
     "eslint": "^10.9.1",
     "glob": "^13.0.6",
+    "jsdom": "^31.0.1",
     "jsonminify": "^0.4.2",
     "karma-coverage": "~2.2.0",
     "ts-node": "~10.9.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0",
+    "vitest": "^4.1.12",
     "webpack-bundle-analyzer": "^5.3.2"
   }
 }

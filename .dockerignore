@@ -14,6 +14,8 @@ Kavita.Server/config/cache*
 Kavita.Server/config/logs
 Kavita.Server/config/*.db*
 Kavita.Server/config/yomitan
+Kavita.Server/config/reading
 Dockerfile*
 .dockerignore
 ocr-sidecar
+text-sidecar-contract

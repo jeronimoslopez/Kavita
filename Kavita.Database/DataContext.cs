@@ -368,6 +368,9 @@ public sealed class DataContext : IdentityDbContext<AppUser, AppRole, int,
         builder.Entity<AppUserReadingProfile>()
             .Property(b => b.BookReaderYomitanEnabled)
             .HasDefaultValue(false);
+        builder.Entity<AppUserReadingProfile>()
+            .Property(b => b.BookReaderDictionaryEnabled)
+            .HasDefaultValue(false);
 
         builder.Entity<AppUserReadingProfile>()
             .PrimitiveCollection(p => p.LibraryIds)

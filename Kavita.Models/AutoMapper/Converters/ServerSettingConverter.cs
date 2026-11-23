@@ -96,6 +96,12 @@ public class ServerSettingConverter : ITypeConverter<IEnumerable<ServerSetting>,
                 case ServerSettingKey.OcrWindowEnd:
                     destination.OcrWindowEnd = row.Value;
                     break;
+                case ServerSettingKey.TextSidecarUrl:
+                    destination.TextSidecarUrl = row.Value;
+                    break;
+                case ServerSettingKey.DictionaryAnalysisOnOpen:
+                    destination.DictionaryAnalysisOnOpen = bool.Parse(row.Value);
+                    break;
                 case ServerSettingKey.EncodeMediaAs:
                     destination.EncodeMediaAs = Enum.Parse<EncodeFormat>(row.Value);
                     break;

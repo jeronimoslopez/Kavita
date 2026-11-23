@@ -39,6 +39,7 @@ export interface BookReadingProfileFormModel {
   bookReaderImmersiveMode: boolean;
   bookReaderDisableBookmarkIcon: boolean;
   bookReaderYomitanEnabled: boolean;
+  bookReaderDictionaryEnabled: boolean;
 }
 
 @Injectable()
@@ -66,6 +67,7 @@ export class EpubReaderSettingsService {
   formModel = signal<BookReadingProfileFormModel>({
     bookReaderDisableBookmarkIcon: false,
     bookReaderYomitanEnabled: false,
+    bookReaderDictionaryEnabled: false,
     bookReaderFontFamily: "",
     bookReaderFontSize: 0,
     bookReaderImmersiveMode: false,
@@ -111,6 +113,7 @@ export class EpubReaderSettingsService {
   public readonly clickToPaginate = computed(() => this.formGroup.bookReaderTapToPaginate().value());
   public readonly immersiveMode = computed(() => this.formGroup.bookReaderImmersiveMode().value());
   public readonly yomitanEnabled = computed(() => this.formGroup.bookReaderYomitanEnabled().value());
+  public readonly dictionaryEnabled = computed(() => this.formGroup.bookReaderDictionaryEnabled().value());
   public readonly isFullscreen = this._isFullscreen.asReadonly();
   public readonly epubFonts = this._epubFonts.asReadonly();
 
@@ -371,6 +374,7 @@ export class EpubReaderSettingsService {
     this.formModel.set({
       bookReaderDisableBookmarkIcon: profile.bookReaderDisableBookmarkIcon,
       bookReaderYomitanEnabled: profile.bookReaderYomitanEnabled,
+      bookReaderDictionaryEnabled: profile.bookReaderDictionaryEnabled,
       bookReaderFontFamily: profile.bookReaderFontFamily,
       bookReaderFontSize: profile.bookReaderFontSize,
       bookReaderImmersiveMode: profile.bookReaderImmersiveMode,
@@ -438,6 +442,7 @@ export class EpubReaderSettingsService {
     data.bookReaderMargin = modelSettings.bookReaderMargin;
     data.bookReaderDisableBookmarkIcon = modelSettings.bookReaderDisableBookmarkIcon;
     data.bookReaderYomitanEnabled = modelSettings.bookReaderYomitanEnabled;
+    data.bookReaderDictionaryEnabled = modelSettings.bookReaderDictionaryEnabled;
 
     // Update from signals
     data.bookReaderTapToPaginate = this.clickToPaginate();

@@ -2045,4 +2045,24 @@ public class ReadingProfileServiceTest(ITestOutputHelper outputHelper): Abstract
         Assert.True(reloaded.BookReaderYomitanEnabled);
     }
 
+    [Fact]
+    public async Task UpdateReadingProfile_PersistsDictionaryEnabled()
+    {
+        var (unitOfWork, context, mapper) = await CreateDatabase();
+        var (rps, user, _, _) = await Setup(unitOfWork, context, mapper);
+
+        var profile = await context.AppUserReadingProfiles.FirstAsync(rp => rp.Kind == ReadingProfileKind.Default);
+        Assert.False(profile.BookReaderDictionaryEnabled);
+
+        var dto = mapper.Map<UserReadingProfileDto>(profile);
+        Assert.False(dto.BookReaderDictionaryEnabled);
+
+        var updated = await rps.UpdateReadingProfile(user.Id, dto with { BookReaderDictionaryEnabled = true });
+        Assert.True(updated.BookReaderDictionaryEnabled);
+
+        var reloaded = await unitOfWork.AppUserReadingProfileRepository.GetUserProfile(user.Id, profile.Id);
+        Assert.NotNull(reloaded);
+        Assert.True(reloaded.BookReaderDictionaryEnabled);
+    }
+
 }

@@ -18,10 +18,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 24
-      - run: |
-          cd UI/Web || exit
-          echo 'Installing web dependencies'
-          npm ci --legacy-peer-deps
+      - name: Install web dependencies
+        working-directory: UI/Web
+        run: npm ci --legacy-peer-deps
 
-          echo 'Building UI'
-          npm run prod
+      - name: Run unit tests
+        working-directory: UI/Web
+        run: npm test
+
+      - name: Build UI
+        working-directory: UI/Web
+        run: npm run prod

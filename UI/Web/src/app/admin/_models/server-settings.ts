@@ -31,6 +31,8 @@ export interface ServerSettings {
   ocrSidecarUrl: string;
   ocrWindowStart: string;
   ocrWindowEnd: string;
+  textSidecarUrl: string;
+  dictionaryAnalysisOnOpen: boolean;
   smtpConfig: SmtpConfig;
   oidcConfig: OidcConfig;
   installId: string;

@@ -214,4 +214,14 @@ public enum ServerSettingKey
     /// </summary>
     [Description("OcrWindowEnd")]
     OcrWindowEnd = 46,
+    /// <summary>
+    /// Base URL of the text sidecar that tokenizes Japanese EPUB text. Empty turns the dictionary off for the whole server
+    /// </summary>
+    [Description("TextSidecarUrl")]
+    TextSidecarUrl = 47,
+    /// <summary>
+    /// Queue AI word analysis for a chapter when someone opens it, not only when an admin asks for a whole book
+    /// </summary>
+    [Description("DictionaryAnalysisOnOpen")]
+    DictionaryAnalysisOnOpen = 48,
 }

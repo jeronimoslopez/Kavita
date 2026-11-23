@@ -416,6 +416,22 @@ public class SettingsService(
                 unitOfWork.SettingsRepository.Update(setting);
             }
 
+            if (setting.Key == ServerSettingKey.TextSidecarUrl && (updateSettingsDto.TextSidecarUrl + string.Empty).Trim() != setting.Value)
+            {
+                var url = UrlHelper.RemoveEndingSlash((updateSettingsDto.TextSidecarUrl + string.Empty).Trim());
+                if (url.Length > 0 && !(Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"))
+                    throw new KavitaException("text-sidecar-url-invalid");
+                setting.Value = url;
+                unitOfWork.SettingsRepository.Update(setting);
+            }
+
+            if (setting.Key == ServerSettingKey.DictionaryAnalysisOnOpen &&
+                updateSettingsDto.DictionaryAnalysisOnOpen + string.Empty != setting.Value)
+            {
+                setting.Value = updateSettingsDto.DictionaryAnalysisOnOpen + string.Empty;
+                unitOfWork.SettingsRepository.Update(setting);
+            }
+
             if (setting.Key is ServerSettingKey.OcrWindowStart or ServerSettingKey.OcrWindowEnd)
             {
                 var time = ((setting.Key == ServerSettingKey.OcrWindowStart

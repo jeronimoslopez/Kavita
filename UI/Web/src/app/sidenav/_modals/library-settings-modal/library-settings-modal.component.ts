@@ -96,6 +96,7 @@ interface FormModel {
   inheritWebLinksFromFirstChapter: boolean;
   enableOcr: boolean;
   ocrEngine: OcrEngine;
+  enableDictionary: boolean;
   defaultLanguage: string;
   metadataProvider: MetadataProvider;
   excludePatterns: string[];
@@ -158,6 +159,7 @@ export class LibrarySettingsModalComponent implements OnInit {
     inheritWebLinksFromFirstChapter: false,
     enableOcr: false,
     ocrEngine: OcrEngine.Auto,
+    enableDictionary: false,
     fileGroupTypes: this.getLibraryFileTypes(LibraryType.Manga),
     manageCollections: false,
     manageReadingLists: false,
@@ -314,6 +316,7 @@ export class LibrarySettingsModalComponent implements OnInit {
       inheritWebLinksFromFirstChapter: library.inheritWebLinksFromFirstChapter,
       enableOcr: library.enableOcr,
       ocrEngine: library.ocrEngine,
+      enableDictionary: library.enableDictionary,
       fileGroupTypes: library.libraryFileTypes,
       manageCollections: library.manageCollections,
       manageReadingLists: library.manageReadingLists,

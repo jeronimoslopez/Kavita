@@ -8,6 +8,7 @@ using Kavita.API.Services.ReadingLists;
 using Kavita.API.Services.Scanner;
 using Kavita.API.Services.SignalR;
 using Kavita.Models.Entities.Enums;
+using Kavita.Services.Dictionary;
 using Kavita.Services.Helpers;
 using Kavita.Services.HostedServices;
 using Kavita.Services.Metadata;
@@ -136,6 +137,19 @@ public static class ApplicationServiceExtensions
         services.AddSingleton<OcrWorkerHostedService>();
         services.AddSingleton<IOcrWorkerSignal>(sp => sp.GetRequiredService<OcrWorkerHostedService>());
         services.AddHostedService(sp => sp.GetRequiredService<OcrWorkerHostedService>());
+
+        // Tokens and AI analysis for the dictionary popup live in their own SQLite file (config/reading/reading.db)
+        services.AddSingleton(_ => new ReadingDatabase(ReadingDatabase.DefaultDatabasePath));
+        services.AddSingleton<IReadingStore, ReadingStore>();
+        services.AddSingleton<IEpubTextBlocks, EpubTextBlocks>();
+        services.AddSingleton<ITextSidecarClient, TextSidecarClient>();
+        services.AddScoped<ITokenizeService, TokenizeService>();
+        services.AddScoped<IDictionaryService, DictionaryService>();
+
+        // The worker is also the signal services use to wake it when they queue tokenizing
+        services.AddSingleton<TokenizeWorkerHostedService>();
+        services.AddSingleton<ITokenizeWorkerSignal>(sp => sp.GetRequiredService<TokenizeWorkerHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<TokenizeWorkerHostedService>());
     }
 
 }

@@ -95,6 +95,14 @@ export enum EVENTS {
     */
   OcrPagesReady = 'OcrPagesReady',
    /**
+    * Pages of an EPUB chapter got tokens for the dictionary popup
+    */
+  DictionaryPagesReady = 'DictionaryPagesReady',
+   /**
+    * Pages of an EPUB chapter got AI word analysis
+    */
+  DictionaryAnalysisReady = 'DictionaryAnalysisReady',
+   /**
     * When the user needs to be informed, but it's not a big deal
     */
   Info = 'Info',
@@ -221,6 +229,8 @@ const bodyPayloadEvents = [
   EVENTS.ExternalMetadataUpdate,
   EVENTS.ScanRescheduled,
   EVENTS.OcrPagesReady,
+  EVENTS.DictionaryPagesReady,
+  EVENTS.DictionaryAnalysisReady,
 ];
 
 const envelopePayloadEvents = [
