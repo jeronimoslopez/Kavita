@@ -103,6 +103,8 @@ public interface IReadingStore
     /// that names a row that isn't pending, a sense key the word doesn't have, or a reading the word doesn't have is
     /// rejected and the rest are saved. A null sense key or reading is always allowed
     /// </summary>
+    /// <returns>How many answers were stored, why each of the others was rejected, and the pages the stored answers
+    /// belong to</returns>
     Task<AnalysisStoreOutcome> StoreAnalysisAsync(string generator, string promptVersion,
         IReadOnlyList<AnalysisAnswer> answers, CancellationToken ct = default);
     /// <summary>
