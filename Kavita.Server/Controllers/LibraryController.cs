@@ -669,6 +669,7 @@ public class LibraryController(
         var typeUpdate = library.Type != dto.Type;
         var folderWatchingUpdate = library.FolderWatching != dto.FolderWatching;
         var ocrTurnedOn = !library.EnableOcr && dto.EnableOcr;
+        var dictionaryTurnedOn = !library.EnableDictionary && dto.EnableDictionary;
         UpdateLibrarySettings(dto, library);
 
         if (!await unitOfWork.CommitAsync(ct)) return BadRequest(await localizationService.TranslateAsync(userId, "generic-library-update"));
@@ -687,6 +688,11 @@ public class LibraryController(
         if (ocrTurnedOn)
         {
             BackgroundJob.Enqueue<IOcrService>(service => service.DetectNewFilesAsync());
+        }
+
+        if (dictionaryTurnedOn)
+        {
+            BackgroundJob.Enqueue<ITokenizeService>(service => service.DetectNewFilesAsync());
         }
 
         await eventHub.SendMessageAsync(MessageFactory.LibraryModified,

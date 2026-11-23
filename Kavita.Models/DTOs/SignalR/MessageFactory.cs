@@ -131,6 +131,14 @@ public static class MessageFactory
     /// </summary>
     public const string OcrPagesReady = "OcrPagesReady";
     /// <summary>
+    /// Pages of an EPUB chapter got tokens, so an open reader can look words up on them
+    /// </summary>
+    public const string DictionaryPagesReady = "DictionaryPagesReady";
+    /// <summary>
+    /// Pages of an EPUB chapter got AI analysis answers, so an open reader can show them
+    /// </summary>
+    public const string DictionaryAnalysisReady = "DictionaryAnalysisReady";
+    /// <summary>
     /// A generic message that can occur in background processing to inform user, but no direct action is needed
     /// </summary>
     public const string Info = "Info";
@@ -357,6 +365,32 @@ public static class MessageFactory
             Title = "OCR text ready",
             Progress = ProgressType.None,
             Body = new OcrPagesReadyEventBodyDto(seriesId, chapterId, pages)
+        };
+    }
+
+    /// <param name="pages">0-based EPUB pages</param>
+    public static SignalRMessageDto DictionaryPagesReadyEvent(int seriesId, int chapterId, IList<int> pages)
+    {
+        return new SignalRMessageDto()
+        {
+            Name = DictionaryPagesReady,
+            Priority = MessageEventPriority.Silent,
+            Title = "Dictionary pages ready",
+            Progress = ProgressType.None,
+            Body = new DictionaryPagesReadyEventBodyDto(seriesId, chapterId, pages)
+        };
+    }
+
+    /// <param name="pages">0-based EPUB pages</param>
+    public static SignalRMessageDto DictionaryAnalysisReadyEvent(int seriesId, int chapterId, IList<int> pages)
+    {
+        return new SignalRMessageDto()
+        {
+            Name = DictionaryAnalysisReady,
+            Priority = MessageEventPriority.Silent,
+            Title = "Word analysis ready",
+            Progress = ProgressType.None,
+            Body = new DictionaryAnalysisReadyEventBodyDto(seriesId, chapterId, pages)
         };
     }
 
