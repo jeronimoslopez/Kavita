@@ -1,117 +1,134 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jeronimoslopez/Kavita/text-sidecar-contract/tokenize-response.schema.json",
-  "title": "Text sidecar response for POST /tokenize",
+  "$id": "tokenize-response.schema.json",
+  "title": "TokenizeResponse",
+  "description": "The answer to POST /tokenize. Every offset is a UTF-16 code unit offset into its block's text. Every token is returned, so a block's tokens cover its text in order with no gap and no overlap, and a token with no word has w null.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "words", "blocks"],
   "properties": {
     "version": {
-      "description": "Names the tokenizer, dictionary, word rules and lexicon, such as sudachipy=..;sudachidict_full=..;modes=C/A;words=6;lexicon=..;sidecar=1.",
       "type": "string",
-      "minLength": 1
+      "description": "The tokenizer's version, the word rules, the lexicon's version and the sidecar's, joined by ';', as in sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=<version>;sidecar=1. The lexicon's version holds ';' too, so compare the whole string. A change in any part can change the tokens of the same text.",
+      "pattern": "^.+;words=[0-9]+;lexicon=.+;sidecar=[0-9]+$"
     },
     "words": {
-      "description": "Every word the tokens point at. A token's w is an index into this array.",
       "type": "array",
+      "description": "The words the blocks use, each once across the whole response, keyed by lemma, pos and isProper. A token's w is an index into this list.",
       "items": { "$ref": "#/$defs/word" }
     },
     "blocks": {
-      "description": "One entry per block sent, in the same order.",
       "type": "array",
-      "items": { "$ref": "#/$defs/block" }
+      "description": "One entry per request block, in request order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "tokens"],
+        "properties": {
+          "id": { "type": "string" },
+          "tokens": {
+            "type": "array",
+            "items": { "$ref": "#/$defs/token" }
+          }
+        }
+      }
     }
   },
   "$defs": {
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "wordIndex": {
+      "description": "An index into words, or null for particles, symbols, numbers, counters, whitespace and long units the lexicon doesn't know.",
+      "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
+    },
+    "reading": {
+      "description": "The hiragana reading of this occurrence, or null when its text has no kanji.",
+      "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+    },
+    "subToken": {
+      "description": "[s, e, w, r] for one short-unit part of a long unit.",
+      "type": "array",
+      "minItems": 4,
+      "prefixItems": [
+        { "$ref": "#/$defs/offset" },
+        { "$ref": "#/$defs/offset" },
+        { "$ref": "#/$defs/wordIndex" },
+        { "$ref": "#/$defs/reading" }
+      ],
+      "items": false
+    },
+    "token": {
+      "description": "[s, e, w, r, sub]. sub is null, or the short-unit parts when the long unit splits and the unit or one of its parts has a word. When w is null and sub isn't, the words are in the parts.",
+      "type": "array",
+      "minItems": 5,
+      "prefixItems": [
+        { "$ref": "#/$defs/offset" },
+        { "$ref": "#/$defs/offset" },
+        { "$ref": "#/$defs/wordIndex" },
+        { "$ref": "#/$defs/reading" },
+        {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/subToken" } }
+          ]
+        }
+      ],
+      "items": false
+    },
     "word": {
       "type": "object",
       "additionalProperties": false,
       "required": ["lemma", "pos", "isProper", "reading", "jlpt", "readings", "senses"],
       "properties": {
-        "lemma": { "type": "string", "minLength": 1 },
-        "pos": {
-          "description": "The word's part of speech as shimen's words.pos stores it, such as 名詞.",
+        "lemma": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "description": "The dictionary form when it is all kana, otherwise Sudachi's normalized form."
         },
-        "isProper": { "type": "boolean" },
+        "pos": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The first level of Sudachi's part of speech, such as 名詞 or 動詞."
+        },
+        "isProper": {
+          "type": "boolean",
+          "description": "Sudachi tags the token 固有名詞. A name and a common word written the same are two words."
+        },
         "reading": {
-          "description": "The dictionary's usual reading in hiragana.",
-          "type": "string"
+          "type": "string",
+          "description": "The lemma's reading in hiragana, the same for every occurrence. It comes from the entries that match Sudachi's reading of the lemma, as shimen's own word rows do."
         },
         "jlpt": {
-          "description": "JLPT level from 1 (N1) to 5 (N5), or null when the word isn't listed.",
-          "type": ["integer", "null"],
-          "minimum": 1,
-          "maximum": 5
+          "description": "The JLPT level from 5 (easiest) to 1, or null, from the same entries as reading.",
+          "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 5 }, { "type": "null" }]
         },
         "readings": {
-          "description": "Every reading the dictionary gives the word, in hiragana.",
           "type": "array",
+          "uniqueItems": true,
+          "description": "The word's reading, then the other hiragana kana forms of the offered entries, entry by entry in the order senses gives them. For a lemma with a kanji the offered entries are every JMdict entry written with the lemma (or with the dictionary form when the lemma has none), so a heteronym such as 辛い offers both からい and つらい. For a kana lemma they are the entries that match its reading. Empty when no entry matched.",
           "items": { "type": "string", "minLength": 1 }
         },
         "senses": {
           "type": "array",
-          "items": { "$ref": "#/$defs/sense" }
+          "description": "The senses of the offered entries. The entries that match Sudachi's reading come first, in the lexicon's order, then the others written with the lemma, common ones first, then by seq. Within an entry, senses follow JMdict's order.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "pos", "gloss"],
+            "properties": {
+              "key": {
+                "type": "string",
+                "pattern": "^[0-9]+:[0-9]+$",
+                "description": "<JMdict seq>:<n>, n counted from 1 within the entry, the key shimen's annotations use."
+              },
+              "pos": { "type": "array", "items": { "type": "string" } },
+              "gloss": { "type": "array", "items": { "type": "string" } }
+            }
+          }
         }
       }
-    },
-    "sense": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["key", "pos", "gloss"],
-      "properties": {
-        "key": {
-          "description": "<seq>:<n>, the JMdict entry's sequence number and the sense's 1-based position in it.",
-          "type": "string",
-          "pattern": "^[0-9]+:[0-9]+$"
-        },
-        "pos": { "type": "array", "items": { "type": "string" } },
-        "gloss": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "block": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "tokens"],
-      "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "tokens": {
-          "description": "In text order. Offsets are UTF-16 code units into the block's text.",
-          "type": "array",
-          "items": { "$ref": "#/$defs/token" }
-        }
-      }
-    },
-    "span": {
-      "description": "The array [s, e, w, r] holds the start offset, the end offset (exclusive), an index into words or null, and the hiragana reading of this occurrence or null.",
-      "type": "array",
-      "prefixItems": [
-        { "type": "integer", "minimum": 0 },
-        { "type": "integer", "minimum": 1 },
-        { "type": ["integer", "null"], "minimum": 0 },
-        { "type": ["string", "null"] }
-      ],
-      "minItems": 4,
-      "maxItems": 4
-    },
-    "token": {
-      "description": "[s, e, w, r, sub], the span fields followed by null or the mode A parts of a compound.",
-      "type": "array",
-      "prefixItems": [
-        { "type": "integer", "minimum": 0 },
-        { "type": "integer", "minimum": 1 },
-        { "type": ["integer", "null"], "minimum": 0 },
-        { "type": ["string", "null"] },
-        {
-          "anyOf": [
-            { "type": "null" },
-            { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/span" } }
-          ]
-        }
-      ],
-      "minItems": 5,
-      "maxItems": 5
     }
   }
 }

@@ -6,7 +6,7 @@ namespace Kavita.Services.Tests.Dictionary;
 public class TokenizeContractTests
 {
     /// <summary>
-    /// The hand-written sample of contract A, which the real sidecar's output replaces at deploy time
+    /// What the real sidecar returns for sample-request.json, copied from the shimen repo
     /// </summary>
     private static readonly string SampleResponse = File.ReadAllText(
         Path.Join(Directory.GetCurrentDirectory(), "../../../../text-sidecar-contract/sample-response.json"));
@@ -18,27 +18,29 @@ public class TokenizeContractTests
 
         Assert.NotNull(response);
         Assert.StartsWith("sudachipy=", response.Version);
-        Assert.Equal(["0", "1"], response.Blocks.Select(b => b.Id));
+        Assert.EndsWith(";sidecar=1", response.Version);
+        Assert.Equal(["0", "1", "2"], response.Blocks.Select(b => b.Id));
 
-        var spicy = response.Words[0];
-        Assert.Equal("辛い", spicy.Lemma);
-        Assert.Equal(["からい", "つらい"], spicy.Readings);
-        Assert.Equal("1584120:1", spicy.Senses[0].Key);
-        Assert.Equal(["spicy", "hot"], spicy.Senses[0].Gloss);
-        Assert.True(spicy.IsAmbiguous);
-        Assert.False(response.Words[1].IsAmbiguous);
-        Assert.Null(response.Words[3].Jlpt);
+        var harsh = response.Words[8];
+        Assert.Equal("辛い", harsh.Lemma);
+        Assert.Equal("つらい", harsh.Reading);
+        Assert.Equal(["つらい", "からい", "づらい", "ずらい"], harsh.Readings);
+        Assert.Equal("1365860:1", harsh.Senses[0].Key);
+        Assert.Contains(harsh.Senses, s => s.Key == "1365850:1");
+        Assert.True(harsh.IsAmbiguous);
+        Assert.False(response.Words[3].IsAmbiguous);
+        Assert.Null(response.Words[4].Jlpt);
+        Assert.True(response.Words[4].IsProper);
 
-        var first = response.Blocks[0].Tokens;
-        Assert.Equal(new TokenDto(0, 2, 0, "からい", null), first[0]);
-        Assert.Equal(new TokenDto(5, 6, null, "を", null), first[2]);
-        Assert.Equal(new TokenDto(9, 10, null, null, null), first[5]);
+        var second = response.Blocks[1].Tokens;
+        Assert.Equal(new TokenDto(0, 2, null, "𠮷", null), second[0]);
+        Assert.Equal(new TokenDto(6, 8, 8, "つらい", null), second[4]);
+        Assert.Equal(new TokenDto(15, 17, null, null, null), second[9]);
 
-        var compound = response.Blocks[1].Tokens[0];
-        Assert.Equal((0, 5, 3L, "こくりつとしょかん"), (compound.S, compound.E, compound.W, compound.R));
+        var compound = response.Blocks[0].Tokens[4];
+        Assert.Equal((6, 10, 4L, "けいざいせいさく"), (compound.S, compound.E, compound.W, compound.R));
         Assert.NotNull(compound.Sub);
-        Assert.Equal([new SubTokenDto(0, 2, 4, "こくりつ"), new SubTokenDto(2, 4, 5, "としょ"), new SubTokenDto(4, 5, 6, "かん")],
-            compound.Sub);
+        Assert.Equal([new SubTokenDto(6, 8, 2, "けいざい"), new SubTokenDto(8, 10, 3, "せいさく")], compound.Sub);
     }
 
     [Fact]

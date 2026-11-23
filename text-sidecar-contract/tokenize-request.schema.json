@@ -1,29 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/jeronimoslopez/Kavita/text-sidecar-contract/tokenize-request.schema.json",
-  "title": "Text sidecar request for POST /tokenize",
+  "$id": "tokenize-request.schema.json",
+  "title": "TokenizeRequest",
+  "description": "The body of POST /tokenize. Each block is tokenized on its own, so no token crosses a block. Lengths count code points. A body over 8 MiB, or blocks holding more than 500,000 characters in all, answers 413. Anything else this schema rejects answers 422.",
   "type": "object",
   "additionalProperties": false,
   "required": ["blocks"],
   "properties": {
     "blocks": {
-      "description": "Each block is tokenized on its own, so no token crosses a block.",
       "type": "array",
-      "items": { "$ref": "#/$defs/block" }
-    }
-  },
-  "$defs": {
-    "block": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["id", "text"],
-      "properties": {
-        "id": {
-          "description": "Echoed back on the block's tokens. Kavita sends the block's index as a string.",
-          "type": "string",
-          "minLength": 1
-        },
-        "text": { "type": "string" }
+      "maxItems": 5000,
+      "description": "The blocks to tokenize. Ids must be unique within a request.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "The caller's name for the block, returned with its tokens."
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 50000
+          }
+        }
       }
     }
   }
