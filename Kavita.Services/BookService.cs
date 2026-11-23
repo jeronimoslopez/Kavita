@@ -44,7 +44,8 @@ public partial class BookService(
     IDirectoryService directoryService,
     IImageService imageService,
     IMediaErrorService mediaErrorService,
-    IUnitOfWork unitOfWork)
+    IUnitOfWork unitOfWork,
+    IEpubTextBlocks epubTextBlocks)
     : IBookService
 {
     private readonly StylesheetParser _cssParser = new ();
@@ -461,9 +462,12 @@ public partial class BookService(
 
         body.Attributes.Add("class", $"{htmlClasses} {bodyClasses}");
 
+        // The body is a text block when no block element sits inside it, and its index has to reach the reader
+        var blockIndex = body.GetAttributeValue(IEpubTextBlocks.BlockAttribute, null);
+        var blockAttribute = blockIndex == null ? string.Empty : $" {IEpubTextBlocks.BlockAttribute}=\"{blockIndex}\"";
 
         // I actually need the body tag itself for the classes, so i will create a div and put the body stuff there.
-        return $"<div class=\"{body.Attributes["class"].Value}\">{body.InnerHtml}</div>";
+        return $"<div class=\"{body.Attributes["class"].Value}\"{blockAttribute}>{body.InnerHtml}</div>";
     }
 
     private static void RewriteAnchors(int page, HtmlDocument doc, Dictionary<string, int> mappings)
@@ -1613,6 +1617,9 @@ public partial class BookService(
         Dictionary<string, int> mappings, int page, List<PersonalToCDto> ptocBookmarks, List<AnnotationDto> annotations,
         CancellationToken ct = default)
     {
+        // Before every other rewrite, so the blocks are the ones GetEpubPageBlocksAsync finds in the untouched page
+        epubTextBlocks.StampBlocks(body);
+
         await InlineStyles(doc, book, libraryFilePath, apiBase, body, ct);
 
         RewriteAnchors(page, doc, mappings);
