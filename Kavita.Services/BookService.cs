@@ -1863,46 +1863,15 @@ public partial class BookService(
         var mappings = await CreateKeyToPageMappingAsync(book, ct);
         var apiBase = baseUrl + "book/" + chapterId + "/" + string.Format(BookApiUrl, authKey);
 
-        var counter = 0;
-        var doc = new HtmlDocument {OptionFixNestedTags = true};
-
-
-        var bookPages = await book.GetReadingOrderAsync();
         try
         {
-            foreach (var contentFileRef in bookPages)
+            var bookPage = await ReadBookPageAsync(book, page);
+            if (bookPage != null)
             {
-                if (page != counter)
-                {
-                    counter++;
-                    continue;
-                }
+                if (bookPage.Body == null) return bookPage.Content;
 
-                var content = await contentFileRef.ReadContentAsync();
-                if (contentFileRef.ContentType != EpubContentType.XHTML_1_1) return content;
-
-                // In more cases than not, due to this being XML not HTML, we need to escape the script tags.
-                content = EscapeTags(content);
-
-                doc.LoadHtml(content);
-
-
-                var body = doc.DocumentNode.SelectSingleNode("//body");
-
-                // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
-                if (body == null)
-                {
-                    if (doc.ParseErrors.Any())
-                    {
-                        LogBookErrors(book, contentFileRef, doc);
-                        throw new KavitaException("epub-malformed");
-                    }
-                    logger.LogError("{FilePath} has no body tag! Generating one for support. Book may be skewed", book.FilePath);
-                    doc.DocumentNode.SelectSingleNode("/html").AppendChild(HtmlNode.CreateNode("<body></body>"));
-                    body = doc.DocumentNode.SelectSingleNode("/html/body");
-                }
-
-                return await ScopePage(doc, book, libraryFilePath, apiBase, body!, mappings, page, ptocBookmarks, annotations, ct);
+                return await ScopePage(bookPage.Doc!, book, libraryFilePath, apiBase, bookPage.Body, mappings, page,
+                    ptocBookmarks, annotations, ct);
             }
         } catch (Exception ex)
         {
@@ -1912,6 +1881,62 @@ public partial class BookService(
         }
 
         throw new KavitaException("epub-html-missing");
+    }
+
+    public async Task<int> GetEpubPageCountAsync(string epubFilePath, CancellationToken ct = default)
+    {
+        using var book = await EpubReader.OpenBookAsync(epubFilePath, LenientBookReaderOptions);
+        return (await book.GetReadingOrderAsync()).Count;
+    }
+
+    public async Task<IReadOnlyList<EpubTextBlock>?> GetEpubPageBlocksAsync(string epubFilePath, int page,
+        CancellationToken ct = default)
+    {
+        using var book = await EpubReader.OpenBookAsync(epubFilePath, LenientBookReaderOptions);
+        var bookPage = await ReadBookPageAsync(book, page);
+        return bookPage?.Body == null ? null : epubTextBlocks.GetBlocks(bookPage.Body);
+    }
+
+    /// <param name="Content">The spine item as the book holds it</param>
+    /// <param name="Doc">The parsed XHTML, or null when the spine item isn't XHTML</param>
+    /// <param name="Body">The body of <paramref name="Doc"/>, created when the XHTML has none</param>
+    private sealed record BookPage(string Content, HtmlDocument? Doc, HtmlNode? Body);
+
+    /// <summary>
+    /// Reads and parses one spine item for the book reader. <see cref="GetBookPage"/> scopes what this returns and
+    /// <see cref="GetEpubPageBlocksAsync"/> reads blocks from it, so both see the same DOM
+    /// </summary>
+    /// <returns>Null when <paramref name="page"/> is outside the reading order</returns>
+    /// <exception cref="KavitaException">The XHTML has no body and doesn't parse</exception>
+    private async Task<BookPage?> ReadBookPageAsync(EpubBookRef book, int page)
+    {
+        var bookPages = await book.GetReadingOrderAsync();
+        if (page < 0 || page >= bookPages.Count) return null;
+
+        var contentFileRef = bookPages[page];
+        var content = await contentFileRef.ReadContentAsync();
+        if (contentFileRef.ContentType != EpubContentType.XHTML_1_1) return new BookPage(content, null, null);
+
+        // In more cases than not, due to this being XML not HTML, we need to escape the script tags.
+        var doc = new HtmlDocument {OptionFixNestedTags = true};
+        doc.LoadHtml(EscapeTags(content));
+
+        var body = doc.DocumentNode.SelectSingleNode("//body");
+
+        // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+        if (body == null)
+        {
+            if (doc.ParseErrors.Any())
+            {
+                LogBookErrors(book, contentFileRef, doc);
+                throw new KavitaException("epub-malformed");
+            }
+            logger.LogError("{FilePath} has no body tag! Generating one for support. Book may be skewed", book.FilePath);
+            doc.DocumentNode.SelectSingleNode("/html").AppendChild(HtmlNode.CreateNode("<body></body>"));
+            body = doc.DocumentNode.SelectSingleNode("/html/body");
+        }
+
+        return new BookPage(content, doc, body);
     }
 
     /// <summary>
