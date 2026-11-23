@@ -126,6 +126,14 @@
             "buildTarget": "kavita-webui:build"
           }
         },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "buildTarget": "kavita-webui:build",
+            "tsConfig": "tsconfig.spec.json",
+            "runner": "vitest"
+          }
+        },
         "lint": {
           "builder": "@angular-eslint/builder:lint",
           "options": {
