@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jeronimoslopez/Kavita/text-sidecar-contract/tokenize-response.schema.json",
+  "title": "Text sidecar response for POST /tokenize",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "words", "blocks"],
+  "properties": {
+    "version": {
+      "description": "Names the tokenizer, dictionary, word rules and lexicon, such as sudachipy=..;sudachidict_full=..;modes=C/A;words=6;lexicon=..;sidecar=1.",
+      "type": "string",
+      "minLength": 1
+    },
+    "words": {
+      "description": "Every word the tokens point at. A token's w is an index into this array.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/word" }
+    },
+    "blocks": {
+      "description": "One entry per block sent, in the same order.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/block" }
+    }
+  },
+  "$defs": {
+    "word": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lemma", "pos", "isProper", "reading", "jlpt", "readings", "senses"],
+      "properties": {
+        "lemma": { "type": "string", "minLength": 1 },
+        "pos": {
+          "description": "The word's part of speech as shimen's words.pos stores it, such as 名詞.",
+          "type": "string",
+          "minLength": 1
+        },
+        "isProper": { "type": "boolean" },
+        "reading": {
+          "description": "The dictionary's usual reading in hiragana.",
+          "type": "string"
+        },
+        "jlpt": {
+          "description": "JLPT level from 1 (N1) to 5 (N5), or null when the word isn't listed.",
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 5
+        },
+        "readings": {
+          "description": "Every reading the dictionary gives the word, in hiragana.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "senses": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sense" }
+        }
+      }
+    },
+    "sense": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "pos", "gloss"],
+      "properties": {
+        "key": {
+          "description": "<seq>:<n>, the JMdict entry's sequence number and the sense's 1-based position in it.",
+          "type": "string",
+          "pattern": "^[0-9]+:[0-9]+$"
+        },
+        "pos": { "type": "array", "items": { "type": "string" } },
+        "gloss": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tokens"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "tokens": {
+          "description": "In text order. Offsets are UTF-16 code units into the block's text.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/token" }
+        }
+      }
+    },
+    "span": {
+      "description": "The array [s, e, w, r] holds the start offset, the end offset (exclusive), an index into words or null, and the hiragana reading of this occurrence or null.",
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 1 },
+        { "type": ["integer", "null"], "minimum": 0 },
+        { "type": ["string", "null"] }
+      ],
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "token": {
+      "description": "[s, e, w, r, sub], the span fields followed by null or the mode A parts of a compound.",
+      "type": "array",
+      "prefixItems": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "integer", "minimum": 1 },
+        { "type": ["integer", "null"], "minimum": 0 },
+        { "type": ["string", "null"] },
+        {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/span" } }
+          ]
+        }
+      ],
+      "minItems": 5,
+      "maxItems": 5
+    }
+  }
+}

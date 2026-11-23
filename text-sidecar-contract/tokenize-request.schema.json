@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/jeronimoslopez/Kavita/text-sidecar-contract/tokenize-request.schema.json",
+  "title": "Text sidecar request for POST /tokenize",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["blocks"],
+  "properties": {
+    "blocks": {
+      "description": "Each block is tokenized on its own, so no token crosses a block.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/block" }
+    }
+  },
+  "$defs": {
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "text"],
+      "properties": {
+        "id": {
+          "description": "Echoed back on the block's tokens. Kavita sends the block's index as a string.",
+          "type": "string",
+          "minLength": 1
+        },
+        "text": { "type": "string" }
+      }
+    }
+  }
+}

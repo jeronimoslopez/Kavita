@@ -1,0 +1,128 @@
+using System.Collections.Generic;
+
+namespace Kavita.Models.DTOs.Dictionary;
+#nullable enable
+
+/// <summary>
+/// What a unit of text was cut from. Stored as the lowercase name
+/// </summary>
+public enum ReadingUnitKind
+{
+    /// <summary>
+    /// One EPUB spine item, which is one page of the book reader
+    /// </summary>
+    Epub = 0,
+}
+
+/// <summary>
+/// Where a unit is in the tokenization queue. Stored as the lowercase name
+/// </summary>
+public enum ReadingUnitState
+{
+    /// <summary>
+    /// Waiting to be tokenized. A unit whose file changed goes back to this state and keeps its old blocks until then
+    /// </summary>
+    Pending = 0,
+    Done = 1,
+    /// <summary>
+    /// Tokenizing failed as many times as the caller allows. It stays out of the queue until its file changes
+    /// </summary>
+    Failed = 2,
+}
+
+/// <summary>
+/// Where an occurrence is in the AI analysis queue. Stored as the lowercase name
+/// </summary>
+public enum AnalysisState
+{
+    /// <summary>
+    /// Nobody asked for this book's analysis, so the runner never sees the row
+    /// </summary>
+    Idle = 0,
+    Pending = 1,
+    Done = 2,
+}
+
+public enum AnalysisRejectReason
+{
+    /// <summary>
+    /// The id doesn't exist, or the row isn't pending
+    /// </summary>
+    NotPending = 0,
+    /// <summary>
+    /// The sense key isn't one of the word's senses
+    /// </summary>
+    SenseNotOffered = 1,
+    /// <summary>
+    /// The reading isn't one of the word's readings
+    /// </summary>
+    ReadingNotOffered = 2,
+    /// <summary>
+    /// The same id came earlier in the same batch, and the earlier answer is the one kept
+    /// </summary>
+    Duplicate = 3,
+}
+
+/// <summary>
+/// A unit picked from the tokenization queue
+/// </summary>
+/// <param name="Page">0-based page, as the book reader counts them</param>
+/// <param name="SourceStamp">The stamp the unit was seeded with, which <c>SaveTokenizedUnitAsync</c> expects back</param>
+/// <param name="Attempts">Failed attempts so far</param>
+public sealed record ReadingUnitRef(long Id, ReadingUnitKind Kind, int MangaFileId, int Page, string SourceStamp, int Attempts);
+
+/// <summary>
+/// A unit with its stored blocks
+/// </summary>
+/// <param name="TokenizerVersion">The sidecar version the blocks came from, or null when the unit was never tokenized</param>
+/// <param name="Blocks">Empty when the unit was never tokenized. A pending unit whose file changed still has its old blocks</param>
+public sealed record ReadingUnit(long Id, ReadingUnitKind Kind, int MangaFileId, int Page, ReadingUnitState State,
+    string SourceStamp, string? TokenizerVersion, IReadOnlyList<StoredBlock> Blocks);
+
+/// <summary>
+/// One block as reading.db stores it
+/// </summary>
+/// <param name="Index">The block's <c>data-kb</c> value</param>
+/// <param name="Tokens">Word ids in <see cref="TokenDto.W"/> are reading.db word ids</param>
+public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens);
+
+/// <summary>
+/// An occurrence of an ambiguous word that should get an analysis row, found by its top-level token
+/// </summary>
+public sealed record AnalysisSpan(int Block, int S, int E, long WordId);
+
+/// <summary>
+/// A row of reading.db's word table
+/// </summary>
+/// <param name="Jlpt">1 (N1) to 5 (N5), or null when the word isn't listed</param>
+public sealed record StoredWord(long Id, string Lemma, string Pos, bool IsProper, string Reading, int? Jlpt,
+    IReadOnlyList<string> Readings, IReadOnlyList<SenseDto> Senses, string LexiconVersion);
+
+/// <summary>
+/// A row of reading.db's analysis table
+/// </summary>
+/// <param name="SenseKey">Null until answered, and null in an answer that found no sense fits</param>
+/// <param name="Generator">Null until answered</param>
+public sealed record StoredAnalysis(long Id, long UnitId, int Block, int S, int E, long WordId, AnalysisState State,
+    int Priority, string? SenseKey, string? Reading, string? Generator, string? PromptVersion);
+
+/// <summary>
+/// A pending analysis row with what a passage needs around it
+/// </summary>
+/// <param name="BlockText">The whole text of the row's block</param>
+public sealed record PendingAnalysisRow(long Id, long UnitId, int MangaFileId, int Page, int Block, int S, int E,
+    long WordId, int Priority, string BlockText);
+
+/// <param name="Reading">Null to store no reading</param>
+/// <param name="SenseKey">Null when none of the offered senses fit</param>
+public sealed record AnalysisAnswer(long Id, string? SenseKey, string? Reading);
+
+public sealed record AnalysisRejection(long Id, AnalysisRejectReason Reason);
+
+public sealed record AnalysisStoreOutcome(int Stored, IReadOnlyList<AnalysisRejection> Rejected);
+
+/// <summary>
+/// Row counts by state, for status displays
+/// </summary>
+public sealed record ReadingStoreCounts(int UnitsPending, int UnitsDone, int UnitsFailed, int AnalysisIdle,
+    int AnalysisPending, int AnalysisDone);

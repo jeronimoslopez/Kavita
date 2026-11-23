@@ -1,0 +1,133 @@
+{
+  "version": "sudachipy=0.6.10;sudachidict_full=20250825;modes=C/A;words=6;lexicon=sample;sidecar=1",
+  "words": [
+    {
+      "lemma": "辛い",
+      "pos": "形容詞",
+      "isProper": false,
+      "reading": "からい",
+      "jlpt": 3,
+      "readings": ["からい", "つらい"],
+      "senses": [
+        { "key": "1584120:1", "pos": ["adj-i"], "gloss": ["spicy", "hot"] },
+        { "key": "1584120:2", "pos": ["adj-i"], "gloss": ["salty"] },
+        { "key": "1260920:1", "pos": ["adj-i"], "gloss": ["painful", "heart-breaking", "tough"] }
+      ]
+    },
+    {
+      "lemma": "カレー",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "かれー",
+      "jlpt": 4,
+      "readings": ["かれー"],
+      "senses": [
+        { "key": "1039140:1", "pos": ["n"], "gloss": ["curry"] }
+      ]
+    },
+    {
+      "lemma": "食べる",
+      "pos": "動詞",
+      "isProper": false,
+      "reading": "たべる",
+      "jlpt": 5,
+      "readings": ["たべる"],
+      "senses": [
+        { "key": "1358280:1", "pos": ["v1", "vt"], "gloss": ["to eat"] }
+      ]
+    },
+    {
+      "lemma": "国立図書館",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "こくりつとしょかん",
+      "jlpt": null,
+      "readings": ["こくりつとしょかん"],
+      "senses": [
+        { "key": "2829710:1", "pos": ["n"], "gloss": ["national library"] }
+      ]
+    },
+    {
+      "lemma": "国立",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "こくりつ",
+      "jlpt": 1,
+      "readings": ["こくりつ"],
+      "senses": [
+        { "key": "1287470:1", "pos": ["adj-no", "n"], "gloss": ["national"] }
+      ]
+    },
+    {
+      "lemma": "図書",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "としょ",
+      "jlpt": 2,
+      "readings": ["としょ"],
+      "senses": [
+        { "key": "1446450:1", "pos": ["n"], "gloss": ["books"] }
+      ]
+    },
+    {
+      "lemma": "館",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "かん",
+      "jlpt": null,
+      "readings": ["かん", "やかた", "たて"],
+      "senses": [
+        { "key": "1213830:1", "pos": ["n", "suf"], "gloss": ["house", "hall", "building"] },
+        { "key": "1213830:2", "pos": ["n"], "gloss": ["mansion", "palace"] }
+      ]
+    },
+    {
+      "lemma": "本",
+      "pos": "名詞",
+      "isProper": false,
+      "reading": "ほん",
+      "jlpt": 5,
+      "readings": ["ほん"],
+      "senses": [
+        { "key": "1522150:1", "pos": ["n"], "gloss": ["book", "volume"] },
+        { "key": "1522150:2", "pos": ["pref"], "gloss": ["main", "head"] }
+      ]
+    },
+    {
+      "lemma": "借りる",
+      "pos": "動詞",
+      "isProper": false,
+      "reading": "かりる",
+      "jlpt": 5,
+      "readings": ["かりる"],
+      "senses": [
+        { "key": "1209440:1", "pos": ["v1", "vt"], "gloss": ["to borrow"] }
+      ]
+    }
+  ],
+  "blocks": [
+    {
+      "id": "0",
+      "tokens": [
+        [0, 2, 0, "からい", null],
+        [2, 5, 1, "かれー", null],
+        [5, 6, null, "を", null],
+        [6, 8, 2, "たべ", null],
+        [8, 9, null, "た", null],
+        [9, 10, null, null, null]
+      ]
+    },
+    {
+      "id": "1",
+      "tokens": [
+        [0, 5, 3, "こくりつとしょかん", [[0, 2, 4, "こくりつ"], [2, 4, 5, "としょ"], [4, 5, 6, "かん"]]],
+        [5, 6, null, "で", null],
+        [6, 7, 7, "ほん", null],
+        [7, 8, null, "を", null],
+        [8, 10, 8, "かり", null],
+        [10, 11, null, "た", null],
+        [11, 12, null, null, null]
+      ]
+    }
+  ]
+}
