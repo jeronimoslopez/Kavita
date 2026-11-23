@@ -8,17 +8,23 @@ credentials are removed from every child's environment.
 
 Each pass asks Kavita for pending passages, runs one claude call per passage, up
 to `--parallel` at once, checks each answer against what the passage offered and
-posts what passes. Between passes it sleeps, longer after a quiet stretch.
+posts what passes. Every other item in the passage, whether the model left it
+out, its answer was dropped or it couldn't be marked in the text, is posted in
+the same request with a null sense and reading, so Kavita settles it. Between
+passes it sleeps, longer after a quiet stretch.
 
 It always asks for passages of priority 1 and up, which are the ones a reader
 asked for. Whole-book requests at priority 0 are asked for only inside the night
 window. A calls-per-hour cap covers every call.
 
-A failed passage posts nothing and stays pending on the server. A claude login
-or usage-limit failure stops all calls for `--pause` seconds. While Kavita is out
-of reach, the runner waits longer between tries, up to 5 minutes. The process
-doesn't exit on either, because launchd would start it again at once. SIGTERM
-and SIGINT stop new calls, let the posts already under way finish and exit 0.
+A passage whose claude call fails posts nothing and stays pending on the server.
+So does one that Kavita stores nothing for, and a pass that stores nothing waits
+longer each time. A claude login or usage-limit failure stops all calls for
+`--pause` seconds, and so does Kavita refusing the key. While Kavita is out of
+reach, the runner waits longer between tries, up to 5 minutes. Either failure in
+a post stops the claude calls left in that pass. The process doesn't exit on any
+of these, because launchd would start it again at once. SIGTERM and SIGINT stop
+new calls, let the posts already under way finish and exit 0.
 
     annotate_reading.py --dry-run --limit 3
 
@@ -54,7 +60,6 @@ from types import FrameType
 from typing import Any, cast
 
 PROMPT_VERSION = "reading-1"
-PLUGIN_NAME = "kavita-reading"
 DEFAULT_BASE_URL = "http://localhost:6267"
 DEFAULT_KEY_FILE = "~/.config/kavita-reading/kavita-key"
 TOKEN_FILE_HINT = "~/.config/kavita-reading/claude-token"
@@ -111,10 +116,15 @@ same word can be marked more than once with different ids, and each occurrence \
 gets its own answer. Return one entry per item and only items from the list.
 """
 
-_AUTH = re.compile(r"authenticat|oauth|log ?in|credential|unauthori[sz]ed|\b401\b", re.I)
-_LIMIT = re.compile(
-    r"usage limit|rate.?limit|limit (?:reached|exceeded)|too many requests|\b429\b", re.I
+# What the CLI prints when its login fails or the subscription's limit is hit.
+# Only these pause the runner, so an unrelated error that happens to mention a
+# login or a credential fails one passage and nothing more.
+_AUTH = re.compile(
+    r"failed to authenticate|oauth (?:token|session) (?:has )?expired|invalid api key"
+    r"|please run /login|authentication_error",
+    re.I,
 )
+_LIMIT = re.compile(r"usage limit reached|you've hit your (?:usage )?limit|rate_limit_error", re.I)
 
 
 class RunnerError(Exception):
@@ -133,8 +143,8 @@ class KavitaAuthError(RunnerError):
     """Kavita turned the key down, or its user isn't an admin."""
 
 
-# Secrets read at start and each JWT Kavita returns. log() replaces each of them
-# with [redacted] in every line.
+# The token and the key, read at start. log() replaces each of them with
+# [redacted] in every line.
 _SECRETS: set[str] = set()
 _SECRETS_LOCK = threading.Lock()
 
@@ -226,25 +236,23 @@ def read_key_file(path: Path) -> str:
 
 
 class Kavita:
-    """Admin calls to Kavita with a JWT from the auth key, renewed on a 401."""
+    """Admin calls to Kavita, each carrying the auth key in the x-api-key header.
+
+    Kavita authenticates a request with that header through its AuthKey scheme and
+    gives it the key owner's roles, so an admin's key passes the admin policy.
+    """
 
     def __init__(self, base_url: str, key: str) -> None:
         self.base_url = base_url.rstrip("/")
         self._key = key
-        self._jwt: str | None = None
-        self._lock = threading.Lock()
         add_secret(key)
 
-    def _send(
-        self, method: str, path: str, body: Any = None, jwt: str | None = None
-    ) -> tuple[int, str]:
+    def _send(self, method: str, path: str, body: Any = None) -> tuple[int, str]:
         url = self.base_url + path
         data = None if body is None else json.dumps(body, ensure_ascii=False).encode()
-        headers = {"Accept": "application/json"}
+        headers = {"Accept": "application/json", "x-api-key": self._key}
         if data is not None:
             headers["Content-Type"] = "application/json"
-        if jwt:
-            headers["Authorization"] = f"Bearer {jwt}"
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
@@ -254,42 +262,13 @@ class Kavita:
         except (urllib.error.URLError, OSError) as exc:
             raise KavitaUnreachable(f"cannot reach {self.base_url}: {exc}") from exc
 
-    def login(self) -> str:
-        """Trades the auth key for a JWT through Kavita's plugin sign-in."""
-        query = urllib.parse.urlencode({"apiKey": self._key, "pluginName": PLUGIN_NAME})
-        status, text = self._send("POST", f"/api/plugin/authenticate?{query}")
-        if status in (400, 401, 403):
-            raise KavitaAuthError(
-                f"Kavita turned the auth key down ({status}). Check the key file, "
-                "or make a new key under Settings, Auth Keys / OPDS"
-            )
-        if status >= 500:
-            raise KavitaUnreachable(f"Kavita sign-in answered {status}")
-        try:
-            answer = _obj(json.loads(text))
-        except json.JSONDecodeError:
-            answer = None
-        jwt = answer.get("token") if answer is not None else None
-        if status != 200 or not isinstance(jwt, str) or not jwt:
-            raise RunnerError(f"Kavita sign-in answered {status} without a token")
-        add_secret(jwt)
-        return jwt
-
-    def _current_jwt(self, stale: str | None) -> str:
-        with self._lock:
-            if self._jwt is None or self._jwt == stale:
-                self._jwt = self.login()
-            return self._jwt
-
     def request(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:
-        jwt = self._current_jwt(None)
-        status, text = self._send(method, path, body, jwt)
+        status, text = self._send(method, path, body)
         if status == 401:
-            # Kavita's JWT lasts 3 days. One fresh sign-in, then the answer stands.
-            jwt = self._current_jwt(jwt)
-            status, text = self._send(method, path, body, jwt)
-        if status == 401:
-            raise KavitaAuthError(f"{method} {path} answered 401 after a fresh sign-in")
+            raise KavitaAuthError(
+                f"Kavita turned the auth key down ({method} {path} answered 401). Check the "
+                "key file, or make a new key under Settings, Auth Keys / OPDS"
+            )
         if status == 403:
             raise KavitaAuthError(f"{method} {path} answered 403, the key's user needs the admin role")
         if status >= 500:
@@ -325,6 +304,8 @@ class Passage:
     id: Any
     text: str
     items: tuple[Item, ...]
+    # Ids of items the runner can't mark in the text, so the model is never asked.
+    unmarkable: tuple[int, ...] = ()
 
 
 def _utf16_bounds(text: str) -> dict[int, int]:
@@ -363,7 +344,8 @@ def parse_item(raw: dict[str, Any]) -> Item | str:
 def parse_passage(raw: dict[str, Any]) -> Passage:
     """A passage with the items whose spans can be marked, logging each one left out.
 
-    An item left out isn't asked about, so it stays pending on the server.
+    Items left out that still have an integer id are listed in `unmarkable`, so
+    they can be posted with a null sense and reading.
     """
     pid = raw.get("id")
     text = raw.get("text")
@@ -372,16 +354,25 @@ def parse_passage(raw: dict[str, Any]) -> Passage:
     bounds = _utf16_bounds(text)
     items: list[Item] = []
     seen: set[int] = set()
+    unmarkable: list[int] = []
+
+    def leave_out(item_id: int | None, why: str) -> None:
+        log(f"passage {pid}: left out {why}")
+        if item_id is not None and item_id not in seen:
+            seen.add(item_id)
+            unmarkable.append(item_id)
+
     for entry in _list(raw.get("items")) or []:
-        parsed = parse_item(_obj(entry) or {})
+        raw_item = _obj(entry) or {}
+        parsed = parse_item(raw_item)
         if isinstance(parsed, str):
-            log(f"passage {pid}: left out {parsed}")
+            leave_out(_int_id(raw_item.get("id")), parsed)
             continue
         if parsed.id in seen:
             log(f"passage {pid}: left out a second item {parsed.id}")
             continue
         if not (parsed.s < parsed.e and parsed.s in bounds and parsed.e in bounds):
-            log(f"passage {pid}: left out item {parsed.id}, span {parsed.s}-{parsed.e} is not in the text")
+            leave_out(parsed.id, f"item {parsed.id}, span {parsed.s}-{parsed.e} is not in the text")
             continue
         seen.add(parsed.id)
         items.append(parsed)
@@ -390,12 +381,13 @@ def parse_passage(raw: dict[str, Any]) -> Passage:
     for item in items:
         if kept and item.s < kept[-1].e:
             log(f"passage {pid}: left out item {item.id}, it overlaps item {kept[-1].id}")
+            unmarkable.append(item.id)
             continue
         found = text[bounds[item.s] : bounds[item.e]]
         if item.surface and found != item.surface:
             log(f"passage {pid}: item {item.id} spans {found!r}, not its surface {item.surface!r}")
         kept.append(item)
-    return Passage(id=pid, text=text, items=tuple(kept))
+    return Passage(id=pid, text=text, items=tuple(kept), unmarkable=tuple(unmarkable))
 
 
 def marked_text(passage: Passage) -> str:
@@ -500,6 +492,19 @@ def validate(structured: Any, passage: Passage) -> list[dict[str, Any]]:
     return kept
 
 
+def fill_unanswered(kept: list[dict[str, Any]], passage: Passage) -> list[dict[str, Any]]:
+    """The kept answers plus a null sense and reading for every other item.
+
+    That covers items the model left out, answers that were dropped and items the
+    runner couldn't mark. Kavita records a null pair as asked with nothing fitting,
+    so none of them comes back on the next fetch.
+    """
+    answered = {a["id"] for a in kept}
+    missing = [i.id for i in passage.items if i.id not in answered]
+    missing += [i for i in passage.unmarkable if i not in answered]
+    return kept + [{"id": i, "sense": None, "reading": None} for i in missing]
+
+
 # claude
 
 
@@ -534,12 +539,16 @@ def _envelope(stdout: str) -> dict[str, Any] | None:
 
 def _fail(envelope: dict[str, Any] | None, detail: str) -> RunnerError:
     status = envelope.get("api_error_status") if envelope is not None else None
-    if _AUTH.search(detail) or status in (401, 403):
+    if isinstance(status, int):
+        auth, limit = status in (401, 403), status == 429
+    else:
+        auth, limit = bool(_AUTH.search(detail)), bool(_LIMIT.search(detail))
+    if auth:
         return PauseError(
             f"claude could not log in ({detail}). Check the token in {TOKEN_FILE_HINT}, "
             "or make a new one with `claude setup-token`"
         )
-    if _LIMIT.search(detail) or status == 429:
+    if limit:
         return PauseError(f"claude hit its usage limit ({detail})")
     return RunnerError(detail)
 
@@ -695,9 +704,17 @@ class Outcome:
     ran: bool = True
     failed: bool = False
     pause: str | None = None
+    # Kavita out of reach or refusing the key while posting. The pass stops there.
+    halt: RunnerError | None = None
     kept: int = 0
+    filled: int = 0
     stored: int = 0
     rejected: int = 0
+
+    @property
+    def settled(self) -> bool:
+        """Whether Kavita stored something, so the passage won't come back as it was."""
+        return not self.failed and self.stored > 0
 
 
 @dataclass
@@ -705,15 +722,36 @@ class Runner:
     args: argparse.Namespace
     kavita: Kavita
     cap: HourlyCap
-    stop: threading.Event = field(default_factory=threading.Event)
     children: Children = field(default_factory=Children)
+    # Set by the signal handler, which takes no lock, so it can't deadlock against
+    # a main thread that holds one. Everything else polls it.
+    stopping: bool = False
+    signal_name: str = ""
+    _stop_handled: bool = False
 
     @property
     def generator(self) -> str:
         return f"claude-code:{self.args.model}"
 
+    def request_stop(self, signum: int) -> None:
+        self.signal_name = signal.Signals(signum).name
+        self.stopping = True
+
+    def handle_stop(self) -> None:
+        """Logs the signal and ends the claude calls under way, once, on the main thread."""
+        if not self.stopping or self._stop_handled:
+            return
+        self._stop_handled = True
+        log(f"{self.signal_name} received, finishing what is under way")
+        self.children.terminate_all()
+
     def sleep(self, seconds: float) -> None:
-        self.stop.wait(seconds)
+        deadline = time.monotonic() + seconds
+        while not self.stopping:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            time.sleep(min(0.2, left))
 
     def fetch(self, limit: int, min_priority: int) -> list[dict[str, Any]]:
         query = urllib.parse.urlencode({"limit": limit, "minPriority": min_priority})
@@ -728,9 +766,9 @@ class Runner:
             raise RunnerError("pending passages came back in an unknown shape")
         return [p for p in map(_obj, passages) if p is not None]
 
-    def run_passage(self, raw: dict[str, Any], pause: threading.Event) -> Outcome:
+    def run_passage(self, raw: dict[str, Any], stop_calls: threading.Event) -> Outcome:
         """Asks claude about one passage and posts what passes. Logs its own lines."""
-        if self.stop.is_set() or pause.is_set():
+        if self.stopping or stop_calls.is_set():
             return Outcome(ran=False)
         started = time.monotonic()
         pid = raw.get("id")
@@ -744,35 +782,44 @@ class Runner:
             log(f"passage {pid} skipped: {exc}")
             return Outcome(failed=True)
         where = f"passage {passage.id} ({len(passage.items)} items, {len(passage.text)} chars)"
-        if not passage.items:
+        kept: list[dict[str, Any]] = []
+        if passage.items:
+            if not self.cap.take():
+                return Outcome(ran=False)
+            try:
+                structured = call_claude(
+                    self.args.claude, self.args.model, passage, self.args.timeout, self.children
+                )
+                kept = validate(structured, passage)
+            except PauseError as exc:
+                stop_calls.set()
+                log(f"{where} failed after {took()}, nothing posted from it: {exc}")
+                return Outcome(failed=True, pause=str(exc))
+            except RunnerError as exc:
+                why = "stopped" if self.stopping else "failed"
+                log(f"{where} {why} after {took()}, nothing posted from it: {exc}")
+                return Outcome(failed=True)
+        answers = fill_unanswered(kept, passage)
+        if not answers:
             log(f"{where} has nothing to ask about")
             return Outcome(failed=True)
-        if not self.cap.take():
-            return Outcome(ran=False)
-        try:
-            structured = call_claude(
-                self.args.claude, self.args.model, passage, self.args.timeout, self.children
-            )
-            kept = validate(structured, passage)
-        except PauseError as exc:
-            pause.set()
-            log(f"{where} failed after {took()}, nothing posted from it: {exc}")
-            return Outcome(failed=True, pause=str(exc))
-        except RunnerError as exc:
-            why = "stopped" if self.stop.is_set() else "failed"
-            log(f"{where} {why} after {took()}, nothing posted from it: {exc}")
-            return Outcome(failed=True)
-        outcome = Outcome(kept=len(kept))
+        outcome = Outcome(kept=len(kept), filled=len(answers) - len(kept))
+        if outcome.filled:
+            log(f"passage {passage.id}: filled {outcome.filled} item(s) with a null sense and reading")
         if self.args.dry_run:
-            self.print_answers(passage, kept)
+            self.print_answers(passage, answers, len(kept))
             log(f"{where} answered in {took()}, {len(kept)} kept")
             return outcome
-        if not kept:
-            log(f"{where} answered in {took()}, nothing kept")
-            return outcome
-        payload = {"generator": self.generator, "promptVersion": PROMPT_VERSION, "items": kept}
+        payload = {"generator": self.generator, "promptVersion": PROMPT_VERSION, "items": answers}
         try:
             status, raw_answer = self.kavita.request("POST", "/api/dictionary/analysis", payload)
+        except (KavitaAuthError, KavitaUnreachable) as exc:
+            # Every later post would fail the same way, so no more claude calls this pass.
+            stop_calls.set()
+            log(f"{where} could not be posted: {exc}")
+            outcome.failed = True
+            outcome.halt = exc
+            return outcome
         except RunnerError as exc:
             log(f"{where} could not be posted: {exc}")
             outcome.failed = True
@@ -783,7 +830,7 @@ class Runner:
             outcome.failed = True
             return outcome
         stored = answer.get("stored")
-        outcome.stored = stored if isinstance(stored, int) else len(kept)
+        outcome.stored = stored if isinstance(stored, int) else len(answers)
         rejected = answer.get("rejected")
         for rejection in _list(rejected) or []:
             r = _obj(rejection) or {}
@@ -794,18 +841,20 @@ class Runner:
         log(f"{where} done in {took()}, {len(kept)} kept, {outcome.stored} stored")
         return outcome
 
-    def print_answers(self, passage: Passage, kept: list[dict[str, Any]]) -> None:
+    def print_answers(self, passage: Passage, answers: list[dict[str, Any]], kept: int) -> None:
         asked = {i.id: i for i in passage.items}
         records: list[dict[str, Any]] = []
-        for answer in kept:
-            item = asked[answer["id"]]
-            gloss = next((s.get("gloss") for s in item.senses if s["key"] == answer["sense"]), None)
+        for n, answer in enumerate(answers):
+            item = asked.get(answer["id"])
+            senses = item.senses if item is not None else ()
+            gloss = next((s.get("gloss") for s in senses if s["key"] == answer["sense"]), None)
             records.append(
                 {
                     "passage": passage.id,
                     **answer,
-                    "surface": item.surface,
-                    "lemma": item.lemma,
+                    "filled": n >= kept,
+                    "surface": item.surface if item is not None else None,
+                    "lemma": item.lemma if item is not None else None,
                     "gloss": gloss,
                     "generator": self.generator,
                     "promptVersion": PROMPT_VERSION,
@@ -814,15 +863,16 @@ class Runner:
         emit(records)
 
     def run_passages(self, passages: list[dict[str, Any]]) -> list[Outcome]:
-        pause = threading.Event()
+        stop_calls = threading.Event()
         with ThreadPoolExecutor(max_workers=self.args.parallel) as pool:
-            futures = [pool.submit(self.run_passage, p, pause) for p in passages]
+            futures = [pool.submit(self.run_passage, p, stop_calls) for p in passages]
             results: list[Outcome] = []
             for future in futures:
-                # A timed wait, so a signal reaches its handler while the pool works.
+                # A timed wait, so a signal is noticed while the pool works.
                 while True:
+                    self.handle_stop()
                     try:
-                        results.append(future.result(timeout=0.5))
+                        results.append(future.result(timeout=0.2))
                         break
                     except TimeoutError:
                         continue
@@ -833,7 +883,10 @@ class Runner:
         return 0 if inside else 1
 
     def one_pass(self) -> tuple[int, list[Outcome]]:
-        """One fetch and its passages. Returns the minPriority asked for and the outcomes."""
+        """One fetch and its passages. Returns the minPriority asked for and the outcomes.
+
+        Raises the first Kavita failure a post ran into, after logging the pass.
+        """
         room = self.cap.room()
         if room == 0:
             return -1, []
@@ -842,7 +895,12 @@ class Runner:
         if not passages:
             return priority, []
         log(f"{len(passages)} passage(s) pending at priority {priority} and up")
-        return priority, self.run_passages(passages)
+        results = self.run_passages(passages)
+        halts = [r.halt for r in results if r.halt is not None]
+        if halts:
+            log(summary([r for r in results if r.ran], self.args.dry_run))
+            raise halts[0]
+        return priority, results
 
     def run_once(self) -> int:
         try:
@@ -872,28 +930,24 @@ class Runner:
             f"started, model {self.args.model}, {self.args.parallel} at once, "
             f"{self.cap.cap} calls an hour, window {self.args.window_text}"
         )
-        empty = failing = 0
-        backoff = 0.0
-        while not self.stop.is_set():
+        empty = failing = unreachable = 0
+        while not self.stopping:
             try:
                 if shutil.which(self.args.claude) is None:
                     raise PauseError(f"claude CLI not found at {self.args.claude!r}")
                 priority, results = self.one_pass()
-            except KavitaUnreachable as exc:
-                backoff = min(MAX_BACKOFF, backoff * 2 if backoff else DEFAULT_IDLE)
-                log(f"{exc}, trying again in {backoff:.0f}s")
-                self.sleep(backoff)
-                continue
             except (KavitaAuthError, PauseError) as exc:
                 log(f"{exc}, pausing {self.args.pause:.0f}s")
                 self.sleep(self.args.pause)
                 continue
             except RunnerError as exc:
-                backoff = min(MAX_BACKOFF, backoff * 2 if backoff else DEFAULT_IDLE)
-                log(f"{exc}, trying again in {backoff:.0f}s")
-                self.sleep(backoff)
+                # Kavita out of reach, or an answer the runner can't read.
+                unreachable += 1
+                wait = doubling(unreachable - 1, DEFAULT_IDLE, MAX_BACKOFF)
+                log(f"{exc}, trying again in {wait:.0f}s")
+                self.sleep(wait)
                 continue
-            backoff = 0.0
+            unreachable = 0
             if priority == -1:
                 wait = self.cap.wait_seconds()
                 log(f"the hourly cap of {self.cap.cap} calls is reached, sleeping {wait:.0f}s")
@@ -906,36 +960,47 @@ class Runner:
                 if any(r.pause for r in ran):
                     log(f"claude calls stop for {self.args.pause:.0f}s")
                     self.sleep(self.args.pause)
-                elif all(r.failed for r in ran):
-                    # A failed passage stays pending and comes back first on the next
-                    # fetch, so a pass that only failed waits longer each time.
+                elif not any(r.settled for r in ran):
+                    # Nothing was stored, so the same passages come back first on the
+                    # next fetch. A pass like that waits longer each time.
                     failing += 1
-                    self.sleep(min(MAX_BACKOFF, self.args.idle * 2 ** (failing - 1)))
+                    self.sleep(doubling(failing - 1, self.args.idle, MAX_BACKOFF))
                 else:
                     failing = 0
                 continue
             empty += 1
             self.sleep(idle_delay(empty, self.args.idle))
+        self.handle_stop()
         log("stopped")
         return 0
+
+
+# Past this many doublings every delay is at its cap, and 2 ** 1024 overflows a float.
+MAX_DOUBLINGS = 32
+
+
+def doubling(times: int, base: float, cap: float) -> float:
+    """base doubled `times` times, at most cap."""
+    return min(cap, base * 2 ** min(max(times, 0), MAX_DOUBLINGS))
 
 
 def idle_delay(empty_polls: int, idle: float) -> float:
     """The sleep after this many empty polls in a row, doubling after a quiet stretch."""
     if empty_polls <= QUIET_POLLS:
         return idle
-    return min(MAX_IDLE, idle * 2 ** (empty_polls - QUIET_POLLS))
+    return doubling(empty_polls - QUIET_POLLS, idle, MAX_IDLE)
 
 
 def summary(ran: list[Outcome], dry_run: bool) -> str:
     failed = sum(r.failed for r in ran)
     kept = sum(r.kept for r in ran)
+    filled = sum(r.filled for r in ran)
     done = (
-        f"{kept} would be posted, nothing posted"
+        f"{kept + filled} would be posted, nothing posted"
         if dry_run
         else f"{sum(r.stored for r in ran)} stored, {sum(r.rejected for r in ran)} rejected"
     )
-    return f"pass: {len(ran)} passage(s), {failed} failed, {kept} kept, {done}"
+    return f"pass: {len(ran)} passage(s), {failed} failed, {kept} kept, {filled} filled, {done}"
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -1058,16 +1123,14 @@ def main(argv: list[str] | None = None) -> int:
     runner = Runner(args=args, kavita=Kavita(args.base_url, key), cap=HourlyCap(args.max_calls_per_hour))
 
     def on_signal(signum: int, _frame: FrameType | None) -> None:
-        if not runner.stop.is_set():
-            log(f"{signal.Signals(signum).name} received, finishing what is under way")
-        runner.stop.set()
-        runner.children.terminate_all()
+        runner.request_stop(signum)
 
     signal.signal(signal.SIGTERM, on_signal)
     signal.signal(signal.SIGINT, on_signal)
     if args.once:
         code = runner.run_once()
-        return 0 if runner.stop.is_set() and code != 0 else code
+        runner.handle_stop()
+        return 0 if runner.stopping and code != 0 else code
     return runner.run_forever()
 
 

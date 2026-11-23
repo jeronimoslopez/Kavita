@@ -1,6 +1,6 @@
 # Running the reading runner
 
-`host/annotate_reading.py` picks the dictionary sense and the reading that fit each ambiguous word in your Japanese books. It asks Kavita for pending passages, sends each one to `claude -p` on your Claude subscription, checks the answer against what Kavita offered and posts what passes. launchd keeps it running in the background, and it polls Kavita every few seconds.
+`host/annotate_reading.py` picks the dictionary sense and the reading that fit each ambiguous word in your Japanese books. It asks Kavita for pending passages, sends each one to `claude -p` on your Claude subscription, checks the answer against what Kavita offered and posts what passes. A word the model gave no usable answer for is posted with a null sense and reading, so Kavita records it as asked and doesn't offer it again. launchd keeps it running in the background, and it polls Kavita every few seconds.
 
 It never uses a paid API key. It removes `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` from the environment of every `claude` call, so a key set in your shell can't be billed by mistake.
 
@@ -27,14 +27,14 @@ If you've already made a token for shimen, the same one works here. Copy `~/.con
 
 ## 2. Install the Kavita key
 
-The runner signs in to Kavita with an auth key. In Kavita, open Settings, then Auth Keys / OPDS, and click New. Name it `kavita-reading` and pick an expiration. With Never you won't have to come back to this step. Copy the key and write it to its own file:
+The runner sends an auth key to Kavita with every request. In Kavita, open Settings, then Auth Keys / OPDS, and click New. Name it `kavita-reading` and pick an expiration. With Never you won't have to come back to this step. Copy the key and write it to its own file:
 
 ```sh
 /bin/bash -c 'umask 077; read -rsp "paste key: " k; echo; printf "%s\n" "$k" > ~/.config/kavita-reading/kavita-key'
 stat -f '%Lp' ~/.config/kavita-reading/kavita-key   # must print 600
 ```
 
-Make the key on an admin account, because the two analysis endpoints are admin only. The runner trades the key for a JWT at `POST /api/plugin/authenticate` and signs in again when Kavita answers 401, so you don't have to do anything when the JWT expires. If the key is deleted or expires, the log says `Kavita turned the auth key down` and the runner waits 30 minutes between tries. The runner reads the key file only when it starts, so after you write a new key, restart the runner with the `kickstart -k` command from step 1.
+Make the key on an admin account, because the two analysis endpoints are admin only. The key goes in the `x-api-key` header and never in a URL, so it stays out of Kavita's request log. Kavita gives a request with that header the roles of the key's owner. If the key is deleted or expires, the log says `Kavita turned the auth key down` and the runner waits 30 minutes between tries. The runner reads the key file only when it starts, so after you write a new key, restart the runner with the `kickstart -k` command from step 1.
 
 ## 3. Try a dry run
 
@@ -44,7 +44,7 @@ Before you load the agent, ask about a few passages and look at what comes back.
 bash ~/Workshop/Kavita/host/run-reading.sh --dry-run --limit 3
 ```
 
-Each line carries the word as written and the sense and reading the model chose. It also has that sense's English gloss, so you can judge the choice without looking the key up. On stderr you'll see a line per passage with its time, such as `passage 41 (12 items, 1984 chars) answered in 14.2s, 12 kept`. A line follows for each answer the runner dropped, and the pass ends with a summary such as `pass: 3 passage(s), 0 failed, 31 kept, 31 would be posted, nothing posted`.
+Each line carries the word as written and the sense and reading the model chose. It also has that sense's English gloss, so you can judge the choice without looking the key up. A line with `"filled": true` is an item the model left out, an answer the runner dropped, or a word it couldn't find in the text, and its sense and reading are null. On stderr you'll see a line per passage with its time, such as `passage 41 (12 items, 1984 chars) answered in 14.2s, 12 kept`. A line follows for each answer the runner dropped and for each passage it filled in, and the pass ends with a summary such as `pass: 3 passage(s), 0 failed, 31 kept, 2 filled, 33 would be posted, nothing posted`.
 
 If you leave out `--dry-run` and use `--once`, one pass runs and posts. It exits 0 when every passage was posted or nothing was pending. It exits 3 when some passages failed and the rest were posted, and 1 when nothing could be done.
 
@@ -78,11 +78,11 @@ A healthy runner logs `runner starting` and then a `started` line with its setti
 | `claude hit its usage limit` | Nothing. It tries again in 30 minutes. |
 | `Kavita turned the auth key down` | Make a new key (step 2). |
 | `needs the admin role` | Make the key on an admin account. |
-| `cannot reach http://localhost:6267`, `trying again in ...` | Start Kavita. The wait doubles up to 5 minutes. |
+| `cannot reach http://localhost:6267` or `answered 503`, then `trying again in ...` | Start Kavita. The wait doubles up to 5 minutes, and no `claude` call runs until a post goes through again. |
 | `the hourly cap of 60 calls is reached` | Nothing, or raise the cap (next section). |
 | `has mode 644, needs 600` | `chmod 600` the file it names, then kickstart. |
 
-The token, the key and the JWT never appear in the log. Each line has them replaced with `[redacted]` before it's written.
+The token and the key never appear in the log. Each line has them replaced with `[redacted]` before it's written.
 
 ## 6. Stop or remove it
 
@@ -133,7 +133,7 @@ The hourly cap is kept in memory, so a restart forgets the calls of the last hou
 
 ## Testing the host scripts
 
-`host/tests/test_annotate_reading.py` runs the runner as a process against a fake Kavita and a fake `claude`, with no network. It covers answers with senses or readings that weren't offered for their item, invented ids, a 401 that needs a fresh sign-in, a `claude` login failure, the hourly cap, the night window, a dry run, the `--once` exit codes and SIGTERM. Every case checks that the token, the key and the JWT stay out of stdout and stderr. It doesn't need pytest, and it runs under pytest too where that's installed:
+`host/tests/test_annotate_reading.py` runs the runner as a process against a fake Kavita and a fake `claude`, with no network. It covers answers with senses or readings that weren't offered for their item, invented ids, items posted as null, a key Kavita turns down, a post Kavita can't take, a `claude` login failure, an error that only mentions a login, the hourly cap, the night window, a dry run, the `--once` exit codes and SIGTERM. Every case checks that the token and the key stay out of stdout and stderr. It doesn't need pytest, and it runs under pytest too where that's installed:
 
 ```sh
 cd ~/Workshop/Kavita

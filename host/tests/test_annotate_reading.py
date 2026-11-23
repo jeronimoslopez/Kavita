@@ -150,6 +150,13 @@ if mode == "limit":
     print(json.dumps({{"type": "result", "subtype": "success", "is_error": True,
         "result": "Claude AI usage limit reached|1767225600", "api_error_status": 429}}))
     sys.exit(1)
+if mode == "loginword":
+    print("error: could not read the login credential cache", file=sys.stderr)
+    sys.exit(1)
+if mode == "status401":
+    print(json.dumps({{"type": "result", "subtype": "success", "is_error": True,
+        "result": "request failed", "api_error_status": 401}}))
+    sys.exit(1)
 if mode == "badjson":
     print("this is not json")
     sys.exit(0)
@@ -168,6 +175,8 @@ if mode == "badreading":
     out[0]["reading"] = "しっかる"
 if mode == "crossreading":
     out[1]["reading"] = "しかる"
+if mode == "omit":
+    out = out[:-1]
 if mode == "invent":
     out.append({{"id": 999999, "sense": None, "reading": None}})
     out.append(dict(out[0], sense=None))
@@ -185,18 +194,17 @@ print(json.dumps(envelope))
 class FakeKavita:
     passages: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())
     base_url: str = ""
-    logins: int = 0
-    jwt: str | None = None
-    # Requests Kavita accepts with the current JWT before it treats the JWT as expired.
-    expire_after: int | None = None
-    used: int = 0
+    # The status POST analysis answers with. 200 stores the items.
+    post_status: int = 200
+    # Answer 200 with stored 0 and every item rejected, so the passage stays pending.
+    store_nothing: bool = False
+    stored: set[int] = field(default_factory=lambda: set[int]())
     pending_queries: list[dict[str, str]] = field(default_factory=lambda: list[dict[str, str]]())
     posts: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())
-    auth_headers: list[str] = field(default_factory=lambda: list[str]())
+    post_attempts: int = 0
+    # (path with query, x-api-key header, Authorization header) for every request.
+    requests: list[tuple[str, str, str]] = field(default_factory=lambda: list[tuple[str, str, str]]())
     lock: threading.Lock = field(default_factory=threading.Lock)
-
-    def stored_ids(self) -> set[int]:
-        return {item["id"] for p in self.posts for item in p["items"]}
 
     def posted(self) -> list[dict[str, Any]]:
         return [item for p in self.posts for item in p["items"]]
@@ -213,17 +221,10 @@ def start_kavita(state: FakeKavita) -> ThreadingHTTPServer:
             self.wfile.write(raw)
 
         def _authorized(self) -> bool:
-            header = self.headers.get("Authorization", "")
+            key = self.headers.get("x-api-key", "")
             with state.lock:
-                state.auth_headers.append(header)
-                if state.jwt is None or header != f"Bearer {state.jwt}":
-                    return False
-                if state.expire_after is not None and state.used >= state.expire_after:
-                    state.expire_after = None
-                    state.jwt = None
-                    return False
-                state.used += 1
-                return True
+                state.requests.append((self.path, key, self.headers.get("Authorization", "")))
+            return key == KEY
 
         def do_GET(self) -> None:
             url = urllib.parse.urlsplit(self.path)
@@ -234,12 +235,11 @@ def start_kavita(state: FakeKavita) -> ThreadingHTTPServer:
             query = dict(urllib.parse.parse_qsl(url.query))
             with state.lock:
                 state.pending_queries.append(query)
-                done = state.stored_ids()
                 found = [
                     {k: v for k, v in p.items() if k != "priority"}
                     for p in sorted(state.passages, key=lambda p: -p["priority"])
                     if p["priority"] >= int(query["minPriority"])
-                    and any(i["id"] not in done for i in p["items"])
+                    and any(i["id"] not in state.stored for i in p["items"])
                 ][: int(query["limit"])]
             if not found:
                 return self._send(204)
@@ -249,25 +249,22 @@ def start_kavita(state: FakeKavita) -> ThreadingHTTPServer:
             url = urllib.parse.urlsplit(self.path)
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b""
-            if url.path == "/api/plugin/authenticate":
-                query = dict(urllib.parse.parse_qsl(url.query))
-                if query.get("apiKey") != KEY or not query.get("pluginName"):
-                    return self._send(401)
-                with state.lock:
-                    state.logins += 1
-                    state.jwt = f"jwt-secret-{state.logins}"
-                    state.used = 0
-                    return self._send(
-                        200, {"username": "admin", "token": state.jwt, "apiKey": KEY}
-                    )
             if url.path != "/api/dictionary/analysis":
                 return self._send(404)
             if not self._authorized():
                 return self._send(401)
             body = json.loads(raw)
             with state.lock:
+                state.post_attempts += 1
+                if state.post_status != 200:
+                    return self._send(state.post_status)
                 state.posts.append(body)
-            self._send(200, {"stored": len(body["items"]), "rejected": []})
+                ids = [item["id"] for item in body["items"]]
+                if state.store_nothing:
+                    rejected = [{"id": i, "reason": "test refusal"} for i in ids]
+                    return self._send(200, {"stored": 0, "rejected": rejected})
+                state.stored.update(ids)
+            self._send(200, {"stored": len(ids), "rejected": []})
 
         def log_message(self, format: str, *args: Any) -> None:
             pass
@@ -361,7 +358,7 @@ class RunnerCase(unittest.TestCase):
 
     def assert_no_secrets(self, *texts: str) -> None:
         for text in texts:
-            for secret in (TOKEN, KEY, "jwt-secret-"):
+            for secret in (TOKEN, KEY):
                 self.assertNotIn(secret, text)
 
     def run_script(
@@ -476,9 +473,16 @@ class OncePasses(RunnerCase):
                 },
             ],
         )
-        self.assertEqual(self.kavita.logins, 1)
+        # The key goes in the x-api-key header of every request and never in a URL.
+        self.assertEqual(len(self.kavita.requests), 3)
+        for path, key, authorization in self.kavita.requests:
+            self.assertEqual(key, KEY)
+            self.assertEqual(authorization, "")
+            self.assertNotIn(KEY, path)
         self.assertEqual(self.kavita.pending_queries, [{"limit": "4", "minPriority": "0"}])
-        self.assertIn("pass: 2 passage(s), 0 failed, 4 kept, 4 stored, 0 rejected", out.stderr)
+        self.assertIn(
+            "pass: 2 passage(s), 0 failed, 4 kept, 0 filled, 4 stored, 0 rejected", out.stderr
+        )
 
     def test_the_model_comes_from_the_environment_unless_a_flag_names_one(self) -> None:
         env = self.env()
@@ -491,6 +495,7 @@ class OncePasses(RunnerCase):
         self.assertEqual({p["generator"] for p in self.kavita.posts}, {"claude-code:haiku"})
 
         self.kavita.posts.clear()
+        self.kavita.stored.clear()
         out = self.run_script("--once", "--model", "opus")
         self.assertEqual(out.code, 0, out.stderr)
         self.assertEqual(argv_value(out.calls[-1]["argv"], "--model"), "opus")
@@ -502,8 +507,13 @@ class OncePasses(RunnerCase):
         out = self.run_script("--once")
 
         self.assertEqual(out.code, 0, out.stderr)
-        self.assertEqual(self.kavita.posted(), [{"id": 102, "sense": "1:1", "reading": "からい"}])
+        # Item 101 lost its answer, so it goes back with a null sense and reading.
+        self.assertEqual(
+            self.kavita.posted(),
+            [{"id": 102, "sense": "1:1", "reading": "からい"}, {"id": 101, "sense": None, "reading": None}],
+        )
         self.assertIn("dropped sense '9:9' was not offered for item 101", out.stderr)
+        self.assertIn("filled 1 item(s) with a null sense and reading", out.stderr)
 
     def test_a_reading_not_offered_for_that_item_is_dropped(self) -> None:
         self.kavita.passages = [P_SCOLD]
@@ -513,14 +523,21 @@ class OncePasses(RunnerCase):
 
         # しかる belongs to item 201, so it's in the passage's schema but not offered for 202.
         self.assertEqual(out.code, 0, out.stderr)
-        self.assertEqual([i["id"] for i in self.kavita.posted()], [201])
+        self.assertEqual(
+            self.kavita.posted(),
+            [{"id": 201, "sense": "2:2", "reading": "しかる"}, {"id": 202, "sense": None, "reading": None}],
+        )
         self.assertIn("dropped reading 'しかる' was not offered for item 202", out.stderr)
 
         self.set_modes({"default": "badreading"})
         self.kavita.posts.clear()
+        self.kavita.stored.clear()
         out = self.run_script("--once")
         self.assertIn("dropped reading 'しっかる' was not offered for item 201", out.stderr)
-        self.assertEqual([i["id"] for i in self.kavita.posted()], [202])
+        self.assertEqual(
+            self.kavita.posted(),
+            [{"id": 202, "sense": "3:2", "reading": "いる"}, {"id": 201, "sense": None, "reading": None}],
+        )
 
     def test_invented_ids_and_second_answers_are_dropped(self) -> None:
         self.kavita.passages = [P_SPICY]
@@ -542,17 +559,44 @@ class OncePasses(RunnerCase):
         self.assertEqual(out.code, 0, out.stderr)
         self.assertEqual(len(self.kavita.posted()), 4)
 
-    def test_a_401_signs_in_once_more(self) -> None:
-        # Kavita accepts the first JWT for the pending list and then treats it as expired.
-        self.kavita.expire_after = 1
+    def test_an_item_the_model_leaves_out_is_posted_as_null(self) -> None:
+        self.kavita.passages = [P_SPICY]
+        self.set_modes({"default": "omit"})
 
-        out = self.run_script("--once", "--parallel", "1")
+        out = self.run_script("--once")
 
         self.assertEqual(out.code, 0, out.stderr)
-        self.assertEqual(self.kavita.logins, 2)
-        self.assertEqual(len(self.kavita.posts), 2)
-        self.assertIn("Bearer jwt-secret-1", self.kavita.auth_headers)
-        self.assertEqual(self.kavita.auth_headers[-1], "Bearer jwt-secret-2")
+        self.assertEqual(
+            self.kavita.posted(),
+            [{"id": 101, "sense": "1:2", "reading": "からい"}, {"id": 102, "sense": None, "reading": None}],
+        )
+        self.assertIn("filled 1 item(s) with a null sense and reading", out.stderr)
+
+    def test_items_the_runner_cannot_mark_are_posted_as_null(self) -> None:
+        overlapping = dict(P_SPICY["items"][1], id=103, s=1, e=3)
+        outside = dict(P_SPICY["items"][1], id=104, s=40, e=42)
+        self.kavita.passages = [dict(P_SPICY, items=[*P_SPICY["items"], overlapping, outside])]
+
+        out = self.run_script("--once")
+
+        self.assertEqual(out.code, 0, out.stderr)
+        self.assertEqual(out.calls[0]["ids"], [101, 102])
+        self.assertEqual(
+            sorted((i["id"], i["sense"]) for i in self.kavita.posted()),
+            [(101, "1:2"), (102, "1:2"), (103, None), (104, None)],
+        )
+        self.assertIn("left out item 103, it overlaps item 101", out.stderr)
+        self.assertIn("filled 2 item(s) with a null sense and reading", out.stderr)
+
+    def test_a_passage_with_nothing_to_mark_is_settled_without_claude(self) -> None:
+        outside = dict(P_SPICY["items"][0], s=40, e=42)
+        self.kavita.passages = [dict(P_SPICY, items=[outside])]
+
+        out = self.run_script("--once")
+
+        self.assertEqual(out.code, 0, out.stderr)
+        self.assertEqual(out.calls, [])
+        self.assertEqual(self.kavita.posted(), [{"id": 101, "sense": None, "reading": None}])
 
     def test_a_key_kavita_turns_down_asks_claude_nothing(self) -> None:
         self.key_file.write_text("wrong-key\n", encoding="utf-8")
@@ -561,7 +605,8 @@ class OncePasses(RunnerCase):
 
         self.assertEqual(out.code, 1)
         self.assertEqual(out.calls, [])
-        self.assertIn("Kavita turned the auth key down (401)", out.stderr)
+        self.assertIn("Kavita turned the auth key down", out.stderr)
+        self.assertIn("answered 401", out.stderr)
 
     def test_a_key_file_others_can_read_is_refused(self) -> None:
         self.key_file.chmod(0o644)
@@ -569,7 +614,7 @@ class OncePasses(RunnerCase):
         out = self.run_script("--once")
 
         self.assertEqual(out.code, 1)
-        self.assertEqual(self.kavita.logins, 0)
+        self.assertEqual(self.kavita.requests, [])
         self.assertIn("has mode 644, needs 600", out.stderr)
 
     def test_a_claude_login_failure_stops_the_calls(self) -> None:
@@ -591,6 +636,39 @@ class OncePasses(RunnerCase):
         self.assertEqual(out.code, 1)
         self.assertEqual(len(out.calls), 1)
         self.assertIn("claude hit its usage limit", out.stderr)
+
+    def test_an_api_error_status_of_401_counts_as_a_login_failure(self) -> None:
+        self.set_modes({"default": "status401"})
+
+        out = self.run_script("--once", "--parallel", "1")
+
+        self.assertEqual(out.code, 1)
+        self.assertEqual(len(out.calls), 1)
+        self.assertIn("claude could not log in", out.stderr)
+
+    def test_an_error_that_only_mentions_a_login_fails_one_passage(self) -> None:
+        self.set_modes({"default": "loginword"})
+
+        out = self.run_script("--once", "--parallel", "1")
+
+        # Both passages were tried, so the word "login" didn't stop the calls.
+        self.assertEqual(out.code, 1)
+        self.assertEqual(len(out.calls), 2)
+        self.assertIn("could not read the login credential cache", out.stderr)
+        self.assertNotIn("could not log in", out.stderr)
+
+    def test_kavita_refusing_a_post_stops_the_calls(self) -> None:
+        self.kavita.passages = [P_SPICY, P_SCOLD, P_READ]
+        for status, message in ((503, "answered 503"), (401, "turned the auth key down")):
+            with self.subTest(status=status):
+                self.kavita.post_status = status
+                self.calls_log.unlink(missing_ok=True)
+
+                out = self.run_script("--once", "--parallel", "1")
+
+                self.assertEqual(out.code, 1)
+                self.assertEqual(len(out.calls), 1)
+                self.assertIn(message, out.stderr)
 
     def test_a_failed_passage_posts_nothing_and_the_token_is_redacted(self) -> None:
         self.set_modes({"201": "exit"})
@@ -640,6 +718,7 @@ class OncePasses(RunnerCase):
                 "id": 101,
                 "sense": "1:2",
                 "reading": "からい",
+                "filled": False,
                 "surface": "辛い",
                 "lemma": "辛い",
                 "gloss": ["painful"],
@@ -698,7 +777,7 @@ class Loop(RunnerCase):
         out = self.stop_loop(proc)
 
         self.assertEqual(out.code, 0, out.stderr)
-        self.assertEqual(sorted(self.kavita.stored_ids()), [101, 102, 201, 202, 301])
+        self.assertEqual(sorted(self.kavita.stored), [101, 102, 201, 202, 301])
         self.assertIn("SIGTERM received", out.stderr)
         self.assertTrue(out.stderr.rstrip().endswith("annotate_reading: stopped"))
 
@@ -740,6 +819,32 @@ class Loop(RunnerCase):
         self.assertEqual(out.code, 0)
         self.assertEqual(len(out.calls), 1)
         self.assertEqual(self.kavita.posts, [])
+
+    def test_a_post_kavita_cannot_take_backs_off(self) -> None:
+        self.kavita.post_status = 503
+        self.kavita.passages = [P_SPICY, P_SCOLD]
+        proc = self.start_loop("--idle", "0.1", "--parallel", "1")
+
+        self.wait_for(lambda: "answered 503, trying again in 5s" in self.loop_stderr())
+        out = self.stop_loop(proc)
+
+        self.assertEqual(out.code, 0)
+        self.assertEqual(len(out.calls), 1)
+
+    def test_a_pass_that_stores_nothing_waits_before_the_next(self) -> None:
+        self.kavita.passages = [P_SPICY]
+        self.kavita.store_nothing = True
+        proc = self.start_loop("--idle", "1")
+
+        self.wait_for(lambda: len(self.calls()) == 1)
+        time.sleep(2.5)
+        out = self.stop_loop(proc)
+
+        # Waits of 1 and 2 seconds leave room for two more calls at most, where a
+        # loop with no wait would have called claude dozens of times.
+        self.assertEqual(out.code, 0)
+        self.assertLessEqual(len(out.calls), 3)
+        self.assertIn("Kavita rejected item 101: test refusal", out.stderr)
 
     def test_kavita_out_of_reach_backs_off(self) -> None:
         proc = self.start_loop(base_url=f"http://127.0.0.1:{free_port()}")
@@ -788,6 +893,11 @@ class Helpers(unittest.TestCase):
     def test_the_idle_sleep_doubles_after_a_quiet_stretch(self) -> None:
         delays = [self.mod.idle_delay(n, 5.0) for n in (1, 12, 13, 14, 15, 30)]
         self.assertEqual(delays, [5.0, 5.0, 10.0, 20.0, 40.0, 60.0])
+
+    def test_delays_stay_at_their_cap_after_a_very_long_run(self) -> None:
+        self.assertEqual(self.mod.idle_delay(10**6, 5.0), 60.0)
+        self.assertEqual(self.mod.doubling(10**6, 5.0, 300.0), 300.0)
+        self.assertEqual(self.mod.doubling(2, 5.0, 300.0), 20.0)
 
     def test_the_hourly_cap_frees_a_call_after_an_hour(self) -> None:
         now = [0.0]

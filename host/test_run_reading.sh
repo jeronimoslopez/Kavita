@@ -27,11 +27,11 @@ fail() { printf 'FAIL %s: %s\n' "$case_name" "$*"; failures=$((failures + 1)); }
 
 mkdir -p "$WORK/bin"
 
-# Fake Kavita. It signs in with $KEY, serves one passage until something is
+# Fake Kavita. It wants $KEY in x-api-key, serves one passage until something is
 # posted for it, and appends each posted body to $WORK/<case>/posted, where
 # <case> comes from $WORK/case.
 cat >"$WORK/kavita.py" <<'EOF'
-import json, sys, urllib.parse
+import json, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 work, key = sys.argv[1], sys.argv[2]
 PASSAGE = {"id": "u1:0", "text": "辛い料理。", "items": [{"id": 101, "s": 0, "e": 2,
@@ -47,7 +47,7 @@ class H(BaseHTTPRequestHandler):
     def case(self):
         return open(f"{work}/case").read().strip()
     def do_GET(self):
-        if self.headers.get("Authorization") != "Bearer jwt-secret-value":
+        if self.headers.get("x-api-key") != key:
             return self.send(401)
         try:
             open(f"{work}/{self.case()}/posted").close()
@@ -55,11 +55,8 @@ class H(BaseHTTPRequestHandler):
         except FileNotFoundError:
             return self.send(200, [PASSAGE])
     def do_POST(self):
-        url = urllib.parse.urlsplit(self.path)
-        if url.path == "/api/plugin/authenticate":
-            if dict(urllib.parse.parse_qsl(url.query)).get("apiKey") != key:
-                return self.send(401)
-            return self.send(200, {"token": "jwt-secret-value", "apiKey": key})
+        if self.headers.get("x-api-key") != key:
+            return self.send(401)
         body = self.rfile.read(int(self.headers["Content-Length"])).decode()
         with open(f"{work}/{self.case()}/posted", "a") as f:
             f.write(body + "\n")
@@ -141,7 +138,7 @@ run() {
 
 finish() {
   touch "$dir/claude-env" "$log_file"
-  for secret in "$TOKEN" "${TOKEN:12}" "$KEY" "${KEY:12}" jwt-secret-value; do
+  for secret in "$TOKEN" "${TOKEN:12}" "$KEY" "${KEY:12}"; do
     if grep -q -- "$secret" "$log_file" "$dir/stdout"; then fail "a secret appears in the log"; fi
   done
 }
@@ -184,7 +181,7 @@ expect_no_claude
 run ok 600 600
 expect_status 0
 expect_log "runner starting"
-expect_log "pass: 1 passage(s), 0 failed, 1 kept, 1 stored"
+expect_log "pass: 1 passage(s), 0 failed, 1 kept, 0 filled, 1 stored"
 expect_posted
 grep -qx token-ok "$dir/claude-env" || fail "claude did not get the token"
 if grep -qx paid-key "$dir/claude-env"; then fail "claude saw ANTHROPIC_API_KEY"; fi
