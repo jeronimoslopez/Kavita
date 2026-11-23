@@ -16,16 +16,27 @@ namespace Kavita.Services.Dictionary;
 /// it's never tokenized.
 /// </summary>
 /// <remarks>
+/// <para>
 /// A block's text is what the browser holds after it parses the HTML that <c>GetBookPage</c> sends. That's why the
 /// walk turns CR LF and lone CR into LF, drops NUL characters and the newline right after a <c>pre</c> or
-/// <c>textarea</c> start tag, and decodes numeric references the way the HTML spec says. The HTML parser does all of that before any script
-/// sees the text. Every other whitespace character is kept.
+/// <c>listing</c> start tag, and decodes numeric references the way the HTML spec says. The HTML parser does all of
+/// that before any script sees the text. Every other whitespace character is kept.
+/// </para>
+/// <para>
+/// Some markup still parses differently in the browser. A <c>p</c> that a <c>details</c>, <c>dialog</c>,
+/// <c>hgroup</c> or <c>hr</c> start tag closes in the browser can keep that content on the server, even when the
+/// tag sits inside a <c>span</c>. Named references without their semicolon, or outside the HTML 4 set, decode only
+/// in the browser. A CDATA section inside <c>svg</c> or <c>math</c> is text in the browser and a comment here. In
+/// each case the block's text comes out a different length on the two sides, and the reader drops that block when
+/// its length check fails.
+/// </para>
 /// </remarks>
 public class EpubTextBlocks : IEpubTextBlocks
 {
     /// <summary>
     /// The tags that can be a block. An element with one of these tags is a block when no descendant has one.
-    /// <c>body</c> is here so a page whose text sits straight in the body still gets a block
+    /// <c>body</c> is here so a page whose text sits straight in the body still gets a block, but only under an
+    /// <c>html</c> element, because otherwise the body's own tag never reaches the reader to carry the stamp
     /// </summary>
     public static readonly FrozenSet<string> BlockTags = FrozenSet.ToFrozenSet(
     [
@@ -35,44 +46,84 @@ public class EpubTextBlocks : IEpubTextBlocks
     ], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The tags whose text is left out of a block's text, and which never hold a block. <c>rt</c> and <c>rp</c> hold
-    /// furigana and its fallback parentheses, which aren't part of the sentence. A browser running scripts parses a
-    /// <c>noscript</c> as plain text and keeps a <c>template</c>'s content out of the DOM, so neither has elements the
-    /// reader could find
+    /// The tags whose text is left out of a block's text, and which never hold a block
     /// </summary>
+    /// <remarks>
+    /// <c>rt</c> and <c>rp</c> hold furigana and its fallback parentheses, which aren't part of the sentence. The
+    /// browser parses the content of <c>iframe</c>, <c>noembed</c>, <c>noframes</c>, <c>xmp</c>, <c>plaintext</c>,
+    /// <c>textarea</c>, <c>title</c>, and <c>noscript</c> (when scripts run) as plain text, keeps a
+    /// <c>template</c>'s content out of the DOM, and drops or keeps tags inside a <c>select</c> depending on the
+    /// browser. None of those can hold an element the reader could find. An <c>object</c>'s fallback content is
+    /// ordinary DOM in both parsers, so it isn't here
+    /// </remarks>
     public static readonly FrozenSet<string> SkippedTags = FrozenSet.ToFrozenSet(
-        ["rt", "rp", "script", "style", "noscript", "template"], StringComparer.OrdinalIgnoreCase);
+    [
+        "rt", "rp", "script", "style", "noscript", "template", "iframe", "noembed", "noframes", "xmp", "plaintext",
+        "textarea", "title", "select",
+    ], StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<EpubTextBlock> GetBlocks(HtmlNode body) => Walk(body, false);
 
     public IReadOnlyList<EpubTextBlock> StampBlocks(HtmlNode body) => Walk(body, true);
 
+    /// <summary>
+    /// An element the walk has entered and not yet left
+    /// </summary>
+    private sealed class OpenElement(HtmlNode node)
+    {
+        public HtmlNode Node { get; } = node;
+        public int NextChild { get; set; }
+        public bool HoldsBlock { get; set; }
+    }
+
+    /// <remarks>
+    /// The walk keeps its own stack, because a broken or hostile book can nest elements deeper than the thread's
+    /// stack allows for recursion
+    /// </remarks>
     private static List<EpubTextBlock> Walk(HtmlNode body, bool stamp)
     {
         var blocks = new List<EpubTextBlock>();
-        Visit(body, blocks, stamp);
+        if (body.NodeType != HtmlNodeType.Element) return blocks;
+
+        var open = new Stack<OpenElement>();
+        open.Push(new OpenElement(body));
+        while (open.Count > 0)
+        {
+            var element = open.Peek();
+            if (element.NextChild < element.Node.ChildNodes.Count)
+            {
+                var child = element.Node.ChildNodes[element.NextChild++];
+                if (child.NodeType != HtmlNodeType.Element) continue;
+
+                if (SkippedTags.Contains(child.Name))
+                {
+                    if (stamp) RemoveStamps(child);
+                    continue;
+                }
+
+                open.Push(new OpenElement(child));
+                continue;
+            }
+
+            open.Pop();
+            if (Leave(element, blocks, stamp) && open.Count > 0) open.Peek().HoldsBlock = true;
+        }
+
         return blocks;
     }
 
-    /// <returns>Whether <paramref name="node"/> is a block or holds one</returns>
-    private static bool Visit(HtmlNode node, List<EpubTextBlock> blocks, bool stamp)
+    /// <returns>Whether the element is a block or holds one</returns>
+    private static bool Leave(OpenElement element, List<EpubTextBlock> blocks, bool stamp)
     {
-        if (node.NodeType != HtmlNodeType.Element || SkippedTags.Contains(node.Name)) return false;
-
-        var holdsBlock = false;
-        foreach (var child in node.ChildNodes)
-        {
-            holdsBlock |= Visit(child, blocks, stamp);
-        }
-
-        if (holdsBlock || !BlockTags.Contains(node.Name))
+        var node = element.Node;
+        if (element.HoldsBlock || !CanBeBlock(node))
         {
             // A data-kb the book itself carries would point the reader at a block that doesn't exist
-            if (stamp) node.Attributes.Remove(IEpubTextBlocks.BlockAttribute);
-            return holdsBlock;
+            if (stamp && node.HasAttributes) node.Attributes.Remove(IEpubTextBlocks.BlockAttribute);
+            return element.HoldsBlock;
         }
 
-        // Blocks never nest, so a block found after its children still comes out in document order
+        // Blocks never nest, so a block found as the walk leaves it still comes out in document order
         var block = new EpubTextBlock(blocks.Count, node, CollectText(node));
         blocks.Add(block);
         if (stamp)
@@ -83,27 +134,60 @@ public class EpubTextBlocks : IEpubTextBlocks
         return true;
     }
 
+    private static bool CanBeBlock(HtmlNode node)
+    {
+        if (!BlockTags.Contains(node.Name)) return false;
+        if (!node.Name.Equals("body", StringComparison.OrdinalIgnoreCase)) return true;
+
+        for (var parent = node.ParentNode; parent != null; parent = parent.ParentNode)
+        {
+            if (parent.Name.Equals("html", StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
+    private static void RemoveStamps(HtmlNode root)
+    {
+        var pending = new Stack<HtmlNode>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            if (node.HasAttributes) node.Attributes.Remove(IEpubTextBlocks.BlockAttribute);
+            foreach (var child in node.ChildNodes)
+            {
+                if (child.NodeType == HtmlNodeType.Element) pending.Push(child);
+            }
+        }
+    }
+
     private static string CollectText(HtmlNode block)
     {
         var text = new StringBuilder();
-        AppendText(block, text);
-        return text.ToString();
-    }
-
-    private static void AppendText(HtmlNode node, StringBuilder text)
-    {
-        foreach (var child in node.ChildNodes)
+        var open = new Stack<OpenElement>();
+        open.Push(new OpenElement(block));
+        while (open.Count > 0)
         {
-            switch (child)
+            var element = open.Peek();
+            if (element.NextChild >= element.Node.ChildNodes.Count)
+            {
+                open.Pop();
+                continue;
+            }
+
+            switch (element.Node.ChildNodes[element.NextChild++])
             {
                 case HtmlTextNode textNode:
                     text.Append(DecodeAsBrowser(textNode));
                     break;
-                case { NodeType: HtmlNodeType.Element } when !SkippedTags.Contains(child.Name):
-                    AppendText(child, text);
+                case { NodeType: HtmlNodeType.Element } child when !SkippedTags.Contains(child.Name):
+                    open.Push(new OpenElement(child));
                     break;
             }
         }
+
+        return text.ToString();
     }
 
     /// <summary>
@@ -126,7 +210,7 @@ public class EpubTextBlocks : IEpubTextBlocks
     }
 
     private static readonly FrozenSet<string> LeadingNewlineTags = FrozenSet.ToFrozenSet(
-        ["pre", "listing", "textarea"], StringComparer.OrdinalIgnoreCase);
+        ["pre", "listing"], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// What the HTML parser makes of the character references in <paramref name="raw"/>
@@ -134,8 +218,9 @@ public class EpubTextBlocks : IEpubTextBlocks
     /// <remarks>
     /// Numeric references follow the HTML spec in full, so <c>&amp;#151;</c> from a book converted out of
     /// Windows-1252 becomes an em dash as it does in the browser. Named references need their semicolon and are the
-    /// HTML 4 set <see cref="WebUtility.HtmlDecode"/> knows. EPUB 3 allows only the five XML names and EPUB 2 the
-    /// HTML 4 ones, so the HTML 5 names and the bare legacy forms like <c>&amp;copy</c> are left as written
+    /// HTML 4 set <see cref="WebUtility.HtmlDecode"/> knows, with <c>&amp;lang;</c> and <c>&amp;rang;</c> moved to the
+    /// code points HTML 5 gives them. EPUB 3 allows only the five XML names and EPUB 2 the HTML 4 ones, so the names
+    /// this leaves undecoded need invalid XHTML
     /// </remarks>
     private static string DecodeReferences(string raw)
     {
@@ -167,7 +252,12 @@ public class EpubTextBlocks : IEpubTextBlocks
             !raw.AsSpan(amp + 1, semicolon - amp - 1).ContainsAnyExcept(AsciiLettersAndDigits))
         {
             var reference = raw[amp..(semicolon + 1)];
-            var decoded = WebUtility.HtmlDecode(reference);
+            var decoded = reference switch
+            {
+                "&lang;" => "⟨",
+                "&rang;" => "⟩",
+                _ => WebUtility.HtmlDecode(reference),
+            };
             if (!string.Equals(decoded, reference, StringComparison.Ordinal))
             {
                 text.Append(decoded);
@@ -220,12 +310,17 @@ public class EpubTextBlocks : IEpubTextBlocks
     private static string NumericReferenceText(long value)
     {
         if (value == 0 || value > 0x10FFFF || value is >= 0xD800 and <= 0xDFFF) return "�";
-        if (value is >= 0x80 and <= 0x9F && Windows1252[(int) value - 0x80] != 0) return Windows1252[(int) value - 0x80].ToString();
+
+        if (value is >= 0x80 and <= 0x9F && Windows1252[(int) value - 0x80] != '\0')
+        {
+            return Windows1252[(int) value - 0x80].ToString();
+        }
+
         return char.ConvertFromUtf32((int) value);
     }
 
     /// <summary>
-    /// The HTML spec's table for references to U+0080 through U+009F. A 0 means the code point is kept as it is
+    /// The HTML spec's table for references to U+0080 through U+009F. A NUL means the code point is kept as it is
     /// </summary>
     private static readonly char[] Windows1252 =
     [

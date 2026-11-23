@@ -134,11 +134,11 @@ public class EpubTextBlocksTests
     [Fact]
     public void Pre_DropsTheNewlineRightAfterItsStartTag()
     {
-        Assert.Equal(["line1\n  line2\n", "\nkept", "\n\nfirst dropped", "ta!"], Texts(
+        Assert.Equal(["line1\n  line2\n", "\nkept", "\n\nfirst dropped", "listed"], Texts(
             "<pre>\nline1\n  line2\n</pre>" +
             "<pre><code>\nkept</code></pre>" +
             "<pre>\n\n\nfirst dropped</pre>" +
-            "<p><textarea>\nta</textarea>!</p>"));
+            "<p><listing>\nlisted</listing></p>"));
     }
 
     [Fact]
@@ -240,5 +240,75 @@ public class EpubTextBlocksTests
         _blocks.GetBlocks(body);
 
         Assert.Equal(before, body.OuterHtml);
+    }
+
+    [Fact]
+    public void SkippedTags_AreExactlyTheSetTheReaderSkips()
+    {
+        // The reader rebuilds each block's text with this same list, so changing it is a contract change
+        Assert.Equal(
+            ["iframe", "noembed", "noframes", "noscript", "plaintext", "rp", "rt", "script", "select", "style",
+                "template", "textarea", "title", "xmp"],
+            EpubTextBlocks.SkippedTags.Order(StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void RawTextAndDroppedContent_HoldNoBlocksAndNoText()
+    {
+        var blocks = _blocks.GetBlocks(Body(
+            "<iframe><p>framed</p></iframe><noembed><p>e</p></noembed><noframes><p>f</p></noframes>" +
+            "<xmp><p>x</p></xmp><select><option>o</option><div>d</div></select>" +
+            "<p>a<textarea>t</textarea><title>t</title><iframe>i</iframe>b</p><plaintext><p>rest</p></plaintext>"));
+
+        Assert.Equal(["ab"], blocks.Select(b => b.Text));
+    }
+
+    [Fact]
+    public void ObjectFallback_IsOrdinaryContent()
+    {
+        Assert.Equal(["fallback"], Texts("<object data='x.svg'><p>fallback</p></object>"));
+    }
+
+    [Fact]
+    public void StampBlocks_RemovesBookStampsInsideSkippedElements()
+    {
+        var body = Body(
+            "<p>a<noscript><span data-kb='0'>n</span></noscript></p><template><p data-kb='1'>t</p></template>");
+
+        _blocks.StampBlocks(body);
+
+        Assert.Single(body.SelectNodes("//*[@data-kb]")!);
+    }
+
+    [Fact]
+    public void BodyOutsideHtml_IsNotABlock()
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml("<body>loose text</body>");
+
+        Assert.Empty(_blocks.GetBlocks(doc.DocumentNode.SelectSingleNode("//body")));
+    }
+
+    [Fact]
+    public void LangAndRang_UseTheirHtml5CodePoints()
+    {
+        Assert.Equal(["⟨x⟩"], Texts("<p>&lang;x&rang;</p>"));
+    }
+
+    [Fact]
+    public void DeepNesting_DoesNotOverflowTheStack()
+    {
+        const int depth = 20_000;
+        var html = "<p>" + string.Concat(Enumerable.Repeat("<span>", depth)) + "deep" +
+                   string.Concat(Enumerable.Repeat("</span>", depth)) + "</p><div>" +
+                   string.Concat(Enumerable.Repeat("<div>", depth)) + "inner" +
+                   string.Concat(Enumerable.Repeat("</div>", depth)) + "</div>";
+
+        var found = _blocks.GetBlocks(Body(html));
+        var stamped = _blocks.StampBlocks(Body(html));
+
+        Assert.Equal(["deep", "inner"], found.Select(b => b.Text));
+        Assert.Equal(found.Select(b => (b.Index, b.Node.Name, b.Text)),
+            stamped.Select(b => (b.Index, b.Node.Name, b.Text)));
     }
 }
