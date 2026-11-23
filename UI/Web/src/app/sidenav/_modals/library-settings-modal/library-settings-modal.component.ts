@@ -203,6 +203,9 @@ export class LibrarySettingsModalComponent implements OnInit {
     return false;
   });
 
+  /** The dictionary only reads EPUBs, so its switch shows only while the library scans them */
+  canHoldEpubs = computed(() => this.formGroup.fileGroupTypes().value().includes(FileTypeGroup.Epub));
+
   libraryNames = signal<string[]>([]);
   scrobbleEnabledLibraries = signal<LibraryType[]>([]);
   validMetadataProviders = this.libraryService.getSupportedMetadataProviders(() => this.formModel().type);

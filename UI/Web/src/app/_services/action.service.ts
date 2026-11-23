@@ -65,6 +65,7 @@ import {ModalService, TypedModalRef} from "./modal.service";
 import {DashboardService} from "./dashboard.service";
 import {FilterService} from "./filter.service";
 import {OcrService} from "./ocr.service";
+import {DictionaryService} from "./dictionary.service";
 
 
 export type LibraryActionCallback = (library: Partial<Library>) => void;
@@ -105,6 +106,7 @@ export class ActionService {
   private readonly filterService = inject(FilterService);
   private readonly dashboardService = inject(DashboardService);
   private readonly ocrService = inject(OcrService);
+  private readonly dictionaryService = inject(DictionaryService);
 
   private readingListModalRef: TypedModalRef<BulkSetReadingProfileModalComponent> |  TypedModalRef<ListSelectModalComponent<ReadingList>> | null = null;
   private collectionModalRef: TypedModalRef<ListSelectModalComponent<UserCollection>> | null = null;
@@ -235,6 +237,20 @@ export class ActionService {
           filter(confirmed => confirmed),
           switchMap(() => this.ocrService.removeSeries(series.id)),
           tap(() => this.toastr.success(translate('toasts.ocr-removed', {name: series.name}))),
+          map(() => this.fromAction(action, series, 'none'))
+        );
+
+      case Action.AnalyzeBook:
+        return this.dictionaryService.analyzeSeries(series.id).pipe(
+          tap(queued => this.toastr.info(translate(queued > 0 ? 'toasts.analysis-queued' : 'toasts.analysis-nothing-queued', {name: series.name}))),
+          map(() => this.fromAction(action, series, 'none'))
+        );
+
+      case Action.RemoveAnalysis:
+        return from(this.confirmService.confirm(translate('toasts.confirm-remove-analysis', {name: series.name}))).pipe(
+          filter(confirmed => confirmed),
+          switchMap(() => this.dictionaryService.removeSeries(series.id)),
+          tap(() => this.toastr.success(translate('toasts.analysis-removed', {name: series.name}))),
           map(() => this.fromAction(action, series, 'none'))
         );
 

@@ -138,4 +138,12 @@ export enum Action {
    * Delete a series' OCR text
    */
   RemoveOcr = 43,
+  /**
+   * Queue AI word analysis for a series' EPUBs
+   */
+  AnalyzeBook = 44,
+  /**
+   * Delete a series' AI word analysis
+   */
+  RemoveAnalysis = 45,
 }

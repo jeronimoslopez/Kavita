@@ -449,6 +449,18 @@
                             </ng-template>
                           </app-setting-switch>
                         </div>
+
+                        <div class="row g-0 mt-4 mb-4">
+                          <app-setting-switch [title]="t('dictionary-enabled-label')" [subtitle]="t('dictionary-enabled-tooltip')">
+                            <ng-template>
+                              <div class="form-check form-switch float-end">
+                                <input type="checkbox" role="switch"
+                                       [formField]="formGroup.bookReaderDictionaryEnabled" class="form-check-input"
+                                       aria-labelledby="dictionary-enabled-label">
+                              </div>
+                            </ng-template>
+                          </app-setting-switch>
+                        </div>
                       </div>
                     }
                   </ng-template>
