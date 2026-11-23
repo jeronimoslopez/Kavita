@@ -66,6 +66,11 @@ public interface IReadingStore
     /// </summary>
     /// <returns>The unit's state afterwards</returns>
     Task<ReadingUnitState> RecordFailedAttemptAsync(long unitId, int maxAttempts, CancellationToken ct = default);
+    /// <summary>
+    /// Moves a pending unit's queue time to now, so other units at its priority go first. Its attempts and priority
+    /// stay as they are, and a unit that isn't pending is left alone
+    /// </summary>
+    Task DeferUnitAsync(long unitId, CancellationToken ct = default);
     /// <returns>The unit with its blocks, in any state, or null when the page has no unit</returns>
     Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default);
     /// <summary>
