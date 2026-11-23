@@ -112,6 +112,8 @@ describe('ReaderDictionaryController', () => {
   let hit: EpubHit | null;
   /** The tokens the controller last handed the locator */
   let seenPage: EpubPageTokens | null;
+  /** How many times the controller ran the locator */
+  let locates: number;
   let highlighter: {mark: ReturnType<typeof vi.fn>, clear: ReturnType<typeof vi.fn>};
   let controller: ReaderDictionaryController;
   let container: HTMLElement;
@@ -122,6 +124,7 @@ describe('ReaderDictionaryController', () => {
     messages = new Subject();
     highlighter = {mark: vi.fn(), clear: vi.fn()};
     seenPage = null;
+    locates = 0;
     container = document.createElement('div');
     // Block 4 reads 今日の朝刊と、新聞社, and the hit is 新聞社 at 7 to 10
     container.innerHTML = '<p data-kb="4">今日の朝刊と、新聞社</p>';
@@ -136,6 +139,7 @@ describe('ReaderDictionaryController', () => {
         {provide: DictionaryPopupPresenter, useValue: presenter},
         {provide: DICTIONARY_WORD_LOCATOR, useValue: (_x: number, _y: number, _c: Element, page: EpubPageTokens) => {
           seenPage = page;
+          locates++;
           return hit;
         }},
         {provide: DICTIONARY_HIGHLIGHTER, useValue: highlighter},
@@ -391,6 +395,58 @@ describe('ReaderDictionaryController', () => {
     controller.setPage(5, 3);
     expect(controller.isPopupVisible()).toBe(false);
     expect(highlighter.clear).toHaveBeenCalled();
+  });
+
+  it('drops the old page on clearPage until setPage loads tokens again', () => {
+    openOnPage();
+    controller.clearPage();
+    expect(controller.isPopupVisible()).toBe(false);
+    expect(highlighter.clear).toHaveBeenCalled();
+    expect(controller.isLookupClick(click())).toBe(false);
+    expect(controller.handleClick(click())).toBe(false);
+
+    controller.setPage(5, 3);
+    expect(controller.isLookupClick(click())).toBe(false);
+    dictionary.answerPage(1, TOKENS);
+    expect(controller.isLookupClick(click())).toBe(true);
+    expect(controller.handleClick(click())).toBe(true);
+    expect(dictionary.lookups[1].request).toMatchObject({chapterId: 5, page: 3});
+  });
+
+  it('ignores a page response that arrives after clearPage', () => {
+    controller.setPage(5, 2);
+    controller.clearPage();
+    dictionary.answerPage(0, TOKENS);
+    expect(controller.isLookupClick(click())).toBe(false);
+  });
+
+  for (const [name, clear] of [
+    ['setPage', (c: ReaderDictionaryController) => c.setPage(5, 3)],
+    ['clearPage', (c: ReaderDictionaryController) => c.clearPage()],
+    ['hidePopup', (c: ReaderDictionaryController) => c.hidePopup()],
+    ['cancelDismissal', (c: ReaderDictionaryController) => c.cancelDismissal()],
+  ] as const) {
+    it(`forgets a pending dismissal on ${name}`, () => {
+      openOnPage();
+      presenter.closeFromPopup('outside');
+      hit = null;
+      clear(controller);
+      expect(controller.consumesClick(click())).toBe(false);
+    });
+  }
+
+  it('runs the locator once for every call a reader makes about one click', () => {
+    openOnPage();
+    presenter.closeFromPopup('outside');
+    const before = locates;
+    const tap = click();
+    expect(controller.consumesClick(tap)).toBe(false);
+    expect(controller.isLookupClick(tap)).toBe(true);
+    expect(controller.handleClick(tap)).toBe(true);
+    expect(locates).toBe(before + 1);
+
+    controller.isLookupClick(click());
+    expect(locates).toBe(before + 2);
   });
 
   it('prioritizes each chapter once', () => {
