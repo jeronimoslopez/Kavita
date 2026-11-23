@@ -71,6 +71,18 @@ public interface IBookService
     Task<string> GetBookPage(int userId, int page, int chapterId, string cachedEpubPath, string libraryFilePath, string baseUrl, List<PersonalToCDto> ptocBookmarks, List<AnnotationDto> annotations, CancellationToken ct = default);
     Task<Dictionary<string, int>> CreateKeyToPageMappingAsync(EpubBookRef book, CancellationToken ct = default);
     Task<IDictionary<int, int>?> GetWordCountsPerPage(string bookFilePath, CancellationToken ct = default);
+    /// <summary>
+    /// The number of pages the book reader counts for an EPUB, one per spine item, numbered the way
+    /// <see cref="GetBookPage"/> takes its <c>page</c>
+    /// </summary>
+    Task<int> GetEpubPageCountAsync(string epubFilePath, CancellationToken ct = default);
+    /// <summary>
+    /// The text blocks of one EPUB page, read from the same parse <see cref="GetBookPage"/> stamps, so each
+    /// <see cref="EpubTextBlock.Index"/> matches a <c>data-kb</c> value in the page the reader gets
+    /// </summary>
+    /// <returns>Null when the page doesn't exist or isn't XHTML</returns>
+    /// <exception cref="KavitaException">The page's XHTML has no body and doesn't parse</exception>
+    Task<IReadOnlyList<EpubTextBlock>?> GetEpubPageBlocksAsync(string epubFilePath, int page, CancellationToken ct = default);
     Task<int> GetWordCountBetweenXPaths(string bookFilePath, string startXpath, int startPage, string endXpath, int endPage, CancellationToken ct = default);
     Task<string> CopyImageToTempFromBook(int chapterId, BookmarkDto bookmarkDto, string cachedBookPath, CancellationToken ct = default);
     Task<BookResourceResultDto> GetResourceAsync(string bookFilePath, string requestedKey, CancellationToken ct = default);

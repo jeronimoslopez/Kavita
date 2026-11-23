@@ -9,9 +9,11 @@ namespace Kavita.API.Services;
 /// </summary>
 /// <remarks>
 /// A block is an element with a block-level tag and no block-level descendant. Its text is its descendant text nodes in
-/// document order, entity-decoded, skipping <c>rt</c>, <c>rp</c>, <c>script</c> and <c>style</c>, with whitespace left
-/// as it is. Blocks are numbered from 0 in document order. Blocks whose text is empty keep their number, so indices
-/// don't depend on the text.
+/// document order, entity-decoded, with whitespace left as it is. The walk skips <c>rt</c>, <c>rp</c>, <c>script</c>,
+/// <c>style</c>, <c>noscript</c>, <c>template</c>, <c>iframe</c>, <c>noembed</c>, <c>noframes</c>, <c>xmp</c>,
+/// <c>plaintext</c>, <c>textarea</c>, <c>title</c> and <c>select</c>, taking no text and no block from inside them.
+/// Blocks are numbered from 0 in document order. Blocks whose text is empty keep their number, so indices don't
+/// depend on the text.
 /// </remarks>
 public interface IEpubTextBlocks
 {
