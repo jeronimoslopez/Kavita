@@ -600,6 +600,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
 
         Assert.Equal(TokenizeUnitOutcome.FileUnavailable, result.Outcome);
+        await _store.Received(1).DeferUnitAsync(7, Arg.Any<CancellationToken>());
         await _pages.DidNotReceiveWithAnyArgs().GetEpubPageBlocksAsync(default!, default);
         await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);
         await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
@@ -616,6 +617,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
 
         Assert.Equal(TokenizeUnitOutcome.FileUnavailable, result.Outcome);
+        await _store.Received(1).DeferUnitAsync(7, Arg.Any<CancellationToken>());
         await _store.DidNotReceiveWithAnyArgs().SeedFileAsync(default, default, default!, default);
         await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
         await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);

@@ -28,8 +28,8 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     /// </summary>
     private static readonly TimeSpan ReadyEventInterval = TimeSpan.FromSeconds(5);
     /// <summary>
-    /// Scans and library changes queue their own detection job, so the worker's sweep only catches what a job lost to a
-    /// restart or a newly set sidecar URL left behind
+    /// Scans, library changes and setting the sidecar URL queue their own detection job, so the worker's sweep only
+    /// catches what a job lost to a restart left behind
     /// </summary>
     internal static readonly TimeSpan DetectionInterval = TimeSpan.FromHours(1);
 
@@ -106,6 +106,8 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
             _lastDetection = now;
         }
 
+        // Units whose file wasn't on disk this pass. When one is picked again, nothing ahead of it is left to tokenize
+        var deferred = new HashSet<long>();
         while (!ct.IsCancellationRequested)
         {
             using var scope = scopeFactory.CreateScope();
@@ -115,7 +117,7 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
             var tokenizeService = scope.ServiceProvider.GetRequiredService<ITokenizeService>();
             // Picked again before every page, so a chapter someone just opened jumps ahead of the book in progress
             var unit = await tokenizeService.GetNextUnitAsync(ct);
-            if (unit == null) return false;
+            if (unit == null || deferred.Contains(unit.Id)) return false;
 
             var result = await tokenizeService.ProcessUnitAsync(unit, settings.TextSidecarUrl, ct);
             switch (result.Outcome)
@@ -123,8 +125,8 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
                 case TokenizeUnitOutcome.SidecarUnavailable:
                     return true;
                 case TokenizeUnitOutcome.FileUnavailable:
-                    // The same unit would be picked again at once, so the pass waits for the poll like an empty queue
-                    return false;
+                    deferred.Add(unit.Id);
+                    break;
                 case TokenizeUnitOutcome.UnitDone:
                     AddReadyPage(result);
                     await FlushReadyPagesAsync(force: false, ct);

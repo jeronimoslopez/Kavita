@@ -484,19 +484,9 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             .ToListAsync(ct);
 
         return files
-            .Where(f => IsJapanese(string.IsNullOrWhiteSpace(f.ChapterLanguage) ? f.SeriesLanguage : f.ChapterLanguage))
+            .Where(f => TokenizeService.IsJapanese(string.IsNullOrWhiteSpace(f.ChapterLanguage) ? f.SeriesLanguage : f.ChapterLanguage))
             .Select(f => f.Id)
             .ToList();
-    }
-
-    /// <summary>
-    /// The same rule as TokenizeService.IsJapanese, which decides which files get tokenized. Keep the two in step
-    /// </summary>
-    private static bool IsJapanese(string? language)
-    {
-        if (string.IsNullOrWhiteSpace(language)) return false;
-        var code = language.Trim().ToLowerInvariant();
-        return code is "ja" or "jpn" || code.StartsWith("ja-") || code.StartsWith("ja_");
     }
 
     private static string Slice(string text, int s, int e)

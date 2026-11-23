@@ -468,6 +468,35 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DeferUnit_GoesBehindItsPriorityWithoutAnAttempt()
+    {
+        await _store.SeedFileAsync(1, 1, Stamp, ReadingPriority.NextChapter);
+        await _store.SeedFileAsync(2, 1, Stamp, ReadingPriority.NextChapter);
+        await _store.SeedFileAsync(3, 1, Stamp, ReadingPriority.WholeBook);
+        var first = await NextAsync();
+        Assert.Equal(1, first.MangaFileId);
+
+        _time.Advance();
+        await _store.DeferUnitAsync(first.Id);
+
+        var order = new List<int>();
+        while (await _store.GetNextPendingUnitAsync() is { } next)
+        {
+            order.Add(next.MangaFileId);
+            if (next.Id == first.Id) Assert.Equal(0, next.Attempts);
+            Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, next.SourceStamp, Tokenizer, [], []));
+        }
+
+        // File 1 kept its priority, so it still goes before file 3
+        Assert.Equal([2, 1, 3], order);
+        Assert.Equal(ReadingPriority.NextChapter, await ScalarAsync($"SELECT priority FROM unit WHERE id = {first.Id}"));
+
+        // A unit that isn't pending is left as it is
+        await _store.DeferUnitAsync(first.Id);
+        Assert.Equal(ReadingUnitState.Done, (await _store.GetUnitAsync(1, 0))!.State);
+    }
+
+    [Fact]
     public async Task RaiseUnitPriority_RaisesOnlyLowerPendingUnits()
     {
         await _store.SeedFileAsync(1, 3, Stamp, ReadingPriority.WholeBook);

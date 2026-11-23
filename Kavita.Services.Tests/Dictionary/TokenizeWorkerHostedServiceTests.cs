@@ -67,16 +67,20 @@ public class TokenizeWorkerHostedServiceTests
     }
 
     [Fact]
-    public async Task RunPass_FileUnavailable_EndsThePassWithoutBackingOff()
+    public async Task RunPass_FileUnavailable_MovesOnAndStopsWhenTheUnitComesRoundAgain()
     {
-        _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(Unit(0));
+        _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(Unit(0), Unit(1), Unit(0));
         _tokenizeService.ProcessUnitAsync(Arg.Any<ReadingUnitRef>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new TokenizeUnitResult(TokenizeUnitOutcome.FileUnavailable));
+            .Returns(call => call.Arg<ReadingUnitRef>().Page == 0
+                ? new TokenizeUnitResult(TokenizeUnitOutcome.FileUnavailable)
+                : new TokenizeUnitResult(TokenizeUnitOutcome.UnitDone, 1, 2, 1));
 
         var unavailable = await _worker.RunPassAsync(CancellationToken.None);
 
         Assert.False(unavailable);
-        await _tokenizeService.ReceivedWithAnyArgs(1).ProcessUnitAsync(default!, default!);
+        await _tokenizeService.Received(1).ProcessUnitAsync(Unit(0), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _tokenizeService.Received(1).ProcessUnitAsync(Unit(1), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _tokenizeService.Received(3).GetNextUnitAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

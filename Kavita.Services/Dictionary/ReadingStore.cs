@@ -334,6 +334,16 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         return state;
     }
 
+    public async Task DeferUnitAsync(long unitId, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "UPDATE unit SET requested_utc = $now WHERE id = $unit AND state = 'pending'";
+        command.Parameters.AddWithValue("$unit", unitId);
+        command.Parameters.AddWithValue("$now", Now());
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default)
     {
         await using var connection = await database.OpenConnectionAsync(ct);

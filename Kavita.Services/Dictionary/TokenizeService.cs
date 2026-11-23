@@ -34,8 +34,10 @@ public interface IEpubPageSource
 
 public class BookServiceEpubPageSource(IBookService bookService) : IEpubPageSource
 {
-    public Task<int> GetEpubPageCountAsync(string epubFilePath, CancellationToken ct = default) => throw new NotSupportedException("IBookService.GetEpubPageCountAsync and GetEpubPageBlocksAsync aren't wired in yet");
-    public Task<IReadOnlyList<EpubTextBlock>?> GetEpubPageBlocksAsync(string epubFilePath, int page, CancellationToken ct = default) => throw new NotSupportedException("IBookService.GetEpubPageCountAsync and GetEpubPageBlocksAsync aren't wired in yet");
+    public Task<int> GetEpubPageCountAsync(string epubFilePath, CancellationToken ct = default) =>
+        bookService.GetEpubPageCountAsync(epubFilePath, ct);
+    public Task<IReadOnlyList<EpubTextBlock>?> GetEpubPageBlocksAsync(string epubFilePath, int page, CancellationToken ct = default) =>
+        bookService.GetEpubPageBlocksAsync(epubFilePath, page, ct);
 }
 
 public class TokenizeService : ITokenizeService
@@ -145,7 +147,7 @@ public class TokenizeService : ITokenizeService
         }
 
         if (await CheckFileAsync(file, unit, ct) is { } before)
-            return new TokenizeUnitResult(before, file.SeriesId, file.ChapterId, unit.Page);
+            return await EndBeforeSavingAsync(before, file, unit, ct);
 
         try
         {
@@ -168,7 +170,7 @@ public class TokenizeService : ITokenizeService
 
                 // Tokenizing took a moment, and the file could have been replaced meanwhile
                 if (await CheckFileAsync(file, unit, ct) is { } after)
-                    return new TokenizeUnitResult(after, file.SeriesId, file.ChapterId, unit.Page);
+                    return await EndBeforeSavingAsync(after, file, unit, ct);
 
                 var wordIds = await _readingStore.UpsertWordsAsync(response.Words.ToList(), LexiconVersion(response.Version), ct);
                 (stored, ambiguous) = ToStored(blocks, response, wordIds);
@@ -376,6 +378,14 @@ public class TokenizeService : ITokenizeService
             : TokenizeUnitOutcome.FileChanged;
     }
 
+    private async Task<TokenizeUnitResult> EndBeforeSavingAsync(TokenizeUnitOutcome outcome, EpubFile file,
+        ReadingUnitRef unit, CancellationToken ct)
+    {
+        // The unit is still pending, so without this it would be picked first again and hold up every unit behind it
+        if (outcome == TokenizeUnitOutcome.FileUnavailable) await _readingStore.DeferUnitAsync(unit.Id, ct);
+        return new TokenizeUnitResult(outcome, file.SeriesId, file.ChapterId, unit.Page);
+    }
+
     /// <summary>
     /// The file's last write time in UTC ticks, cut to the second as <c>FolderChangeCheck.IsSameWriteTime</c> compares
     /// times, because some file systems keep only whole seconds
@@ -461,7 +471,10 @@ public class TokenizeService : ITokenizeService
         return (stored, ambiguous);
     }
 
-    private static void QueueDetection()
+    /// <summary>
+    /// Queues <see cref="DetectNewFilesAsync"/> unless a run is already queued
+    /// </summary>
+    internal static void QueueDetection()
     {
         if (Kavita.Services.TaskScheduler.HasAlreadyEnqueuedTask(nameof(ITokenizeService), nameof(ITokenizeService.DetectNewFilesAsync), [])) return;
         BackgroundJob.Enqueue<ITokenizeService>(service => service.DetectNewFilesAsync());
