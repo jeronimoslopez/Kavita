@@ -129,6 +129,7 @@
     "ip-address-invalid": "IP Address '{0}' is invalid",
     "ocr-sidecar-url-invalid": "The OCR sidecar URL must be a full http or https address",
     "ocr-window-invalid": "OCR hours must be written as HH:mm, like 01:00",
+    "text-sidecar-url-invalid": "The text sidecar URL must be a full http or https address",
     "bookmark-dir-permissions": "Bookmark Directory does not have correct permissions for Kavita to use",
     "total-backups": "Total Backups must be between 1 and 30",
     "total-logs": "Total Logs must be between 1 and 30",

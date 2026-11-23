@@ -201,6 +201,8 @@ public static class Seed
                 new() {Key = ServerSettingKey.OcrSidecarUrl, Value = string.Empty},
                 new() {Key = ServerSettingKey.OcrWindowStart, Value = string.Empty},
                 new() {Key = ServerSettingKey.OcrWindowEnd, Value = string.Empty},
+                new() {Key = ServerSettingKey.TextSidecarUrl, Value = string.Empty},
+                new() {Key = ServerSettingKey.DictionaryAnalysisOnOpen, Value = "false"},
             }.ToArray()
         ];
 

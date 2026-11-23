@@ -101,6 +101,10 @@ public sealed record ServerSettingDto
     public string OcrWindowStart { get; set; } = string.Empty;
     /// <inheritdoc cref="ServerSettingKey.OcrWindowEnd"/>
     public string OcrWindowEnd { get; set; } = string.Empty;
+    /// <inheritdoc cref="ServerSettingKey.TextSidecarUrl"/>
+    public string TextSidecarUrl { get; set; } = string.Empty;
+    /// <inheritdoc cref="ServerSettingKey.DictionaryAnalysisOnOpen"/>
+    public bool DictionaryAnalysisOnOpen { get; set; }
     /// <summary>
     /// SMTP Configuration
     /// </summary>
