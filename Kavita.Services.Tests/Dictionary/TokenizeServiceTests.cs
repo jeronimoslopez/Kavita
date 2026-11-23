@@ -18,6 +18,7 @@ using Kavita.Services.Builders;
 using Kavita.Services.Dictionary;
 using Kavita.Services.Reading;
 using Kavita.Services.Scanner;
+using Kavita.Services.Tests.Helpers;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
@@ -25,6 +26,7 @@ using Xunit.Abstractions;
 
 namespace Kavita.Services.Tests.Dictionary;
 
+[Collection(HangfireStorageCollection.Name)]
 public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(outputHelper), IDisposable
 {
     private const string SidecarUrl = "http://text:8000";
