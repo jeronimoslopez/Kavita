@@ -84,6 +84,7 @@ public class EndpointAccessTests
         ["CollectionController.AddToMultipleSeries(CollectionTagBulkAddDto):CollectionTagBulkAddDto.SeriesIds"] = "HasAccessToSeries (all ids) in body",
         ["DeviceController.SendSeriesToDevice(SendSeriesToEmailDeviceDto):SendSeriesToEmailDeviceDto.SeriesId"] = "HasAccessToSeries in body",
         ["DeviceController.SendToDevice(SendToEmailDeviceDto):SendToEmailDeviceDto.ChapterIds"] = "DeviceService.SendTo HasAccessToAllChapters",
+        ["DictionaryController.Lookup(DictionaryLookupRequestDto):DictionaryLookupRequestDto.ChapterId"] = "HasAccessToChapter in body",
         ["DownloadController.GetBulkReadingListSize(BulkReadingListSizeRequest):BulkReadingListSizeRequest.ReadingListIds"] = "Repo GetFilesizesAsync is scoped by userId",
         ["DownloadController.GetBulkSeriesSize(BulkSeriesSizeRequest):BulkSeriesSizeRequest.SeriesIds"] = "Repo GetFilesizesAsync filters by user libraries and age",
         ["DownloadController.GetBulkVolumeSize(BulkVolumeSizeRequest):BulkVolumeSizeRequest.VolumeIds"] = "Repo GetFilesizesAsync filters by user libraries and age",
