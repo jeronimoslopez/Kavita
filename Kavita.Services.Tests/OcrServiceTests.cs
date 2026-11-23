@@ -580,7 +580,7 @@ public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(ou
         var (unitOfWork, _, _) = await CreateDatabase();
         var settingsService = new SettingsService(unitOfWork, Substitute.For<IDirectoryService>(), Substitute.For<ILibraryWatcher>(),
             Substitute.For<ITaskScheduler>(), Substitute.For<ILogger<SettingsService>>(), Substitute.For<IOidcService>(),
-            Substitute.For<ILoggingService>());
+            Substitute.For<ILoggingService>(), Substitute.For<ITokenizeWorkerSignal>());
 
         var settings = await unitOfWork.SettingsRepository.GetSettingsDtoAsync();
         Assert.Equal(string.Empty, settings.OcrSidecarUrl);

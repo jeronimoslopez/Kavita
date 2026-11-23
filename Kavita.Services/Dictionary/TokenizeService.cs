@@ -471,7 +471,10 @@ public class TokenizeService : ITokenizeService
         return (stored, ambiguous);
     }
 
-    private static void QueueDetection()
+    /// <summary>
+    /// Queues <see cref="DetectNewFilesAsync"/> unless a run is already queued
+    /// </summary>
+    internal static void QueueDetection()
     {
         if (Kavita.Services.TaskScheduler.HasAlreadyEnqueuedTask(nameof(ITokenizeService), nameof(ITokenizeService.DetectNewFilesAsync), [])) return;
         BackgroundJob.Enqueue<ITokenizeService>(service => service.DetectNewFilesAsync());

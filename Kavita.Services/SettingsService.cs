@@ -21,6 +21,7 @@ using Kavita.Models.DTOs.KavitaPlus.Metadata;
 using Kavita.Models.DTOs.Settings;
 using Kavita.Models.Entities;
 using Kavita.Models.Entities.Enums;
+using Kavita.Services.Dictionary;
 using Kavita.Services.Helpers;
 using Kavita.Models.Entities.MetadataMatching;
 using Microsoft.Extensions.Hosting;
@@ -37,7 +38,8 @@ public class SettingsService(
     ITaskScheduler taskScheduler,
     ILogger<SettingsService> logger,
     IOidcService oidcService,
-    ILoggingService loggingService)
+    ILoggingService loggingService,
+    ITokenizeWorkerSignal tokenizeWorkerSignal)
     : ISettingsService
 {
     private readonly bool _isDevelopment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == Environments.Development;
@@ -299,6 +301,7 @@ public class SettingsService(
 
         var updateTask = false;
         var updatedOidcSettings = false;
+        var textSidecarSet = false;
         foreach (var setting in currentSettings)
         {
             if (setting.Key == ServerSettingKey.OnDeckProgressDays &&
@@ -421,6 +424,7 @@ public class SettingsService(
                 var url = UrlHelper.RemoveEndingSlash((updateSettingsDto.TextSidecarUrl + string.Empty).Trim());
                 if (url.Length > 0 && !(Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"))
                     throw new KavitaException("text-sidecar-url-invalid");
+                textSidecarSet = url.Length > 0 && url != setting.Value;
                 setting.Value = url;
                 unitOfWork.SettingsRepository.Update(setting);
             }
@@ -531,6 +535,13 @@ public class SettingsService(
             if (updateTask)
             {
                 BackgroundJob.Enqueue(() => taskScheduler.ScheduleTasks());
+            }
+
+            // Scans queue nothing while the URL is empty, so the files they passed would wait for the worker's hourly sweep
+            if (textSidecarSet)
+            {
+                TokenizeService.QueueDetection();
+                tokenizeWorkerSignal.Wake();
             }
 
             if (updatedOidcSettings)
