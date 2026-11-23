@@ -16,6 +16,7 @@ import {
   RendererStyleFlags2,
   resource, SecurityContext,
   signal,
+  untracked,
   Signal,
   viewChild,
   ViewContainerRef
@@ -75,6 +76,12 @@ import {PageStyle} from "../reader-settings/reader-settings.component";
 import {BookTheme} from "../../../_models/preferences/book-theme";
 import {Stack} from "../../../shared/data-structures/stack";
 import {YomitanService} from "../../../_services/yomitan.service";
+import {
+  provideReaderDictionary,
+  ReaderDictionaryController
+} from "../../../reader-shared/dictionary/reader-dictionary.controller";
+import {LOOKUP_EXCLUDED_SELECTOR} from "../../../reader-shared/dictionary/epub-locator";
+import {ReaderClick, routeReaderClick} from "./reader-click-route";
 
 
 interface HistoryPoint {
@@ -138,7 +145,7 @@ const KEYBIND_TARGETS = [
   imports: [NgTemplateOutlet, NgStyle, NgClass, NgbTooltip,
     BookLineOverlayComponent, TranslocoDirective, ColumnLayoutClassPipe,
     WritingStyleClassPipe, ReadTimeLeftPipe, PercentPipe, NgxSliderModule],
-  providers: [EpubReaderSettingsService, LayoutMeasurementService],
+  providers: [EpubReaderSettingsService, LayoutMeasurementService, ...provideReaderDictionary()],
 })
 export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, AfterViewChecked {
 
@@ -172,6 +179,12 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
   private readonly entityTitleService = inject(EntityTitleService);
   private readonly injector = inject(Injector);
   private readonly yomitanService = inject(YomitanService);
+  private readonly dictionary = inject(ReaderDictionaryController);
+  /**
+   * The built-in dictionary handles lookups in this reader. It follows the reading profile's dictionary switch, and
+   * while it's on Yomitan scanning stays off
+   */
+  private dictionaryActive = false;
 
   libraryId!: number;
   seriesId!: number;
@@ -692,6 +705,10 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
             this.movePage(this.readingDirection() === ReadingDirection.LeftToRight ? PAGING_DIRECTION.FORWARD : PAGING_DIRECTION.BACKWARDS);
             break;
           case KeyBindTarget.Escape: {
+            if (this.dictionaryActive && this.dictionary.isPopupVisible()) {
+              this.dictionary.hidePopup();
+              return;
+            }
             if (this.yomitanService.isPopupVisible()) {
               this.yomitanService.hidePopup();
               return;
@@ -760,6 +777,11 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
         tap(_ => this.handleScrollEvent()),
         takeUntilDestroyed(this.destroyRef))
       .subscribe();
+
+    // Capture, so the dictionary decides before a link's or a highlight's own click handler runs
+    fromEvent<MouseEvent>(this.readingSectionElemRef().nativeElement, 'click', {capture: true})
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(event => this.routeDictionaryClick(event));
 
     const mouseMove$ = fromEvent<MouseEvent>(this.bookContainerElemRef().nativeElement, 'mousemove');
     const touchMove$ = fromEvent<TouchEvent>(this.bookContainerElemRef().nativeElement, 'touchmove');
@@ -905,6 +927,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
 
     this.readerService.disableWakeLock();
     void this.yomitanService.disableReaderScanning();
+    this.dictionary.detach();
 
     // Remove any debug viewport things
     this.document.querySelector('#test')?.remove();
@@ -1051,6 +1074,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     }
 
     this.continuousChaptersStack.push(this.chapterId);
+    if (this.dictionaryActive) this.dictionary.openChapter(this.chapterId);
 
     this.libraryService.getLibraryType(this.libraryId).subscribe(type => {
       this.libraryType = type;
@@ -1325,6 +1349,8 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
 
   loadPage(part?: string | undefined, scrollTop?: number | undefined) {
 
+    // The open word's range is about to leave the DOM
+    this.dictionary.hidePopup();
     this.isLoading.set(true);
     this.cdRef.markForCheck();
 
@@ -1553,6 +1579,8 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     this.annotationService.getAllAnnotations(this.chapterId).subscribe(_ => {
       this.setupAnnotationElements();
     });
+
+    if (this.dictionaryActive) this.dictionary.setPage(this.chapterId, this.pageNum());
   }
 
   private scroll(lambda: () => void) {
@@ -2184,7 +2212,11 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
       this.applyBookmarkIcons(!this.readerSettingsService.getSettingsForm().bookReaderDisableBookmarkIcon().value());
     }, { injector: injector });
     effect(() => {
-      if (this.readerSettingsService.yomitanEnabled()) {
+      const dictionaryEnabled = this.readerSettingsService.dictionaryEnabled();
+      untracked(() => this.setDictionaryActive(dictionaryEnabled));
+    }, { injector: injector });
+    effect(() => {
+      if (this.readerSettingsService.yomitanEnabled() && !this.readerSettingsService.dictionaryEnabled()) {
         this.yomitanService.enableReaderScanning('.book-content').catch(err => {
           console.error('Yomitan failed to start', err);
           this.toastr.error(translate('book-reader.yomitan-failed'));
@@ -2443,9 +2475,65 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     return side === 'right' ? 'highlight-2' : 'highlight';
   }
 
+  /**
+   * Turns the built-in dictionary on or off without a reload. Turning it on mid-page loads the tokens for the page
+   * already on screen, and a page still loading gets them from setupPage
+   */
+  private setDictionaryActive(active: boolean) {
+    if (active === this.dictionaryActive) return;
+    this.dictionaryActive = active;
+    if (!active) {
+      this.dictionary.detach();
+      return;
+    }
+    this.dictionary.attach(this.bookContentElemRef().nativeElement, {
+      vertical: () => this.writingStyle() === WritingStyle.Vertical,
+    });
+    this.dictionary.openChapter(this.chapterId);
+    if (this.page() !== undefined && !this.isLoading()) this.dictionary.setPage(this.chapterId, this.pageNum());
+  }
+
+  /** Runs in the capture phase on the reading section, ahead of every other click handler over the content */
+  private routeDictionaryClick(event: MouseEvent) {
+    if (!this.dictionaryActive) return;
+    const route = routeReaderClick(this.describeClick(event));
+    if (route === 'drop' || (route === 'dictionary' && this.dictionary.handleClick(event))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }
+
+  private describeClick(event: MouseEvent): ReaderClick {
+    const target = event.target instanceof Element ? event.target : null;
+    const selection = this.document.getSelection();
+    return {
+      dictionary: this.dictionaryActive,
+      dismissedPopup: this.dictionaryActive && this.dictionary.consumesClick(event),
+      onWord: this.isLookupClick(event),
+      onLink: target?.closest(LOOKUP_EXCLUDED_SELECTOR) != null,
+      hasSelection: selection !== null && !selection.isCollapsed && selection.toString() !== '',
+      onHighlight: target?.closest('app-epub-highlight') != null,
+    };
+  }
+
+  /** True when the active dictionary, built-in or Yomitan, will look up a word at this click */
+  private isLookupClick(event: MouseEvent) {
+    return this.dictionaryActive ? this.dictionary.isLookupClick(event) : this.yomitanService.isLookupClick(event);
+  }
+
+  /** A tap on a page-turn strip. The tap that closed the dictionary popup doesn't also turn the page */
+  paginateClick(event: MouseEvent, direction: PAGING_DIRECTION) {
+    if (this.dictionaryActive && this.dictionary.consumesClick(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    this.movePage(direction);
+  }
+
   handleReaderClick(event: MouseEvent) {
-    // Yomitan handles clicks on words itself
-    if (this.yomitanService.isLookupClick(event)) return;
+    // Words belong to the active dictionary. The built-in one has already taken its clicks in the capture phase
+    if (this.isLookupClick(event)) return;
 
     if (!this.clickToPaginate() && !this.immersiveMode()) {
       event.preventDefault();
@@ -2467,7 +2555,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     const mouseOffset = 5;
 
     if (!this.immersiveMode()) return;
-    if (this.yomitanService.isLookupClick(event)) return;
+    if (this.isLookupClick(event)) return;
     if (targetElement.getAttribute('onclick') !== null || targetElement.getAttribute('href') !== null || targetElement.getAttribute('role') !== null || targetElement.getAttribute('kavita-part') != null) {
       // Don't do anything, it's actionable
       return;
