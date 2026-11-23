@@ -12,13 +12,12 @@ using Kavita.Models.DTOs.Dictionary;
 using Kavita.Models.DTOs.SignalR;
 using Kavita.Models.Entities.Enums;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Kavita.Services.Dictionary;
 
 public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork unitOfWork, IReadingStore readingStore,
-    ITokenizeService tokenizeService, ITokenizeWorkerSignal workerSignal, IEventHub eventHub, IMemoryCache cache)
+    ITokenizeService tokenizeService, ITokenizeWorkerSignal workerSignal, IEventHub eventHub)
     : IDictionaryService
 {
     /// <summary>
@@ -39,7 +38,6 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     /// request read the whole table
     /// </summary>
     private const int MaxSeedRows = 16384;
-    private static readonly TimeSpan RowSourceLifetime = TimeSpan.FromHours(12);
 
     public async Task<EpubPageTokensDto?> GetEpubPageAsync(int chapterId, int page, CancellationToken ct = default)
     {
@@ -165,7 +163,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
 
     public async Task<int> AnalyzeSeriesAsync(int seriesId, CancellationToken ct = default)
     {
-        var fileIds = await GetSeriesEpubFileIdsAsync(seriesId, ct);
+        var fileIds = await GetSeriesTokenizedFileIdsAsync(seriesId, ct);
         if (fileIds.Count > 0) await readingStore.RequestAnalysisAsync(fileIds, ReadingPriority.WholeBook, ct);
         return fileIds.Count;
     }
@@ -202,7 +200,6 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
                 .Select(r =>
                 {
                     var word = words[r.Row.WordId];
-                    RememberRowSource(r.Row.Id, draft.Unit);
                     return new AnalysisItemDto(r.Row.Id, r.Offset + r.Row.S, r.Offset + r.Row.E,
                         Slice(r.BlockText, r.Row.S, r.Row.E), word.Lemma, word.Readings.ToList(), word.Senses.ToList());
                 })
@@ -231,13 +228,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             .Select(r => new AnalysisRejectionDto(r.Id, RejectionReason(r, firstAnswers.GetValueOrDefault(r.Id))))
             .ToList();
 
-        // Counting per id works however the store treats a duplicate of a rejected answer
-        var rejectionsPerId = outcome.Rejected.GroupBy(r => r.Id).ToDictionary(g => g.Key, g => g.Count());
-        var storedIds = answers.GroupBy(a => a.Id)
-            .Where(g => g.Count() > rejectionsPerId.GetValueOrDefault(g.Key))
-            .Select(g => g.Key)
-            .ToList();
-        await SendAnalysisReadyAsync(storedIds, ct);
+        await SendAnalysisReadyAsync(outcome.StoredPages, ct);
 
         return new AnalysisStoreResultDto(outcome.Stored, rejected);
     }
@@ -353,28 +344,8 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         return new PassageDraft(builder.ToString(), rows, unit);
     }
 
-    /// <summary>
-    /// The store can't find a row by its id, so the page of each served row is kept here until its answer comes back
-    /// and open readers can be told. A row answered after the entry expires or the server restarts sends no event
-    /// </summary>
-    private void RememberRowSource(long rowId, PassageUnit unit)
+    private async Task SendAnalysisReadyAsync(IReadOnlyList<AnalysisStoredPage> sources, CancellationToken ct)
     {
-        cache.Set(RowSourceKey(rowId), new RowSource(unit.MangaFileId, unit.Page),
-            new MemoryCacheEntryOptions { Size = 1, SlidingExpiration = RowSourceLifetime });
-    }
-
-    private static string RowSourceKey(long rowId) => $"dictionary-analysis-row-{rowId}";
-
-    private async Task SendAnalysisReadyAsync(IReadOnlyList<long> storedIds, CancellationToken ct)
-    {
-        var sources = new List<RowSource>();
-        foreach (var id in storedIds)
-        {
-            if (!cache.TryGetValue<RowSource>(RowSourceKey(id), out var source) || source == null) continue;
-            sources.Add(source);
-            cache.Remove(RowSourceKey(id));
-        }
-
         if (sources.Count == 0) return;
 
         var fileIds = sources.Select(s => s.MangaFileId).Distinct().ToList();
@@ -412,6 +383,31 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             .ToListAsync(ct);
     }
 
+    /// <returns>The series' EPUB files the tokenizer handles, which are the only ones that can get analysis rows</returns>
+    private async Task<List<int>> GetSeriesTokenizedFileIdsAsync(int seriesId, CancellationToken ct)
+    {
+        var files = await unitOfWork.DataContext.MangaFile
+            .Where(f => f.Chapter.Volume.SeriesId == seriesId && f.Format == MangaFormat.Epub &&
+                        f.Chapter.Volume.Series.Library.EnableDictionary)
+            .Select(f => new { f.Id, ChapterLanguage = f.Chapter.Language, SeriesLanguage = f.Chapter.Volume.Series.Metadata.Language })
+            .ToListAsync(ct);
+
+        return files
+            .Where(f => IsJapanese(string.IsNullOrWhiteSpace(f.ChapterLanguage) ? f.SeriesLanguage : f.ChapterLanguage))
+            .Select(f => f.Id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The same rule as TokenizeService.IsJapanese, which decides which files get tokenized. Keep the two in step
+    /// </summary>
+    private static bool IsJapanese(string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language)) return false;
+        var code = language.Trim().ToLowerInvariant();
+        return code is "ja" or "jpn" || code.StartsWith("ja-") || code.StartsWith("ja_");
+    }
+
     private static string Slice(string text, int s, int e)
     {
         s = Math.Clamp(s, 0, text.Length);
@@ -426,6 +422,4 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     private sealed record PassageRow(StoredAnalysis Row, int Offset, string BlockText);
 
     private sealed record PassageDraft(string Text, IReadOnlyList<PassageRow> Rows, PassageUnit Unit);
-
-    private sealed record RowSource(int MangaFileId, int Page);
 }

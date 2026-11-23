@@ -13,7 +13,6 @@ using Kavita.Models.Entities.Enums;
 using Kavita.Services.Builders;
 using Kavita.Services.Dictionary;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using Xunit.Abstractions;
@@ -41,7 +40,8 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     private sealed record Book(IUnitOfWork UnitOfWork, DataContext Context, DictionaryService Service, Series Series,
         Chapter First, Chapter Second, MangaFile FirstFile, MangaFile SecondFile);
 
-    private async Task<Book> Setup()
+    private async Task<Book> Setup(bool enableDictionary = true, string firstLanguage = "ja", string secondLanguage = "ja",
+        string seriesLanguage = "")
     {
         var (unitOfWork, context, _) = await CreateDatabase();
 
@@ -51,15 +51,21 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var first = new ChapterBuilder("1").WithFile(firstFile).Build();
         var second = new ChapterBuilder("2").WithFile(secondFile).Build();
         var notes = new ChapterBuilder("3").WithFile(pdf).Build();
+        first.Language = firstLanguage;
+        second.Language = secondLanguage;
+        notes.Language = "ja";
         var series = new SeriesBuilder("Kokoro")
             .WithFormat(MangaFormat.Epub)
             .WithVolume(new VolumeBuilder("1").WithChapter(first).WithChapter(second).WithChapter(notes).Build())
             .Build();
-        context.Library.Add(new LibraryBuilder("Japanese", LibraryType.Book).WithSeries(series).Build());
+        series.Metadata.Language = seriesLanguage;
+        var library = new LibraryBuilder("Japanese", LibraryType.Book).WithSeries(series).Build();
+        library.EnableDictionary = enableDictionary;
+        context.Library.Add(library);
         await context.SaveChangesAsync();
 
         var service = new DictionaryService(Substitute.For<ILogger<DictionaryService>>(), unitOfWork, _store,
-            _tokenizeService, _workerSignal, _eventHub, new MemoryCache(new MemoryCacheOptions()));
+            _tokenizeService, _workerSignal, _eventHub);
         return new Book(unitOfWork, context, service, series, first, second, firstFile, secondFile);
     }
 
@@ -297,7 +303,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
-    public async Task AnalyzeSeries_RequestsEveryEpubOfTheSeriesAtWholeBookPriority()
+    public async Task AnalyzeSeries_RequestsEveryJapaneseEpubOfTheSeriesAtWholeBookPriority()
     {
         var book = await Setup();
 
@@ -310,9 +316,35 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
-    public async Task RemoveSeries_ClearsTheAnalysisOfEveryEpubOfTheSeries()
+    public async Task AnalyzeSeries_RequestsNothingWhenTheLibraryHasTheDictionaryOff()
     {
-        var book = await Setup();
+        var book = await Setup(enableDictionary: false);
+
+        Assert.Equal(0, await book.Service.AnalyzeSeriesAsync(book.Series.Id));
+        await _store.DidNotReceiveWithAnyArgs().RequestAnalysisAsync(default!, default, default);
+    }
+
+    [Theory]
+    [InlineData("ja", "", true)]
+    [InlineData("JA-jp", "", true)]
+    [InlineData("ja_JP", "", true)]
+    [InlineData("jpn", "", true)]
+    [InlineData("", "ja", true)]
+    [InlineData("en", "ja", false)]
+    [InlineData("", "", false)]
+    [InlineData("jav", "", false)]
+    public async Task AnalyzeSeries_TakesTheChapterLanguageAndFallsBackToTheSeries(string chapterLanguage,
+        string seriesLanguage, bool requested)
+    {
+        var book = await Setup(firstLanguage: chapterLanguage, secondLanguage: "en", seriesLanguage: seriesLanguage);
+
+        Assert.Equal(requested ? 1 : 0, await book.Service.AnalyzeSeriesAsync(book.Series.Id));
+    }
+
+    [Fact]
+    public async Task RemoveSeries_ClearsTheAnalysisOfEveryEpubOfTheSeriesEvenWhenNotEligible()
+    {
+        var book = await Setup(enableDictionary: false, firstLanguage: "en");
 
         await book.Service.RemoveSeriesAsync(book.Series.Id);
 
@@ -562,16 +594,13 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     [Fact]
     public async Task StoreAnalysis_TellsReadersWhichPagesGotAnswers()
     {
+        // No passage was served in this process, as after a restart, so the event comes from StoredPages alone
         var book = await Setup();
-        GivenWords(Karai);
-        GivenQueue(
-            GivenUnit(5, book.FirstFile.Id, 0, ["辛い"], Row(1, 5, 0, 0, 2, Karai.Id))
-                .Concat(GivenUnit(6, book.FirstFile.Id, 4, ["辛い"], Row(2, 6, 0, 0, 2, Karai.Id)))
-                .Concat(GivenUnit(7, book.SecondFile.Id, 1, ["辛い"], Row(3, 7, 0, 0, 2, Karai.Id)))
-                .Concat(GivenUnit(8, book.SecondFile.Id, 2, ["辛い"], Row(4, 8, 0, 0, 2, Karai.Id))));
-        await book.Service.GetPendingAnalysisAsync(4, 0);
         _store.StoreAnalysisAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AnalysisAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(new AnalysisStoreOutcome(3, [new AnalysisRejection(4, AnalysisRejectReason.SenseNotOffered)]));
+            .Returns(new AnalysisStoreOutcome(3, [new AnalysisRejection(4, AnalysisRejectReason.SenseNotOffered)])
+            {
+                StoredPages = [new(book.FirstFile.Id, 0), new(book.FirstFile.Id, 4), new(book.SecondFile.Id, 1)],
+            });
 
         await book.Service.StoreAnalysisAsync(Answers(
             new AnalysisAnswerDto(2, "1001:1", null),
@@ -585,6 +614,40 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Arg.Is<SignalRMessageDto>(m => IsReady(m, book.Series.Id, book.Second.Id, 1)), false, Arg.Any<CancellationToken>());
         await _eventHub.Received(2).SendMessageAsync(Arg.Any<string>(), Arg.Any<SignalRMessageDto>(), Arg.Any<bool>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_ReturnsTheStoresCountForABatchOfNullAnswers()
+    {
+        var book = await Setup();
+        _store.StoreAnalysisAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AnalysisAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalysisStoreOutcome(3, []) { StoredPages = [new(book.FirstFile.Id, 2)] });
+
+        var result = await book.Service.StoreAnalysisAsync(Answers(
+            new AnalysisAnswerDto(1, null, null),
+            new AnalysisAnswerDto(2, null, null),
+            new AnalysisAnswerDto(3, null, null)));
+
+        Assert.Equal(3, result.Stored);
+        Assert.Empty(result.Rejected);
+        await _store.Received(1).StoreAnalysisAsync("claude-sonnet", "p1",
+            Arg.Is<IReadOnlyList<AnalysisAnswer>>(a => a.Count == 3 && a.All(x => x.SenseKey == null && x.Reading == null)),
+            Arg.Any<CancellationToken>());
+        await _eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryAnalysisReady,
+            Arg.Is<SignalRMessageDto>(m => IsReady(m, book.Series.Id, book.First.Id, 2)), false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_SendsNothingWhenNoPageGotAnswers()
+    {
+        var book = await Setup();
+        _store.StoreAnalysisAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AnalysisAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalysisStoreOutcome(0, [new AnalysisRejection(1, AnalysisRejectReason.NotPending)]));
+
+        var result = await book.Service.StoreAnalysisAsync(Answers(new AnalysisAnswerDto(1, null, null)));
+
+        Assert.Equal(0, result.Stored);
+        await _eventHub.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default, default);
     }
 
     private static bool IsReady(SignalRMessageDto message, int seriesId, int chapterId, params int[] pages)
