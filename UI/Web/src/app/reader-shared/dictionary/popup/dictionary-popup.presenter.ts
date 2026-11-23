@@ -1,4 +1,5 @@
 import {ComponentRef, DestroyRef, DOCUMENT, inject, Injectable, Injector} from '@angular/core';
+import {Location} from '@angular/common';
 import {
   createGlobalPositionStrategy,
   createNoopScrollStrategy,
@@ -7,9 +8,17 @@ import {
   OverlayRef,
 } from '@angular/cdk/overlay';
 import {ComponentPortal} from '@angular/cdk/portal';
-import {Subscription} from 'rxjs';
+import {Subscription, SubscriptionLike} from 'rxjs';
 import {DictionaryPopupComponent} from './dictionary-popup.component';
-import {isOutOfView, placePopover, POPOVER_MIN_WIDTH, Size} from './popup-position';
+import {
+  isOutOfView,
+  placePopover,
+  POPOVER_HEIGHT_SHARE,
+  POPOVER_MIN_WIDTH,
+  POPOVER_WIDTH,
+  POPOVER_WIDTH_SHARE,
+  Size,
+} from './popup-position';
 import {DictionaryPopupMode, DictionaryPopupView} from './popup-state';
 
 export interface PopupShowOptions {
@@ -17,11 +26,13 @@ export interface PopupShowOptions {
   viaKeyboard: boolean;
 }
 
+/** Why the popup closed itself */
+export type PopupCloseReason = 'close-button' | 'escape' | 'outside' | 'out-of-view' | 'navigation';
+
 export interface PopupHandlers {
   part(sub: number): void;
   back(): void;
-  /** The popup closed itself, on Close, Escape, an outside pointer-down or the word scrolling away */
-  closed(): void;
+  closed(reason: PopupCloseReason): void;
 }
 
 /**
@@ -34,11 +45,13 @@ export class DictionaryPopupPresenter {
 
   private readonly injector = inject(Injector);
   private readonly document = inject(DOCUMENT);
+  private readonly location = inject(Location, {optional: true});
 
   private overlayRef: OverlayRef | null = null;
   private strategy: GlobalPositionStrategy | null = null;
   private componentRef: ComponentRef<DictionaryPopupComponent> | null = null;
-  private outputs = new Subscription();
+  private subscriptions = new Subscription();
+  private locationSubscription: SubscriptionLike | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private anchor: Range | null = null;
   private vertical = false;
@@ -72,12 +85,25 @@ export class DictionaryPopupPresenter {
     this.componentRef?.setInput('view', view);
   }
 
-  /** Closes the popup without telling the handlers, for when the caller closes it */
+  /**
+   * Closes the popup without telling the handlers, for when the caller closes it. Focus goes back to where it was
+   * before the popup opened only when it's inside the popup, so it isn't left on an element that's gone
+   */
   hide(): void {
+    const active = this.document.activeElement;
+    this.teardown(active !== null && this.overlayRef?.overlayElement.contains(active) === true);
+  }
+
+  private teardown(restoreFocus: boolean) {
+    const focus = this.returnFocus;
+    this.returnFocus = null;
     if (this.overlayRef === null) return;
     this.removeListeners();
-    this.outputs.unsubscribe();
-    this.outputs = new Subscription();
+    // Unsubscribed first, so the detachment the dispose below causes doesn't read as an outside close
+    this.subscriptions.unsubscribe();
+    this.subscriptions = new Subscription();
+    this.locationSubscription?.unsubscribe();
+    this.locationSubscription = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.overlayRef.dispose();
@@ -86,6 +112,7 @@ export class DictionaryPopupPresenter {
     this.componentRef = null;
     this.anchor = null;
     this.handlers = null;
+    if (restoreFocus && focus?.isConnected) focus.focus({preventScroll: true});
   }
 
   private create() {
@@ -96,7 +123,9 @@ export class DictionaryPopupPresenter {
       hasBackdrop: false,
       // Kept in the overlay container under body, where the reader theme's variables reach it
       usePopover: false,
-      disposeOnNavigation: true,
+      // CDK's own disposal would skip the handlers and leave the open word marked. The location listener below closes
+      // through closeSelf instead
+      disposeOnNavigation: false,
     });
     this.overlayRef.overlayElement.style.visibility = 'hidden';
 
@@ -104,9 +133,12 @@ export class DictionaryPopupPresenter {
     this.componentRef = ref;
     this.mode = this.currentMode();
     ref.setInput('mode', this.mode);
-    this.outputs.add(ref.instance.part.subscribe(sub => this.handlers?.part(sub)));
-    this.outputs.add(ref.instance.back.subscribe(() => this.handlers?.back()));
-    this.outputs.add(ref.instance.dismiss.subscribe(() => this.closeSelf(true)));
+    this.subscriptions.add(ref.instance.part.subscribe(sub => this.handlers?.part(sub)));
+    this.subscriptions.add(ref.instance.back.subscribe(() => this.handlers?.back()));
+    this.subscriptions.add(ref.instance.dismiss.subscribe(() => this.closeSelf('close-button', true)));
+    // Anything else that disposes the overlay still runs the full close
+    this.subscriptions.add(this.overlayRef.detachments().subscribe(() => this.closeSelf('navigation', false)));
+    this.locationSubscription = this.location?.subscribe(() => this.closeSelf('navigation', false)) ?? null;
 
     if (typeof ResizeObserver === 'function') {
       // The popup grows when a lookup answers, and a popover above the word has to move up with it
@@ -126,10 +158,28 @@ export class DictionaryPopupPresenter {
     return {width: root.clientWidth, height: root.clientHeight};
   }
 
+  /** The popover's size before any cap, so a capped popover doesn't measure itself as fitting next time */
+  private naturalSize(viewport: Size): Size {
+    const panel = this.overlayRef?.overlayElement.querySelector('.dp');
+    const height = panel?.scrollHeight ?? 0;
+    return {
+      width: Math.min(POPOVER_WIDTH, viewport.width * POPOVER_WIDTH_SHARE),
+      height: Math.min(height, viewport.height * POPOVER_HEIGHT_SHARE),
+    };
+  }
+
   private reposition = () => {
     const overlayRef = this.overlayRef;
     const strategy = this.strategy;
     if (overlayRef === null || strategy === null || this.anchor === null) return;
+
+    const viewport = this.viewport();
+    const word = this.anchor.getBoundingClientRect();
+    // Also catches a page that re-rendered under the popup, which collapses the range to an empty box
+    if (isOutOfView(word, viewport)) {
+      this.closeSelf('out-of-view', false);
+      return;
+    }
 
     const mode = this.currentMode();
     if (mode !== this.mode) {
@@ -137,24 +187,27 @@ export class DictionaryPopupPresenter {
       this.componentRef?.setInput('mode', mode);
     }
 
+    const pane = overlayRef.overlayElement;
     if (mode === 'sheet') {
       overlayRef.updateSize({width: '100%'});
+      pane.style.removeProperty('--dp-max-height');
+      pane.style.removeProperty('--dp-max-width');
       strategy.left('0px').bottom('0px');
     } else {
       overlayRef.updateSize({width: ''});
-      const pane = overlayRef.overlayElement.getBoundingClientRect();
-      const word = this.anchor.getBoundingClientRect();
-      const place = placePopover(word, this.viewport(), {width: pane.width, height: pane.height}, this.vertical);
+      const place = placePopover(word, viewport, this.naturalSize(viewport), this.vertical);
+      setCap(pane, '--dp-max-height', place.maxHeight);
+      setCap(pane, '--dp-max-width', place.maxWidth);
       strategy.left(`${place.left}px`).top(`${place.top}px`);
     }
     overlayRef.updatePosition();
-    overlayRef.overlayElement.style.visibility = '';
+    pane.style.visibility = '';
   };
 
   private onPointerDown = (event: PointerEvent) => {
     const target = event.target;
     if (target instanceof Node && this.overlayRef?.overlayElement.contains(target)) return;
-    this.closeSelf(false);
+    this.closeSelf('outside', false);
   };
 
   private onKeyDown = (event: KeyboardEvent) => {
@@ -162,17 +215,12 @@ export class DictionaryPopupPresenter {
     // The reader closes itself on Escape, so the key stops here while the popup is open
     event.preventDefault();
     event.stopPropagation();
-    this.closeSelf(true);
+    this.closeSelf('escape', true);
   };
 
   private onScroll = (event: Event) => {
     const target = event.target;
     if (target instanceof Node && this.overlayRef?.overlayElement.contains(target)) return;
-    if (this.anchor === null) return;
-    if (isOutOfView(this.anchor.getBoundingClientRect(), this.viewport())) {
-      this.closeSelf(false);
-      return;
-    }
     this.reposition();
   };
 
@@ -193,12 +241,15 @@ export class DictionaryPopupPresenter {
     view?.removeEventListener('resize', this.onScroll);
   }
 
-  private closeSelf(restoreFocus: boolean) {
+  private closeSelf(reason: PopupCloseReason, restoreFocus: boolean) {
     const handlers = this.handlers;
-    const focus = this.returnFocus;
-    this.hide();
-    this.returnFocus = null;
-    if (restoreFocus && focus?.isConnected) focus.focus({preventScroll: true});
-    handlers?.closed();
+    if (this.overlayRef === null) return;
+    this.teardown(restoreFocus);
+    handlers?.closed(reason);
   }
+}
+
+function setCap(pane: HTMLElement, property: string, value: number | undefined) {
+  if (value === undefined) pane.style.removeProperty(property);
+  else pane.style.setProperty(property, `${value}px`);
 }

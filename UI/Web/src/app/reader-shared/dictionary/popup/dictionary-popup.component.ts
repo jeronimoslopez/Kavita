@@ -77,9 +77,4 @@ export class DictionaryPopupComponent {
         {injector: this.injector}));
     });
   }
-
-  /** The element the presenter checks pointer-downs against and measures */
-  get element(): HTMLElement {
-    return this.panel().nativeElement;
-  }
 }

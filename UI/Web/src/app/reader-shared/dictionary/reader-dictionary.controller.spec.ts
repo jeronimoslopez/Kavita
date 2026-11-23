@@ -9,11 +9,12 @@ import {
 import {DictionaryService} from '../../_services/dictionary.service';
 import {EVENTS, Message, MessageHubService} from '../../_services/message-hub.service';
 import {EpubHit} from './epub-locator';
-import {DictionaryPopupPresenter, PopupHandlers} from './popup/dictionary-popup.presenter';
+import {DictionaryPopupPresenter, PopupCloseReason, PopupHandlers} from './popup/dictionary-popup.presenter';
 import {DictionaryPopupView} from './popup/popup-state';
 import {
   DICTIONARY_HIGHLIGHTER,
   DICTIONARY_WORD_LOCATOR,
+  DISMISS_CLICK_WINDOW_MS,
   ReaderDictionaryController,
 } from './reader-dictionary.controller';
 
@@ -90,11 +91,18 @@ class FakePresenter {
     return this.views[this.views.length - 1];
   }
 
-  /** What the real presenter does on Close, Escape or an outside tap */
-  closeFromPopup() {
+  /** What the real presenter does on Close, Escape, an outside tap or the word leaving the screen */
+  closeFromPopup(reason: PopupCloseReason = 'close-button') {
     this.visible = false;
-    this.handlers?.closed();
+    this.handlers?.closed(reason);
   }
+}
+
+function hitOn(node: Text, s: number, e: number, endNode: Node = node, endOffset = e): EpubHit {
+  const range = document.createRange();
+  range.setStart(node, s);
+  range.setEnd(endNode, endOffset);
+  return {blockIndex: 4, token: [s, e, 1, null, null], s, e, offset: s, range};
 }
 
 describe('ReaderDictionaryController', () => {
@@ -102,6 +110,8 @@ describe('ReaderDictionaryController', () => {
   let presenter: FakePresenter;
   let messages: Subject<Message<DictionaryPagesEvent>>;
   let hit: EpubHit | null;
+  /** The tokens the controller last handed the locator */
+  let seenPage: EpubPageTokens | null;
   let highlighter: {mark: ReturnType<typeof vi.fn>, clear: ReturnType<typeof vi.fn>};
   let controller: ReaderDictionaryController;
   let container: HTMLElement;
@@ -111,12 +121,12 @@ describe('ReaderDictionaryController', () => {
     presenter = new FakePresenter();
     messages = new Subject();
     highlighter = {mark: vi.fn(), clear: vi.fn()};
+    seenPage = null;
     container = document.createElement('div');
-    container.textContent = '新聞社';
+    // Block 4 reads 今日の朝刊と、新聞社, and the hit is 新聞社 at 7 to 10
+    container.innerHTML = '<p data-kb="4">今日の朝刊と、新聞社</p>';
     document.body.appendChild(container);
-    const range = document.createRange();
-    range.selectNodeContents(container);
-    hit = {blockIndex: 4, token: [7, 10, 1, null, null], s: 7, e: 10, offset: 8, range};
+    hit = hitOn(container.querySelector('p')!.firstChild as Text, 7, 10);
 
     TestBed.configureTestingModule({
       providers: [
@@ -124,7 +134,10 @@ describe('ReaderDictionaryController', () => {
         {provide: DictionaryService, useValue: dictionary},
         {provide: MessageHubService, useValue: {messages$: messages}},
         {provide: DictionaryPopupPresenter, useValue: presenter},
-        {provide: DICTIONARY_WORD_LOCATOR, useValue: () => hit},
+        {provide: DICTIONARY_WORD_LOCATOR, useValue: (_x: number, _y: number, _c: Element, page: EpubPageTokens) => {
+          seenPage = page;
+          return hit;
+        }},
         {provide: DICTIONARY_HIGHLIGHTER, useValue: highlighter},
       ],
     });
@@ -189,10 +202,51 @@ describe('ReaderDictionaryController', () => {
   it('drops a page response that arrives after the page changed', () => {
     controller.setPage(5, 2);
     controller.setPage(5, 3);
+    // The request for page 2 is unsubscribed, which is the guard
+    expect(dictionary.pages[0].reply.observed).toBe(false);
+    dictionary.answerPage(1, null);
     dictionary.answerPage(0, TOKENS);
     expect(controller.isLookupClick(click())).toBe(false);
-    dictionary.answerPage(1, TOKENS);
+
+    ready(EVENTS.DictionaryPagesReady, 5, [3]);
+    dictionary.answerPage(2, TOKENS);
     expect(controller.isLookupClick(click())).toBe(true);
+  });
+
+  it('loads again when DictionaryPagesReady arrives while the request is out and the answer is a 204', () => {
+    controller.setPage(5, 2);
+    ready(EVENTS.DictionaryPagesReady, 5, [2]);
+    expect(dictionary.pages).toHaveLength(1);
+
+    dictionary.answerPage(0, null);
+    expect(dictionary.pages).toHaveLength(2);
+    expect(dictionary.pages[1]).toMatchObject({chapterId: 5, page: 2});
+    const tokens = {...TOKENS, version: 'v2'};
+    dictionary.answerPage(1, tokens);
+    expect(controller.isLookupClick(click())).toBe(true);
+    expect(seenPage).toBe(tokens);
+  });
+
+  it('reloads a loaded page when it is tokenized again', () => {
+    controller.setPage(5, 2);
+    dictionary.answerPage(0, TOKENS);
+    ready(EVENTS.DictionaryPagesReady, 5, [2]);
+    expect(dictionary.pages).toHaveLength(2);
+    const newer = {...TOKENS, version: 'v2'};
+    dictionary.answerPage(1, newer);
+    expect(controller.isLookupClick(click())).toBe(true);
+    expect(seenPage).toBe(newer);
+  });
+
+  it('takes the surface from the block text, leaving out ruby readings', () => {
+    container.innerHTML = '<p data-kb="4"><ruby>漢字<rt>かんじ</rt></ruby>です</p>';
+    const base = container.querySelector('ruby')!.firstChild as Text;
+    const after = container.querySelector('p')!.lastChild as Text;
+    hit = hitOn(base, 0, 2, after, 0);
+    expect(hit.range.toString()).toBe('漢字かんじ');
+
+    openOnPage();
+    expect(presenter.view.surface).toBe('漢字');
   });
 
   it('returns false off a word and while text is selected', () => {
@@ -202,10 +256,8 @@ describe('ReaderDictionaryController', () => {
     expect(controller.handleClick(click())).toBe(false);
     expect(presenter.shown).toHaveLength(0);
 
-    const range = document.createRange();
-    range.selectNodeContents(container);
-    hit = {blockIndex: 4, token: [7, 10, 1, null, null], s: 7, e: 10, offset: 8, range};
-    document.getSelection()?.addRange(range);
+    hit = hitOn(container.querySelector('p')!.firstChild as Text, 7, 10);
+    document.getSelection()?.addRange(hit.range.cloneRange());
     expect(controller.isLookupClick(click())).toBe(false);
     expect(controller.handleClick(click())).toBe(false);
   });
@@ -258,6 +310,68 @@ describe('ReaderDictionaryController', () => {
 
     ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
     expect(dictionary.lookups).toHaveLength(2);
+  });
+
+  it('looks the word up once more when its analysis arrives during the first lookup', () => {
+    openOnPage();
+    ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+    expect(dictionary.lookups).toHaveLength(1);
+
+    dictionary.answerLookup(0, lookupResult('辛い'));
+    expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: null}});
+    expect(dictionary.lookups).toHaveLength(2);
+    expect(dictionary.lookups[1].request.sub).toBeNull();
+
+    dictionary.answerLookup(1, lookupResult('辛い', {senseKey: '1:1', reading: null, generator: 'claude'}));
+    expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: {senseKey: '1:1'}}});
+    expect(dictionary.lookups).toHaveLength(2);
+  });
+
+  it('does not look up again when the first answer already has the analysis', () => {
+    openOnPage();
+    ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+    dictionary.answerLookup(0, lookupResult('辛い', {senseKey: '1:1', reading: null, generator: 'claude'}));
+    expect(dictionary.lookups).toHaveLength(1);
+  });
+
+  it('consumes the click that follows an outside dismissal, for every handler that asks', () => {
+    openOnPage();
+    presenter.closeFromPopup('outside');
+    hit = null;
+    const blank = click();
+    expect(controller.consumesClick(blank)).toBe(true);
+    expect(controller.consumesClick(blank)).toBe(true);
+
+    const later = click();
+    expect(controller.consumesClick(later)).toBe(false);
+  });
+
+  it('does not consume a click on another word, so it opens there', () => {
+    openOnPage();
+    presenter.closeFromPopup('outside');
+    const onWord = click();
+    expect(controller.consumesClick(onWord)).toBe(false);
+    expect(controller.handleClick(onWord)).toBe(true);
+    expect(controller.isPopupVisible()).toBe(true);
+  });
+
+  it('consumes nothing after the window or after a close that was not an outside tap', () => {
+    vi.useFakeTimers();
+    try {
+      openOnPage();
+      presenter.closeFromPopup('outside');
+      hit = null;
+      vi.advanceTimersByTime(DISMISS_CLICK_WINDOW_MS + 1);
+      expect(controller.consumesClick(click())).toBe(false);
+
+      hit = hitOn(container.querySelector('p')!.firstChild as Text, 7, 10);
+      controller.handleClick(click());
+      presenter.closeFromPopup('close-button');
+      hit = null;
+      expect(controller.consumesClick(click())).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('clears the highlight when the popup closes itself or is hidden', () => {

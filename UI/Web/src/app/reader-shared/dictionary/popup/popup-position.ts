@@ -7,6 +7,11 @@ export const POPOVER_OFFSET = 12;
 /** The popover never comes closer to a viewport edge than this */
 export const VIEWPORT_MARGIN = 8;
 
+/** The popover's width, min(380px, 84vw), and its height cap of 72vh, from shimen's Popover recipe */
+export const POPOVER_WIDTH = 380;
+export const POPOVER_WIDTH_SHARE = 0.84;
+export const POPOVER_HEIGHT_SHARE = 0.72;
+
 export interface Box {
   left: number;
   top: number;
@@ -26,6 +31,10 @@ export interface Placement {
   left: number;
   top: number;
   side: PopupSide;
+  /** Set when the popover fits on neither side of the word. It scrolls inside this height */
+  maxHeight?: number;
+  /** The same cap across the lines, in vertical text */
+  maxWidth?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -36,36 +45,42 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * Where the popover goes for a word. In horizontal text it sits below the word, starting at the word's left edge,
  * and flips above when there's no room below. In vertical text it sits to the left of the word, the way the lines
- * advance, and falls back to the right. When neither side fits, it takes the side with more room. The other axis
- * is clamped so the popover stays on screen
+ * advance, and falls back to the right. When neither side fits, it takes the side with more room and is capped to
+ * that room, so it never covers the word. The other axis is clamped so the popover stays on screen
  */
 export function placePopover(word: Box, viewport: Size, popup: Size, vertical: boolean): Placement {
   const m = VIEWPORT_MARGIN;
   if (vertical) {
-    const leftX = word.left - POPOVER_OFFSET - popup.width;
     const rightX = word.left + word.width + POPOVER_OFFSET;
-    const roomLeft = word.left - POPOVER_OFFSET - m;
-    const roomRight = viewport.width - rightX - m;
+    const roomLeft = Math.max(0, word.left - POPOVER_OFFSET - m);
+    const roomRight = Math.max(0, viewport.width - rightX - m);
     let side: PopupSide;
-    if (popup.width <= roomLeft) side = 'left';
-    else if (popup.width <= roomRight) side = 'right';
-    else side = roomLeft >= roomRight ? 'left' : 'right';
-    const left = clamp(side === 'left' ? leftX : rightX, m, viewport.width - popup.width - m);
+    let width = popup.width;
+    if (width <= roomLeft) side = 'left';
+    else if (width <= roomRight) side = 'right';
+    else {
+      side = roomLeft >= roomRight ? 'left' : 'right';
+      width = side === 'left' ? roomLeft : roomRight;
+    }
+    const left = side === 'left' ? word.left - POPOVER_OFFSET - width : rightX;
     const top = clamp(word.top, m, viewport.height - popup.height - m);
-    return {left, top, side};
+    return width < popup.width ? {left, top, side, maxWidth: width} : {left, top, side};
   }
 
   const belowY = word.top + word.height + POPOVER_OFFSET;
-  const aboveY = word.top - POPOVER_OFFSET - popup.height;
-  const roomBelow = viewport.height - belowY - m;
-  const roomAbove = word.top - POPOVER_OFFSET - m;
+  const roomBelow = Math.max(0, viewport.height - belowY - m);
+  const roomAbove = Math.max(0, word.top - POPOVER_OFFSET - m);
   let side: PopupSide;
-  if (popup.height <= roomBelow) side = 'below';
-  else if (popup.height <= roomAbove) side = 'above';
-  else side = roomBelow >= roomAbove ? 'below' : 'above';
-  const top = clamp(side === 'below' ? belowY : aboveY, m, viewport.height - popup.height - m);
+  let height = popup.height;
+  if (height <= roomBelow) side = 'below';
+  else if (height <= roomAbove) side = 'above';
+  else {
+    side = roomBelow >= roomAbove ? 'below' : 'above';
+    height = side === 'below' ? roomBelow : roomAbove;
+  }
+  const top = side === 'below' ? belowY : word.top - POPOVER_OFFSET - height;
   const left = clamp(word.left, m, viewport.width - popup.width - m);
-  return {left, top, side};
+  return height < popup.height ? {left, top, side, maxHeight: height} : {left, top, side};
 }
 
 /** True when no part of the word is on screen. A range whose nodes left the page measures as an empty box */

@@ -18,10 +18,16 @@ describe('placePopover in horizontal text', () => {
       .toEqual({left: 200, top: 600 - POPOVER_OFFSET - 300, side: 'above'});
   });
 
-  it('takes the side with more room when neither fits, and stays on screen', () => {
-    const place = placePopover(word(200, 100), {width: 1280, height: 500}, {width: 380, height: 450}, false);
-    expect(place.side).toBe('below');
-    expect(place.top).toBe(500 - 450 - VIEWPORT_MARGIN);
+  it('takes the side with more room when neither fits, and caps its height to that room', () => {
+    const below = placePopover(word(200, 100), {width: 1280, height: 500}, {width: 380, height: 450}, false);
+    const belowY = 100 + 24 + POPOVER_OFFSET;
+    expect(below).toEqual({left: 200, top: belowY, side: 'below', maxHeight: 500 - belowY - VIEWPORT_MARGIN});
+
+    const above = placePopover(word(200, 380), {width: 1280, height: 500}, {width: 380, height: 450}, false);
+    const room = 380 - POPOVER_OFFSET - VIEWPORT_MARGIN;
+    expect(above).toEqual({left: 200, top: VIEWPORT_MARGIN, side: 'above', maxHeight: room});
+    // The capped popover ends above the word, not over it
+    expect(above.top + room).toBe(380 - POPOVER_OFFSET);
   });
 
   it('moves left to stay on screen near the right edge', () => {
@@ -38,6 +44,12 @@ describe('placePopover in vertical text', () => {
   it('falls back to the right when there is no room on the left', () => {
     expect(placePopover(word(100, 150, 24, 60), viewport, popup, true))
       .toEqual({left: 100 + 24 + POPOVER_OFFSET, top: 150, side: 'right'});
+  });
+
+  it('caps its width to the larger side when neither side fits', () => {
+    const place = placePopover(word(300, 150, 24, 60), {width: 600, height: 800}, popup, true);
+    const room = 300 - POPOVER_OFFSET - VIEWPORT_MARGIN;
+    expect(place).toEqual({left: VIEWPORT_MARGIN, top: 150, side: 'left', maxWidth: room});
   });
 
   it('moves up to stay on screen near the bottom', () => {
