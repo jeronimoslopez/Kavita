@@ -865,6 +865,7 @@ public class TaskScheduler : ITaskScheduler
     {
         var enqueuedJobs =  JobStorage.Current.GetMonitoringApi().EnqueuedJobs(queue, 0, int.MaxValue);
         var ret = enqueuedJobs.Exists(j => j.Value.InEnqueuedState &&
+                                           j.Value.Job != null &&
                                            j.Value.Job.Method.DeclaringType != null && j.Value.Job.Args.SequenceEqual(args) &&
                                            j.Value.Job.Method.Name.Equals(methodName) &&
                                            j.Value.Job.Method.DeclaringType.Name.Equals(className));
@@ -883,6 +884,7 @@ public class TaskScheduler : ITaskScheduler
 
         var runningJobs = JobStorage.Current.GetMonitoringApi().ProcessingJobs(0, int.MaxValue);
         return runningJobs.Exists(j =>
+            j.Value.Job != null &&
             j.Value.Job.Method.DeclaringType != null && j.Value.Job.Args.SequenceEqual(args) &&
             j.Value.Job.Method.Name.Equals(methodName) &&
             j.Value.Job.Method.DeclaringType.Name.Equals(className));
