@@ -1863,14 +1863,16 @@ public partial class BookService(
         var mappings = await CreateKeyToPageMappingAsync(book, ct);
         var apiBase = baseUrl + "book/" + chapterId + "/" + string.Format(BookApiUrl, authKey);
 
+        var bookPages = await book.GetReadingOrderAsync();
         try
         {
-            var bookPage = await ReadBookPageAsync(book, page);
+            var bookPage = await ReadBookPageAsync(book, bookPages, page);
             if (bookPage != null)
             {
-                if (bookPage.Body == null) return bookPage.Content;
+                if (bookPage.Doc == null) return bookPage.Content;
+                if (bookPage.Body == null) throw new KavitaException("epub-html-missing");
 
-                return await ScopePage(bookPage.Doc!, book, libraryFilePath, apiBase, bookPage.Body, mappings, page,
+                return await ScopePage(bookPage.Doc, book, libraryFilePath, apiBase, bookPage.Body, mappings, page,
                     ptocBookmarks, annotations, ct);
             }
         } catch (Exception ex)
@@ -1893,13 +1895,16 @@ public partial class BookService(
         CancellationToken ct = default)
     {
         using var book = await EpubReader.OpenBookAsync(epubFilePath, LenientBookReaderOptions);
-        var bookPage = await ReadBookPageAsync(book, page);
+        var bookPage = await ReadBookPageAsync(book, await book.GetReadingOrderAsync(), page);
         return bookPage?.Body == null ? null : epubTextBlocks.GetBlocks(bookPage.Body);
     }
 
     /// <param name="Content">The spine item as the book holds it</param>
     /// <param name="Doc">The parsed XHTML, or null when the spine item isn't XHTML</param>
-    /// <param name="Body">The body of <paramref name="Doc"/>, created when the XHTML has none</param>
+    /// <param name="Body">
+    /// The body of <paramref name="Doc"/>, created when the XHTML has none. Null when there's no <c>html</c> element
+    /// to create one in, which is the case for an empty file
+    /// </param>
     private sealed record BookPage(string Content, HtmlDocument? Doc, HtmlNode? Body);
 
     /// <summary>
@@ -1908,9 +1913,9 @@ public partial class BookService(
     /// </summary>
     /// <returns>Null when <paramref name="page"/> is outside the reading order</returns>
     /// <exception cref="KavitaException">The XHTML has no body and doesn't parse</exception>
-    private async Task<BookPage?> ReadBookPageAsync(EpubBookRef book, int page)
+    private async Task<BookPage?> ReadBookPageAsync(EpubBookRef book,
+        IReadOnlyList<EpubLocalTextContentFileRef> bookPages, int page)
     {
-        var bookPages = await book.GetReadingOrderAsync();
         if (page < 0 || page >= bookPages.Count) return null;
 
         var contentFileRef = bookPages[page];
@@ -1932,7 +1937,11 @@ public partial class BookService(
                 throw new KavitaException("epub-malformed");
             }
             logger.LogError("{FilePath} has no body tag! Generating one for support. Book may be skewed", book.FilePath);
-            doc.DocumentNode.SelectSingleNode("/html").AppendChild(HtmlNode.CreateNode("<body></body>"));
+            var html = doc.DocumentNode.SelectSingleNode("/html");
+            // ReSharper disable once ConditionIsAlwaysTrueOrFalseAccordingToNullableAPIContract
+            if (html == null) return new BookPage(content, doc, null);
+
+            html.AppendChild(HtmlNode.CreateNode("<body></body>"));
             body = doc.DocumentNode.SelectSingleNode("/html/body");
         }
 

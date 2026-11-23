@@ -1,9 +1,11 @@
 using System.IO.Abstractions;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 using Kavita.API.Database;
 using Kavita.API.Services;
+using Kavita.Common;
 using Kavita.Common.Helpers;
 using Kavita.Models.DTOs.Account;
 using Kavita.Models.DTOs.Reader;
@@ -87,6 +89,9 @@ public class EpubPageBlocksTests
         </pre>
         <p>Before <script>var s = "</p>";</script>after.</p>
         <p/>
+        <p>Shown<noscript>hidden</noscript><template><b>inert</b></template><iframe>raw</iframe> text</p>
+        <noscript><p>Hidden paragraph</p></noscript>
+        <template><p>Inert paragraph</p></template>
         <h3>The end</h3>
         </body>
         </html>
@@ -100,19 +105,40 @@ public class EpubPageBlocksTests
         </html>
         """;
 
-    private readonly BookService _bookService;
+    private readonly BookService _bookService = CreateBookService(new EpubTextBlocks());
 
-    public EpubPageBlocksTests()
+    private static BookService CreateBookService(IEpubTextBlocks epubTextBlocks)
     {
         var directoryService = new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), new FileSystem());
         var unitOfWork = Substitute.For<IUnitOfWork>();
         unitOfWork.UserRepository.GetAuthKeysForUserId(1, Arg.Any<CancellationToken>()).Returns(
             [new AuthKeyDto { Key = "key", Name = AuthKeyHelper.ImageOnlyKeyName, Provider = AuthKeyProvider.System }]);
 
-        _bookService = new BookService(Substitute.For<ILogger<BookService>>(), directoryService,
+        return new BookService(Substitute.For<ILogger<BookService>>(), directoryService,
             new ImageService(Substitute.For<ILogger<ImageService>>(), directoryService),
-            Substitute.For<IMediaErrorService>(), unitOfWork, new EpubTextBlocks());
+            Substitute.For<IMediaErrorService>(), unitOfWork, epubTextBlocks);
     }
+
+    /// <summary>
+    /// Finds and stamps nothing, which is how BookService served pages before blocks existed
+    /// </summary>
+    private sealed class NoBlocks : IEpubTextBlocks
+    {
+        public IReadOnlyList<EpubTextBlock> GetBlocks(HtmlNode body) => [];
+        public IReadOnlyList<EpubTextBlock> StampBlocks(HtmlNode body) => [];
+    }
+
+    private static List<AnnotationDto> JapaneseAnnotations() =>
+    [
+        Annotation(1, "//body/div[1]/p[1]", "//body/div[1]/p[1]", "は猫である"),
+        Annotation(2, "//BODY/DIV[1]/DIV[1]/P[1]", "//BODY/DIV[1]/DIV[1]/P[2]", "名前はまだ無い。\nどこで"),
+        Annotation(3, """id("p3")""", """id("p3")""", "記号"),
+    ];
+
+    private static List<PersonalToCDto> Bookmarks(string scopedXPath) =>
+    [
+        new() { Id = 5, ChapterId = 1, PageNumber = 0, Title = "Mark", BookScrollId = BookService.BookReaderBodyScope + scopedXPath },
+    ];
 
     private static EpubFixture JapaneseBook() => new("ja", VerticalCss, JapanesePage, JapaneseCrLfPage);
 
@@ -178,7 +204,7 @@ public class EpubPageBlocksTests
         Assert.Equal(
         [
             "Inside a paragraph.", "Prices", "Item", "Cost", "Tea & cake", "£3", "or €4", "One", "Two point one",
-            "Term", "Definition", "code line 1\n  code line 2\n", "Before after.", "", "The end",
+            "Term", "Definition", "code line 1\n  code line 2\n", "Before after.", "", "Shown text", "The end",
         ], blocks.Select(b => b.Text));
     }
 
@@ -219,18 +245,9 @@ public class EpubPageBlocksTests
     public async Task AnnotationsAndBookmarks_KeepStampsAndBlockText()
     {
         using var book = JapaneseBook();
-        List<AnnotationDto> annotations =
-        [
-            Annotation(1, "//body/div[1]/p[1]", "//body/div[1]/p[1]", "は猫である"),
-            Annotation(2, "//BODY/DIV[1]/DIV[1]/P[1]", "//BODY/DIV[1]/DIV[1]/P[2]", "名前はまだ無い。\nどこで"),
-            Annotation(3, """id("p3")""", """id("p3")""", "記号"),
-        ];
-        List<PersonalToCDto> bookmarks =
-        [
-            new() { Id = 5, ChapterId = 1, PageNumber = 0, Title = "Mark", BookScrollId = BookService.BookReaderBodyScope + "/DIV[1]/P[2]" },
-        ];
 
-        var served = await AssertServedStampsMatchBlocks(book.FilePath, 0, annotations, bookmarks);
+        var served = await AssertServedStampsMatchBlocks(book.FilePath, 0, JapaneseAnnotations(),
+            Bookmarks("/DIV[1]/P[2]"));
 
         // Each annotation still resolves to the block it was made in
         Assert.Equal(["1"], HighlightBlocks(served, 1));
@@ -239,6 +256,76 @@ public class EpubPageBlocksTests
         var bookmark = served.GetElementbyId("ptoc-5");
         Assert.NotNull(bookmark);
         Assert.Equal("2", bookmark.ParentNode.GetAttributeValue(IEpubTextBlocks.BlockAttribute, ""));
+    }
+
+    public static TheoryData<bool, int> EveryFixturePage => new()
+    {
+        { true, 0 }, { true, 1 }, { false, 0 }, { false, 1 },
+    };
+
+    /// <summary>
+    /// The annotations and bookmark each fixture page is served with, one of each per block-holding structure
+    /// </summary>
+    private static (List<AnnotationDto> Annotations, List<PersonalToCDto> Bookmarks) Decorations(bool japanese, int page)
+    {
+        return (japanese, page) switch
+        {
+            (true, 0) => (JapaneseAnnotations(), Bookmarks("/DIV[1]/P[2]")),
+            (true, 1) => ([Annotation(1, "//body/section[1]/h2[1]", "//body/section[1]/h2[1]", "第二章")],
+                Bookmarks("/SECTION[1]/BLOCKQUOTE[1]/P[1]")),
+            (false, 0) => ([Annotation(1, "//body/div[1]/p[1]", "//body/div[1]/p[1]", "paragraph")],
+                Bookmarks("/H3[1]")),
+            _ => ([Annotation(1, "//body/em[1]", "//body/em[1]", "ここ")], Bookmarks("/EM[1]")),
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(EveryFixturePage))]
+    public async Task ServedPage_DiffersFromAnUnstampedPageOnlyByTheStamps(bool japanese, int page)
+    {
+        using var book = japanese ? JapaneseBook() : StructuresBook();
+        var (annotations, bookmarks) = Decorations(japanese, page);
+
+        var stamped = await _bookService.GetBookPage(1, page, 1, book.FilePath, book.FilePath, "//localhost/api/",
+            bookmarks, annotations);
+        var unstamped = await CreateBookService(new NoBlocks()).GetBookPage(1, page, 1, book.FilePath, book.FilePath,
+            "//localhost/api/", bookmarks, annotations);
+
+        Assert.Contains("epub-highlight-1", stamped);
+        Assert.Contains("ptoc-5", stamped);
+        Assert.Contains(" data-kb=\"0\"", stamped);
+        Assert.Equal(unstamped, Regex.Replace(stamped, " data-kb=\"[0-9]+\"", string.Empty));
+    }
+
+    [Theory]
+    [MemberData(nameof(EveryFixturePage))]
+    public async Task ServedPage_WithAnnotationsAndBookmarks_KeepsStampsAndBlockText(bool japanese, int page)
+    {
+        using var book = japanese ? JapaneseBook() : StructuresBook();
+        var (annotations, bookmarks) = Decorations(japanese, page);
+
+        var served = await AssertServedStampsMatchBlocks(book.FilePath, page, annotations, bookmarks);
+
+        Assert.NotNull(served.GetElementbyId("ptoc-5"));
+        Assert.NotNull(served.GetElementbyId("epub-highlight-1"));
+    }
+
+    [Fact]
+    public async Task EmptyPage_HasNoBlocks_AndGetBookPageStillReportsIt()
+    {
+        using var book = new EpubFixture("ja", VerticalCss, "", JapanesePage);
+
+        Assert.Null(await _bookService.GetEpubPageBlocksAsync(book.FilePath, 0));
+        var error = await Assert.ThrowsAsync<KavitaException>(() =>
+            _bookService.GetBookPage(1, 0, 1, book.FilePath, book.FilePath, "//localhost/api/", [], []));
+        Assert.Equal("epub-html-missing", error.Message);
+        Assert.NotNull(await _bookService.GetEpubPageBlocksAsync(book.FilePath, 1));
+    }
+
+    [Fact]
+    public void BrowserText_SkipsWhatTheWalkSkips()
+    {
+        Assert.Equal(BrowserSkippedTags.Order(StringComparer.Ordinal), EpubTextBlocks.SkippedTags.Order(StringComparer.Ordinal));
     }
 
     private static List<string> HighlightBlocks(HtmlDocument served, int annotationId)
@@ -290,19 +377,27 @@ public class EpubPageBlocksTests
     }
 
     /// <summary>
+    /// The list the reader is told to skip, written out on its own so a change to the walk's list shows up here
+    /// </summary>
+    private static readonly string[] BrowserSkippedTags =
+    [
+        "rt", "rp", "script", "style", "noscript", "template", "iframe", "noembed", "noframes", "xmp", "plaintext",
+        "textarea", "title", "select",
+    ];
+
+    /// <summary>
     /// What the reader collects from a stamped element in the live DOM. It reads every text node under the element in
-    /// document order, through any highlight or bookmark wrapper, and skips furigana, script and style
+    /// document order, through any highlight or bookmark wrapper, and skips what the contract skips
     /// </summary>
     private static string BrowserText(HtmlNode element)
     {
-        string[] skipped = ["rt", "rp", "script", "style"];
         var text = new StringBuilder();
         foreach (var node in element.Descendants().OfType<HtmlTextNode>())
         {
-            if (node.Ancestors().TakeWhile(a => a != element).Any(a => skipped.Contains(a.Name))) continue;
+            if (node.Ancestors().TakeWhile(a => a != element).Any(a => BrowserSkippedTags.Contains(a.Name))) continue;
 
-            // The browser's parser does these two before any script can read the text
-            var raw = node.Text.Replace("\r\n", "\n").Replace('\r', '\n');
+            // The browser's parser does these before any script can read the text
+            var raw = node.Text.Replace("\r\n", "\n").Replace('\r', '\n').Replace("\0", string.Empty);
             if (node.ParentNode.Name == "pre" && node.PreviousSibling == null && raw.StartsWith('\n')) raw = raw[1..];
             text.Append(WebUtility.HtmlDecode(raw));
         }
