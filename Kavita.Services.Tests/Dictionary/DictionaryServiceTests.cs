@@ -129,11 +129,23 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         _workerSignal.DidNotReceive().Wake();
     }
 
+    [Fact]
+    public async Task GetEpubPage_IsNullAndRaisesAPendingUnit()
+    {
+        var book = await Setup();
+        GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Pending);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+
+        Assert.Null(page);
+        await _store.Received(1).RaiseUnitPriorityAsync(book.FirstFile.Id, 2, ReadingPriority.OpenChapter, Arg.Any<CancellationToken>());
+        _workerSignal.Received(1).Wake();
+    }
+
     [Theory]
     [InlineData(null)]
-    [InlineData(ReadingUnitState.Pending)]
     [InlineData(ReadingUnitState.Failed)]
-    public async Task GetEpubPage_IsNullAndRaisesTheUnitWhenThePageIsNotDone(ReadingUnitState? state)
+    public async Task GetEpubPage_IsNullWithoutAWriteForAMissingOrFailedUnit(ReadingUnitState? state)
     {
         var book = await Setup();
         if (state != null) GivenTokenizedPage(book.FirstFile, 2, state.Value);
@@ -141,8 +153,8 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
 
         Assert.Null(page);
-        await _store.Received(1).RaiseUnitPriorityAsync(book.FirstFile.Id, 2, ReadingPriority.OpenChapter, Arg.Any<CancellationToken>());
-        _workerSignal.Received(1).Wake();
+        await _store.DidNotReceiveWithAnyArgs().RaiseUnitPriorityAsync(default, default, default, default);
+        _workerSignal.DidNotReceive().Wake();
     }
 
     [Fact]
@@ -451,8 +463,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var rows = Enumerable.Range(0, 5)
             .SelectMany(b => new[] { Row(b * 10 + 1, 5, b, 0, 2, Karai.Id), Row(b * 10 + 2, 5, b, 100, 102, Karai.Id) })
             .ToArray();
-        // Only the first row of each block is in the queue, as if the fetch had stopped short of the rest
-        GivenQueue(GivenUnit(5, book.FirstFile.Id, 0, blocks, rows).Where(r => r.Id % 10 == 1));
+        GivenQueue(GivenUnit(5, book.FirstFile.Id, 0, blocks, rows));
 
         var passages = await book.Service.GetPendingAnalysisAsync(4, 0);
 
@@ -504,21 +515,67 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
-    public async Task GetPendingAnalysis_ReadsMoreOfTheQueueWhenTheFirstRowsBuildTooFewPassages()
+    public async Task GetPendingAnalysis_ReadsMoreOfTheQueueWhenTheReadStopsInsideABlock()
     {
         var book = await Setup();
         GivenWords(Karai);
-        // Rows of a unit that's gone build nothing
-        var stale = Enumerable.Range(1, 70)
-            .Select(i => new PendingAnalysisRow(i, 900, book.FirstFile.Id, 9, 0, 0, 2, Karai.Id, 30, "辛い"))
-            .ToList();
-        GivenQueue(stale.Concat(GivenUnit(5, book.FirstFile.Id, 0, ["辛い"], Row(500, 5, 0, 0, 2, Karai.Id))));
+        // 70 rows in one block, so the first read of 64 holds only part of it
+        var text = string.Concat(Enumerable.Repeat("辛い", 70));
+        var rows = Enumerable.Range(0, 70).Select(i => Row(i + 1, 5, 0, i * 2, i * 2 + 2, Karai.Id)).ToArray();
+        GivenQueue(GivenUnit(5, book.FirstFile.Id, 0, [text], rows));
 
         var passage = Assert.Single(await book.Service.GetPendingAnalysisAsync(1, 0));
 
-        Assert.Equal(500, passage.Items.Single().Id);
+        Assert.Equal(70, passage.Items.Count);
         await _store.Received(1).GetPendingAnalysisAsync(64, 0, Arg.Any<CancellationToken>());
         await _store.Received(1).GetPendingAnalysisAsync(256, 0, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetPendingAnalysis_TakesRowTextFromTheQueueAndOnlyContextFromTheUnit()
+    {
+        var book = await Setup();
+        GivenWords(Karai);
+        // The unit was tokenized again after the queue read, so its stored text for block 1 is newer than the rows
+        GivenUnit(5, book.FirstFile.Id, 0, ["前の文。", "新しい文"]);
+        GivenQueue([new PendingAnalysisRow(1, 5, book.FirstFile.Id, 0, 1, 0, 2, Karai.Id, 30, "辛い")]);
+
+        var passage = Assert.Single(await book.Service.GetPendingAnalysisAsync(4, 0));
+
+        Assert.Equal("前の文。\n辛い", passage.Text);
+        Assert.Equal("辛い", passage.Items.Single().Surface);
+        AssertItemsMatchText(passage);
+    }
+
+    [Fact]
+    public async Task GetPendingAnalysis_BuildsFromTheQueueTextWhenTheUnitIsGone()
+    {
+        var book = await Setup();
+        GivenWords(Karai);
+        GivenQueue([new PendingAnalysisRow(1, 900, book.FirstFile.Id, 9, 3, 0, 2, Karai.Id, 30, "辛い")]);
+
+        var passage = Assert.Single(await book.Service.GetPendingAnalysisAsync(4, 0));
+
+        Assert.Equal("辛い", passage.Text);
+        Assert.Equal(1, passage.Items.Single().Id);
+    }
+
+    [Fact]
+    public async Task GetPendingAnalysis_SettlesRowsThatDontFitTheirTextOrHaveNoWordWithoutSpendingTheLimit()
+    {
+        var book = await Setup();
+        GivenWords(Karai);
+        GivenQueue(
+            GivenUnit(5, book.FirstFile.Id, 0, ["辛い"], Row(1, 5, 0, 0, 9, Karai.Id, priority: 30))
+                .Concat(GivenUnit(6, book.FirstFile.Id, 1, ["辛い"], Row(2, 6, 0, 0, 2, 999, priority: 30)))
+                .Concat(GivenUnit(7, book.FirstFile.Id, 2, ["辛い"], Row(3, 7, 0, 0, 2, Karai.Id, priority: 20))));
+
+        var passage = Assert.Single(await book.Service.GetPendingAnalysisAsync(1, 0));
+
+        Assert.Equal(3, passage.Items.Single().Id);
+        await _store.Received(1).StoreAnalysisAsync(DictionaryService.UnusableRowGenerator, "none",
+            Arg.Is<IReadOnlyList<AnalysisAnswer>>(a => a.SequenceEqual(new[] { new AnalysisAnswer(1, null, null), new AnalysisAnswer(2, null, null) })),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -635,6 +692,67 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Arg.Any<CancellationToken>());
         await _eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryAnalysisReady,
             Arg.Is<SignalRMessageDto>(m => IsReady(m, book.Series.Id, book.First.Id, 2)), false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_PairsEachRejectionOfARepeatedIdWithItsOwnAnswer()
+    {
+        var book = await Setup();
+        _store.StoreAnalysisAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AnalysisAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalysisStoreOutcome(0, [
+                new AnalysisRejection(1, AnalysisRejectReason.SenseNotOffered),
+                new AnalysisRejection(1, AnalysisRejectReason.SenseNotOffered),
+            ]));
+
+        var result = await book.Service.StoreAnalysisAsync(Answers(new AnalysisAnswerDto(1, "a", null), new AnalysisAnswerDto(1, "b", null)));
+
+        Assert.Equal(["sense a was not offered", "sense b was not offered"], result.Rejected.Select(r => r.Reason));
+    }
+
+    [Fact]
+    public void StoreAnalysis_PairsADuplicateWithTheAnswerAfterTheStoredOne()
+    {
+        var answers = new[] { new AnalysisAnswer(1, "a", null), new AnalysisAnswer(2, null, "x"), new AnalysisAnswer(1, "b", null) };
+        var rejections = new[]
+        {
+            new AnalysisRejection(2, AnalysisRejectReason.ReadingNotOffered),
+            new AnalysisRejection(1, AnalysisRejectReason.Duplicate),
+        };
+
+        var pairs = DictionaryService.PairRejections(answers, rejections).ToList();
+
+        Assert.Equal([answers[1], answers[2]], pairs.Select(p => p.Answer));
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_StillAnswersWhenTellingReadersFails()
+    {
+        var book = await Setup();
+        _store.StoreAnalysisAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IReadOnlyList<AnalysisAnswer>>(), Arg.Any<CancellationToken>())
+            .Returns(new AnalysisStoreOutcome(2, [new AnalysisRejection(3, AnalysisRejectReason.NotPending)])
+            {
+                StoredPages = [new(book.FirstFile.Id, 0)],
+            });
+        _eventHub.SendMessageAsync(Arg.Any<string>(), Arg.Any<SignalRMessageDto>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("hub is down")));
+
+        var result = await book.Service.StoreAnalysisAsync(Answers(
+            new AnalysisAnswerDto(1, null, null), new AnalysisAnswerDto(2, null, null), new AnalysisAnswerDto(3, null, null)));
+
+        Assert.Equal(2, result.Stored);
+        Assert.Equal([3L], result.Rejected.Select(r => r.Id));
+        await _eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryAnalysisReady, Arg.Any<SignalRMessageDto>(),
+            false, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_RefusesAMissingItemsListOrANullItem()
+    {
+        var book = await Setup();
+
+        await Assert.ThrowsAsync<KavitaException>(() => book.Service.StoreAnalysisAsync(Answers() with { Items = null! }));
+        await Assert.ThrowsAsync<KavitaException>(() => book.Service.StoreAnalysisAsync(Answers(new AnalysisAnswerDto[] { null! })));
+        await _store.DidNotReceiveWithAnyArgs().StoreAnalysisAsync(default!, default!, default!, default);
     }
 
     [Fact]

@@ -29,8 +29,13 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     public const int MaxGeneratorLength = 64;
     public const int MaxAnswersPerRequest = 2000;
     /// <summary>
-    /// Rows asked of the store per passage wanted on the first try. Most of a passage's rows come from the unit's own
-    /// analysis, so these rows only pick which blocks start passages
+    /// Stored as the generator of a row Kavita settled itself because no passage could carry it
+    /// </summary>
+    public const string UnusableRowGenerator = "kavita:unusable-span";
+    public const string UnusableRowPromptVersion = "none";
+    /// <summary>
+    /// Rows asked of the store per passage wanted on the first try. A read that turns out too short is repeated
+    /// four times larger, up to <see cref="MaxSeedRows"/>
     /// </summary>
     private const int SeedRowsPerPassage = 64;
     /// <summary>
@@ -47,8 +52,12 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         var unit = await readingStore.GetUnitAsync(fileId.Value, page, ct);
         if (unit is not { State: ReadingUnitState.Done })
         {
-            await readingStore.RaiseUnitPriorityAsync(fileId.Value, page, ReadingPriority.OpenChapter, ct);
-            workerSignal.Wake();
+            // A missing or failed unit won't be tokenized however high it's raised, so only a pending one is worth a write
+            if (unit is { State: ReadingUnitState.Pending })
+            {
+                await readingStore.RaiseUnitPriorityAsync(fileId.Value, page, ReadingPriority.OpenChapter, ct);
+                workerSignal.Wake();
+            }
             return null;
         }
 
@@ -178,59 +187,73 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     {
         if (limit <= 0) return [];
 
-        var units = new Dictionary<long, PassageUnit?>();
+        var units = new Dictionary<long, PassageUnit>();
         var seedCount = limit * SeedRowsPerPassage;
-        List<PassageDraft> drafts;
+        PassageBuild build;
         while (true)
         {
             var seeds = await readingStore.GetPendingAnalysisAsync(seedCount, minPriority, ct);
-            drafts = await BuildPassagesAsync(seeds, limit, minPriority, units, ct);
-            if (drafts.Count >= limit || seeds.Count < seedCount || seedCount >= MaxSeedRows) break;
+            var truncated = seeds.Count >= seedCount && seedCount < MaxSeedRows;
+            build = await BuildPassagesAsync(seeds, limit, minPriority, truncated, units, ct);
+            if (build.Passages.Count >= limit || !truncated) break;
             seedCount = Math.Min(seedCount * 4, MaxSeedRows);
         }
 
-        var wordIds = drafts.SelectMany(d => d.Rows).Select(r => r.Row.WordId).ToHashSet();
-        var words = await readingStore.GetWordsAsync(wordIds, ct);
-
-        var passages = new List<AnalysisPassageDto>();
-        foreach (var draft in drafts)
-        {
-            var items = draft.Rows
-                .Where(r => words.ContainsKey(r.Row.WordId))
-                .Select(r =>
-                {
-                    var word = words[r.Row.WordId];
-                    return new AnalysisItemDto(r.Row.Id, r.Offset + r.Row.S, r.Offset + r.Row.E,
-                        Slice(r.BlockText, r.Row.S, r.Row.E), word.Lemma, word.Readings.ToList(), word.Senses.ToList());
-                })
-                .ToList();
-            if (items.Count > 0) passages.Add(new AnalysisPassageDto(draft.Text, items));
-        }
-
-        return passages;
+        await SettleUnusableRowsAsync(build.Unusable, ct);
+        return build.Passages;
     }
 
     public async Task<AnalysisStoreResultDto> StoreAnalysisAsync(AnalysisStoreRequestDto request, CancellationToken ct = default)
     {
         ValidateLabel(request.Generator, "generator");
         ValidateLabel(request.PromptVersion, "promptVersion");
-        var items = request.Items ?? [];
+        var items = request.Items ?? throw new KavitaException("items is required");
+        if (items.Any(i => i == null)) throw new KavitaException("items can't hold null");
         if (items.Count > MaxAnswersPerRequest)
             throw new KavitaException($"Send at most {MaxAnswersPerRequest} items per request");
 
         var answers = items.Select(i => new AnalysisAnswer(i.Id, i.Sense, i.Reading)).ToList();
         var outcome = await readingStore.StoreAnalysisAsync(request.Generator, request.PromptVersion, answers, ct);
 
-        // The store checks the first answer for an id and calls the rest duplicates, so the first is the one a
-        // sense or reading rejection is about
-        var firstAnswers = answers.GroupBy(a => a.Id).ToDictionary(g => g.Key, g => g.First());
-        var rejected = outcome.Rejected
-            .Select(r => new AnalysisRejectionDto(r.Id, RejectionReason(r, firstAnswers.GetValueOrDefault(r.Id))))
+        var rejected = PairRejections(answers, outcome.Rejected)
+            .Select(p => new AnalysisRejectionDto(p.Rejection.Id, RejectionReason(p.Rejection, p.Answer)))
             .ToList();
 
-        await SendAnalysisReadyAsync(outcome.StoredPages, ct);
+        await SendAnalysisReadyAsync(outcome.StoredPages);
 
         return new AnalysisStoreResultDto(outcome.Stored, rejected);
+    }
+
+    /// <summary>
+    /// Matches each rejection to the answer it's about. The store checks answers in order, lists rejections in that
+    /// order, and calls an answer a duplicate only once an earlier answer for its id was stored. So an answer whose id
+    /// was already stored is the next rejection, a duplicate, and any other answer is the next rejection when that
+    /// rejection has its id and isn't a duplicate
+    /// </summary>
+    public static IEnumerable<(AnalysisRejection Rejection, AnalysisAnswer? Answer)> PairRejections(
+        IReadOnlyList<AnalysisAnswer> answers, IReadOnlyList<AnalysisRejection> rejections)
+    {
+        var stored = new HashSet<long>();
+        var next = 0;
+        foreach (var answer in answers)
+        {
+            if (next >= rejections.Count) yield break;
+            var rejection = rejections[next];
+            var isThisOne = rejection.Id == answer.Id &&
+                            (stored.Contains(answer.Id) || rejection.Reason != AnalysisRejectReason.Duplicate);
+            if (isThisOne)
+            {
+                yield return (rejection, answer);
+                next++;
+            }
+            else
+            {
+                stored.Add(answer.Id);
+            }
+        }
+
+        // Rejections the walk couldn't place still go back to the runner
+        for (; next < rejections.Count; next++) yield return (rejections[next], null);
     }
 
     public static string RejectionReason(AnalysisRejection rejection, AnalysisAnswer? answer) => rejection.Reason switch
@@ -249,83 +272,109 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             throw new KavitaException($"{name} must be at most {MaxGeneratorLength} characters");
     }
 
-    private async Task<List<PassageDraft>> BuildPassagesAsync(IReadOnlyList<PendingAnalysisRow> seeds, int limit,
-        int minPriority, Dictionary<long, PassageUnit?> units, CancellationToken ct)
+    /// <param name="truncated">The queue had more rows than were read, so a block may have rows that weren't read</param>
+    private async Task<PassageBuild> BuildPassagesAsync(IReadOnlyList<PendingAnalysisRow> seeds, int limit,
+        int minPriority, bool truncated, Dictionary<long, PassageUnit> units, CancellationToken ct)
     {
-        var drafts = new List<PassageDraft>();
+        var passages = new List<AnalysisPassageDto>();
+        var unusable = new List<long>();
         var usedBlocks = new HashSet<(long UnitId, int Block)>();
+        var words = await readingStore.GetWordsAsync(seeds.Select(r => r.WordId).ToHashSet(), ct);
+        var rowsByUnit = seeds
+            .GroupBy(r => r.UnitId)
+            .ToDictionary(g => g.Key, g => g.GroupBy(r => r.Block).ToDictionary(b => b.Key, b => b.ToList()));
 
         foreach (var seed in seeds)
         {
-            if (drafts.Count >= limit) break;
+            if (passages.Count >= limit) break;
             if (usedBlocks.Contains((seed.UnitId, seed.Block))) continue;
 
             if (!units.TryGetValue(seed.UnitId, out var unit))
             {
-                unit = await LoadPassageUnitAsync(seed, minPriority, ct);
+                unit = await LoadPassageUnitAsync(seed, minPriority, truncated, ct);
                 units[seed.UnitId] = unit;
             }
 
-            if (unit == null || !unit.Blocks.ContainsKey(seed.Block) || !unit.Pending.ContainsKey(seed.Block)) continue;
+            var seedRows = rowsByUnit[seed.UnitId];
+            if (!IsComplete(unit, seedRows, seed.Block, truncated)) continue;
 
-            drafts.Add(BuildPassage(unit, seed.Block, usedBlocks));
+            var draft = BuildPassage(unit, seed.Block, seedRows, usedBlocks, words, truncated);
+            unusable.AddRange(draft.Unusable);
+            if (draft.Items.Count > 0) passages.Add(new AnalysisPassageDto(draft.Text, draft.Items));
         }
 
-        return drafts;
+        return new PassageBuild(passages, unusable);
     }
 
-    private async Task<PassageUnit?> LoadPassageUnitAsync(PendingAnalysisRow seed, int minPriority, CancellationToken ct)
+    /// <summary>
+    /// The unit's stored block texts give the context around the blocks with rows. The rows' own block texts come
+    /// from the queue read, so a re-tokenize in between can only change the context
+    /// </summary>
+    private async Task<PassageUnit> LoadPassageUnitAsync(PendingAnalysisRow seed, int minPriority, bool truncated,
+        CancellationToken ct)
     {
         var unit = await readingStore.GetUnitAsync(seed.MangaFileId, seed.Page, ct);
-        if (unit == null || unit.Id != seed.UnitId)
+        if (unit == null || unit.Id != seed.UnitId) return new PassageUnit(seed.UnitId, new Dictionary<int, string>(), null);
+
+        Dictionary<int, int>? pendingCounts = null;
+        if (truncated)
         {
-            logger.LogDebug("[DictionaryService] Analysis row {RowId} points at a unit that is gone", seed.Id);
-            return null;
+            pendingCounts = (await readingStore.GetUnitAnalysisAsync(unit.Id, ct))
+                .Where(a => a.State == AnalysisState.Pending && a.Priority >= minPriority)
+                .GroupBy(a => a.Block)
+                .ToDictionary(g => g.Key, g => g.Count());
         }
 
-        var pending = (await readingStore.GetUnitAnalysisAsync(unit.Id, ct))
-            .Where(a => a.State == AnalysisState.Pending && a.Priority >= minPriority)
-            .GroupBy(a => a.Block)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<StoredAnalysis>) g.OrderBy(a => a.S).ThenBy(a => a.E).ToList());
+        return new PassageUnit(unit.Id, unit.Blocks.ToDictionary(b => b.Index, b => b.Text), pendingCounts);
+    }
 
-        return new PassageUnit(unit.Id, seed.MangaFileId, seed.Page,
-            unit.Blocks.ToDictionary(b => b.Index, b => b.Text), pending);
+    /// <returns>False when the queue read stopped before all of the block's rows, which a larger read will reach</returns>
+    private static bool IsComplete(PassageUnit unit, Dictionary<int, List<PendingAnalysisRow>> seedRows, int block,
+        bool truncated)
+    {
+        if (!truncated || unit.PendingCounts == null) return true;
+        return seedRows.TryGetValue(block, out var rows) && rows.Count >= unit.PendingCounts.GetValueOrDefault(block);
     }
 
     /// <summary>
     /// Starts at <paramref name="first"/> and adds the blocks after it while the text stays within
     /// <see cref="PassageLength"/>, then puts the block before it in front when that still fits
     /// </summary>
-    private static PassageDraft BuildPassage(PassageUnit unit, int first, HashSet<(long, int)> usedBlocks)
+    private static PassageDraft BuildPassage(PassageUnit unit, int first, Dictionary<int, List<PendingAnalysisRow>> seedRows,
+        HashSet<(long, int)> usedBlocks, IReadOnlyDictionary<long, StoredWord> words, bool truncated)
     {
+        string? TextOf(int block) =>
+            seedRows.TryGetValue(block, out var rows) ? rows[0].BlockText : unit.Blocks.GetValueOrDefault(block);
+
         var content = new List<int> { first };
-        var length = unit.Blocks[first].Length;
-        for (var next = first + 1; unit.Blocks.TryGetValue(next, out var text); next++)
+        var length = TextOf(first)!.Length;
+        for (var next = first + 1; TextOf(next) is { } text; next++)
         {
             if (usedBlocks.Contains((unit.Id, next))) break;
+            if (!IsComplete(unit, seedRows, next, truncated) && seedRows.ContainsKey(next)) break;
             if (length + BlockSeparator.Length + text.Length > PassageLength) break;
             content.Add(next);
             length += BlockSeparator.Length + text.Length;
         }
 
         // A trailing block without rows would only lengthen the prompt
-        while (content.Count > 1 && !unit.Pending.ContainsKey(content[^1])) content.RemoveAt(content.Count - 1);
-        length = content.Sum(b => unit.Blocks[b].Length) + BlockSeparator.Length * (content.Count - 1);
+        while (content.Count > 1 && !seedRows.ContainsKey(content[^1])) content.RemoveAt(content.Count - 1);
+        length = content.Sum(b => TextOf(b)!.Length) + BlockSeparator.Length * (content.Count - 1);
 
         var blocks = new List<int>(content);
-        if (unit.Blocks.TryGetValue(first - 1, out var before) &&
-            length + BlockSeparator.Length + before.Length <= PassageLength)
+        if (TextOf(first - 1) is { } before && length + BlockSeparator.Length + before.Length <= PassageLength)
         {
             blocks.Insert(0, first - 1);
         }
 
         var builder = new StringBuilder();
-        var rows = new List<PassageRow>();
+        var items = new List<AnalysisItemDto>();
+        var unusable = new List<long>();
         foreach (var block in blocks)
         {
             if (builder.Length > 0) builder.Append(BlockSeparator);
             var offset = builder.Length;
-            var text = unit.Blocks[block];
+            var text = TextOf(block)!;
             builder.Append(text);
 
             // The leading block is context only. Its rows wait for a passage that starts at it
@@ -333,35 +382,77 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             usedBlocks.Add((unit.Id, block));
 
             var end = 0;
-            foreach (var row in unit.Pending.GetValueOrDefault(block, []))
+            foreach (var row in seedRows.GetValueOrDefault(block, []).OrderBy(r => r.S).ThenBy(r => r.E))
             {
-                if (row.S < end || row.S < 0 || row.E > text.Length || row.E <= row.S) continue;
-                rows.Add(new PassageRow(row, offset, text));
+                if (row.S < 0 || row.E > text.Length || row.E <= row.S || !words.TryGetValue(row.WordId, out var word))
+                {
+                    unusable.Add(row.Id);
+                    continue;
+                }
+
+                // Top-level tokens don't overlap, so this only skips a row the store got wrong. It stays pending
+                if (row.S < end) continue;
+                items.Add(new AnalysisItemDto(row.Id, offset + row.S, offset + row.E, text[row.S..row.E], word.Lemma,
+                    word.Readings.ToList(), word.Senses.ToList()));
                 end = row.E;
             }
         }
 
-        return new PassageDraft(builder.ToString(), rows, unit);
+        return new PassageDraft(builder.ToString(), items, unusable);
     }
 
-    private async Task SendAnalysisReadyAsync(IReadOnlyList<AnalysisStoredPage> sources, CancellationToken ct)
+    /// <summary>
+    /// Answers rows no passage can carry with a null sense and reading, so they stop heading the queue and hiding
+    /// the rows behind them
+    /// </summary>
+    private async Task SettleUnusableRowsAsync(IReadOnlyList<long> rowIds, CancellationToken ct)
+    {
+        if (rowIds.Count == 0) return;
+
+        logger.LogWarning("[DictionaryService] {Count} analysis rows don't fit their block text or have no word, " +
+                          "so they're settled with no answer", rowIds.Count);
+        try
+        {
+            var answers = rowIds.Distinct().Select(id => new AnalysisAnswer(id, null, null)).ToList();
+            await readingStore.StoreAnalysisAsync(UnusableRowGenerator, UnusableRowPromptVersion, answers, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[DictionaryService] Couldn't settle unusable analysis rows");
+        }
+    }
+
+    /// <summary>
+    /// Runs after the answers are committed, so a failure here is logged and never fails the request. A failed
+    /// request would make the runner send the batch again and get every id back as not pending
+    /// </summary>
+    private async Task SendAnalysisReadyAsync(IReadOnlyList<AnalysisStoredPage> sources)
     {
         if (sources.Count == 0) return;
 
-        var fileIds = sources.Select(s => s.MangaFileId).Distinct().ToList();
-        var chapters = await unitOfWork.DataContext.MangaFile
-            .Where(f => fileIds.Contains(f.Id))
-            .Select(f => new { f.Id, f.ChapterId, f.Chapter.Volume.SeriesId })
-            .ToDictionaryAsync(f => f.Id, ct);
-
-        var groups = sources
-            .Where(s => chapters.ContainsKey(s.MangaFileId))
-            .GroupBy(s => (chapters[s.MangaFileId].SeriesId, chapters[s.MangaFileId].ChapterId));
-        foreach (var group in groups)
+        try
         {
-            var pages = group.Select(s => s.Page).Distinct().Order().ToList();
-            await eventHub.SendMessageAsync(MessageFactory.DictionaryAnalysisReady,
-                MessageFactory.DictionaryAnalysisReadyEvent(group.Key.SeriesId, group.Key.ChapterId, pages), false, ct);
+            var fileIds = sources.Select(s => s.MangaFileId).Distinct().ToList();
+            var chapters = await unitOfWork.DataContext.MangaFile
+                .Where(f => fileIds.Contains(f.Id))
+                .Select(f => new { f.Id, f.ChapterId, f.Chapter.Volume.SeriesId })
+                .ToDictionaryAsync(f => f.Id, CancellationToken.None);
+
+            var groups = sources
+                .Where(s => chapters.ContainsKey(s.MangaFileId))
+                .GroupBy(s => (chapters[s.MangaFileId].SeriesId, chapters[s.MangaFileId].ChapterId));
+            foreach (var group in groups)
+            {
+                var pages = group.Select(s => s.Page).Distinct().Order().ToList();
+                await eventHub.SendMessageAsync(MessageFactory.DictionaryAnalysisReady,
+                    MessageFactory.DictionaryAnalysisReadyEvent(group.Key.SeriesId, group.Key.ChapterId, pages), false,
+                    CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[DictionaryService] Couldn't tell readers about {Count} pages with new analysis",
+                sources.Count);
         }
     }
 
@@ -415,11 +506,12 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         return text[s..e];
     }
 
-    private sealed record PassageUnit(long Id, int MangaFileId, int Page, IReadOnlyDictionary<int, string> Blocks,
-        IReadOnlyDictionary<int, IReadOnlyList<StoredAnalysis>> Pending);
+    /// <param name="Blocks">Empty when the unit is gone, so its passages get no context</param>
+    /// <param name="PendingCounts">Queued rows per block, read only when the queue read was cut short</param>
+    private sealed record PassageUnit(long Id, IReadOnlyDictionary<int, string> Blocks,
+        IReadOnlyDictionary<int, int>? PendingCounts);
 
-    /// <param name="Offset">Where the row's block starts in the passage text</param>
-    private sealed record PassageRow(StoredAnalysis Row, int Offset, string BlockText);
+    private sealed record PassageDraft(string Text, List<AnalysisItemDto> Items, List<long> Unusable);
 
-    private sealed record PassageDraft(string Text, IReadOnlyList<PassageRow> Rows, PassageUnit Unit);
+    private sealed record PassageBuild(List<AnalysisPassageDto> Passages, List<long> Unusable);
 }
