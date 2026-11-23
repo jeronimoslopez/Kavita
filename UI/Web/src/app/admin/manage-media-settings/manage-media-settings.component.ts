@@ -20,6 +20,7 @@ import {ModalService} from "../../_services/modal.service";
 import {FormFieldDirective} from "../../_directives/form-field.directive";
 import {form, FormField, pattern, readonly, required} from "@angular/forms/signals";
 import {SettingSelectComponent} from "../../settings/_components/setting-enum-select/setting-select.component";
+import {SettingSwitchComponent} from "../../settings/_components/setting-switch/setting-switch.component";
 
 interface FormModel {
   encodeMediaAs: EncodeFormat;
@@ -29,9 +30,11 @@ interface FormModel {
   ocrSidecarUrl: string;
   ocrWindowStart: string;
   ocrWindowEnd: string;
+  textSidecarUrl: string;
+  dictionaryAnalysisOnOpen: boolean;
 }
 
-const sidecarUrlPattern = /^(https?:\/\/\S+)?$/;
+export const sidecarUrlPattern = /^(https?:\/\/\S+)?$/;
 // Empty means OCR may run at any hour
 const timeOfDayPattern = /^(([01]\d|2[0-3]):[0-5]\d)?$/;
 
@@ -41,7 +44,7 @@ const timeOfDayPattern = /^(([01]\d|2[0-3]):[0-5]\d)?$/;
   templateUrl: './manage-media-settings.component.html',
   styleUrls: ['./manage-media-settings.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [TranslocoDirective, SettingItemComponent, EncodeFormatPipe, CoverImageSizePipe, PdfRenderResolutionPipe, FormFieldDirective, FormField, SettingSelectComponent]
+  imports: [TranslocoDirective, SettingItemComponent, EncodeFormatPipe, CoverImageSizePipe, PdfRenderResolutionPipe, FormFieldDirective, FormField, SettingSelectComponent, SettingSwitchComponent]
 })
 export class ManageMediaSettingsComponent implements OnInit {
 
@@ -65,6 +68,8 @@ export class ManageMediaSettingsComponent implements OnInit {
     ocrSidecarUrl: '',
     ocrWindowStart: '',
     ocrWindowEnd: '',
+    textSidecarUrl: '',
+    dictionaryAnalysisOnOpen: false,
   });
   protected readonly settingsForm = form(this.formModel, p => {
     required(p.encodeMediaAs);
@@ -74,6 +79,7 @@ export class ManageMediaSettingsComponent implements OnInit {
     pattern(p.ocrSidecarUrl, sidecarUrlPattern);
     pattern(p.ocrWindowStart, timeOfDayPattern);
     pattern(p.ocrWindowEnd, timeOfDayPattern);
+    pattern(p.textSidecarUrl, sidecarUrlPattern);
   });
 
   constructor() {
@@ -86,7 +92,9 @@ export class ManageMediaSettingsComponent implements OnInit {
         && a.pdfRenderResolution === b.pdfRenderResolution
         && a.ocrSidecarUrl === b.ocrSidecarUrl
         && a.ocrWindowStart === b.ocrWindowStart
-        && a.ocrWindowEnd === b.ocrWindowEnd),
+        && a.ocrWindowEnd === b.ocrWindowEnd
+        && a.textSidecarUrl === b.textSidecarUrl
+        && a.dictionaryAnalysisOnOpen === b.dictionaryAnalysisOnOpen),
       filter(() => this.settingsForm().dirty() && this.settingsForm().valid()),
       switchMap(() => this.settingsService.updateServerSettings(this.packData()).pipe(catchError(err => {
         console.error(err);
@@ -132,6 +140,8 @@ export class ManageMediaSettingsComponent implements OnInit {
       ocrSidecarUrl: settings.ocrSidecarUrl ?? '',
       ocrWindowStart: settings.ocrWindowStart ?? '',
       ocrWindowEnd: settings.ocrWindowEnd ?? '',
+      textSidecarUrl: settings.textSidecarUrl ?? '',
+      dictionaryAnalysisOnOpen: settings.dictionaryAnalysisOnOpen ?? false,
     });
     this.settingsForm().reset();
   }
@@ -146,6 +156,8 @@ export class ManageMediaSettingsComponent implements OnInit {
     modelSettings.ocrSidecarUrl = model.ocrSidecarUrl.trim();
     modelSettings.ocrWindowStart = model.ocrWindowStart.trim();
     modelSettings.ocrWindowEnd = model.ocrWindowEnd.trim();
+    modelSettings.textSidecarUrl = model.textSidecarUrl.trim();
+    modelSettings.dictionaryAnalysisOnOpen = model.dictionaryAnalysisOnOpen;
 
     return modelSettings;
   }

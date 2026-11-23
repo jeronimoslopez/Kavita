@@ -90,6 +90,30 @@
       </app-setting-item>
     </div>
 
+    <div class="row g-0 mt-2">
+      <app-setting-item [title]="t('text-sidecar-url-label')" [subtitle]="t('text-sidecar-url-tooltip')"
+                        [control]="settingsForm.textSidecarUrl" labelId="settings-text-sidecar-url"
+                        [validations]="{pattern: t('text-sidecar-url-invalid')}">
+        <ng-template #view>
+          {{settingsForm.textSidecarUrl().value() || t('text-sidecar-off')}}
+        </ng-template>
+        <ng-template #edit>
+          <input id="settings-text-sidecar-url" class="form-control" [formField]="settingsForm.textSidecarUrl" type="text"
+                 placeholder="http://text:8000" [appFormField]="settingsForm.textSidecarUrl">
+        </ng-template>
+      </app-setting-item>
+    </div>
+
+    <div class="row g-0 mt-2">
+      <app-setting-switch [title]="t('analysis-on-open-label')" [subtitle]="t('analysis-on-open-tooltip')">
+        <ng-template>
+          <div class="form-check form-switch float-end">
+            <input type="checkbox" role="switch" class="form-check-input" [formField]="settingsForm.dictionaryAnalysisOnOpen">
+          </div>
+        </ng-template>
+      </app-setting-switch>
+    </div>
+
     @let bookmarksDirectory = settingsForm.bookmarksDirectory;
     <div class="row g-0 mt-2">
       <app-setting-item [title]="t('bookmark-dir-label')" [subtitle]="t('bookmark-dir-tooltip')"
