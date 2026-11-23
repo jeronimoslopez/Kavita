@@ -70,6 +70,10 @@ public class Library : IEntityDate, IHasCoverImage
     /// </summary>
     public OcrEngine OcrEngine { get; set; } = OcrEngine.Auto;
     /// <summary>
+    /// Should Kavita tokenize this library's Japanese EPUBs so the book reader can look words up in the dictionary popup
+    /// </summary>
+    public bool EnableDictionary { get; set; } = false;
+    /// <summary>
     /// Language to assign to series if none is set in the metadata
     /// </summary>
     public string DefaultLanguage { get; set; } = string.Empty;

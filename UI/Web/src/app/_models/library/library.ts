@@ -43,6 +43,7 @@ export interface Library extends LiteLibrary{
     inheritWebLinksFromFirstChapter: boolean;
     enableOcr: boolean;
     ocrEngine: OcrEngine;
+    enableDictionary: boolean;
     defaultLanguage: string;
     metadataProvider: MetadataProvider;
     libraryFileTypes: Array<FileTypeGroup>;

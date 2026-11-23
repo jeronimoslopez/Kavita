@@ -456,6 +456,7 @@ public class ReadingProfileService(IUnitOfWork unitOfWork, ILocalizationService 
         existingProfile.BookReaderImmersiveMode = dto.BookReaderImmersiveMode;
         existingProfile.BookReaderDisableBookmarkIcon = dto.BookReaderDisableBookmarkIcon;
         existingProfile.BookReaderYomitanEnabled = dto.BookReaderYomitanEnabled;
+        existingProfile.BookReaderDictionaryEnabled = dto.BookReaderDictionaryEnabled;
 
         // PDF Reading
         existingProfile.PdfTheme = dto.PdfTheme;

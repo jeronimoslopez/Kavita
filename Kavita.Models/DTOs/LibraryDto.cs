@@ -92,6 +92,8 @@ public sealed record LibraryDto : LiteLibraryDto
     public bool EnableOcr { get; init; }
     /// <inheritdoc cref="Library.OcrEngine"/>
     public OcrEngine OcrEngine { get; init; }
+    /// <inheritdoc cref="Library.EnableDictionary"/>
+    public bool EnableDictionary { get; init; }
     /// <inheritdoc cref="Library.DefaultLanguage"/>
     public string DefaultLanguage { get; init; }
     /// <inheritdoc cref="Library.MetadataProvider"/>

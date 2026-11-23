@@ -748,6 +748,9 @@ namespace Kavita.Database.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("");
 
+                    b.Property<bool>("EnableDictionary")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableMetadata")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -3419,6 +3422,11 @@ namespace Kavita.Database.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT")
                         .HasDefaultValue("#000000");
+
+                    b.Property<bool>("BookReaderDictionaryEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
 
                     b.Property<bool>("BookReaderDisableBookmarkIcon")
                         .HasColumnType("INTEGER");

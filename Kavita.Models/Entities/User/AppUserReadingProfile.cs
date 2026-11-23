@@ -148,6 +148,11 @@ public class AppUserReadingProfile
     /// </summary>
     /// <remarks>Defaults to false</remarks>
     public bool BookReaderYomitanEnabled { get; set; } = false;
+    /// <summary>
+    /// Book Reader Option: Clicking a Japanese word in an EPUB opens Kavita's dictionary popup in place of Yomitan
+    /// </summary>
+    /// <remarks>Defaults to false</remarks>
+    public bool BookReaderDictionaryEnabled { get; set; } = false;
     #endregion
 
     #region PdfReader
