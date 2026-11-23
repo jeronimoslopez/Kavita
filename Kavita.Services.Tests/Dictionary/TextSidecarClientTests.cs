@@ -114,15 +114,29 @@ public class TextSidecarClientTests : IDisposable
         await Assert.ThrowsAsync<TextSidecarUnavailableException>(() => _client.TokenizeAsync("http://text:8000", SampleBlocks()));
     }
 
-    [Fact]
-    public async Task Tokenize_ErrorStatus_IsRejectedWithTheBody()
+    [Theory]
+    [InlineData(413)]
+    [InlineData(422)]
+    public async Task Tokenize_StatusAboutTheText_IsRejectedWithTheBody(int status)
     {
-        _httpTest.RespondWith("blocks too large", 413);
+        _httpTest.RespondWith("blocks too large", status);
 
         var ex = await Assert.ThrowsAsync<TextSidecarRejectedException>(() => _client.TokenizeAsync("http://text:8000", SampleBlocks()));
 
-        Assert.Equal(413, ex.StatusCode);
+        Assert.Equal(status, ex.StatusCode);
         Assert.Contains("blocks too large", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(404)] // a mistyped URL
+    [InlineData(500)]
+    [InlineData(502)] // a proxy in front of a stopped sidecar
+    [InlineData(503)]
+    public async Task Tokenize_StatusAboutTheSidecar_IsUnavailable(int status)
+    {
+        _httpTest.RespondWith("Bad Gateway", status);
+
+        await Assert.ThrowsAsync<TextSidecarUnavailableException>(() => _client.TokenizeAsync("http://text:8000", SampleBlocks()));
     }
 
     [Fact]

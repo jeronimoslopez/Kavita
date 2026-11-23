@@ -121,6 +121,12 @@ public class TextSidecarClient : ITextSidecarClient
         {
             throw new TextSidecarUnavailableException($"The text sidecar at {sidecarUrl} can't be reached", ex);
         }
+        catch (FlurlHttpException ex) when (ex.StatusCode is not (413 or 422 or 200))
+        {
+            // Only 413 and 422 are about the text, and a 200 here is an answer that didn't parse. A 404 from a mistyped
+            // URL or a 502 from a proxy is about the sidecar
+            throw new TextSidecarUnavailableException($"The text sidecar at {sidecarUrl} answered {ex.StatusCode}", ex);
+        }
         catch (FlurlHttpException ex)
         {
             var responseBody = await ex.GetResponseStringAsync();
