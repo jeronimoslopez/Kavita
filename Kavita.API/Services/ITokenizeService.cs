@@ -60,6 +60,11 @@ public enum TokenizeUnitOutcome
     /// The sidecar didn't answer. Nothing was changed
     /// </summary>
     SidecarUnavailable,
+    /// <summary>
+    /// The file isn't on disk or couldn't be read this time, such as on an unmounted drive. Nothing was changed and no
+    /// attempt was counted
+    /// </summary>
+    FileUnavailable,
 }
 
 /// <param name="Page">0-based page the outcome is about</param>
