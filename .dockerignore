@@ -19,3 +19,4 @@ Dockerfile*
 .dockerignore
 ocr-sidecar
 text-sidecar-contract
+host

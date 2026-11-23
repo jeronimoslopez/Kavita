@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jeronimolopez.kavita-reading</string>
+
+    <!-- Run through /bin/bash so the script works without its execute bit. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/jeronimolopez/Workshop/Kavita/host/run-reading.sh</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Kept alive, except after an exit 0. run-reading.sh exits 0 when a token
+         or key file is missing, and the runner exits 0 on SIGTERM, so neither
+         is restarted. A crash or a bad file mode is restarted after
+         ThrottleInterval seconds. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <!-- launchd sends SIGTERM, then SIGKILL after this many seconds. The runner
+         ends its claude calls at once and only waits for posts under way. -->
+    <key>ExitTimeOut</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/jeronimolopez/Library/Logs/kavita-reading.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/jeronimolopez/Library/Logs/kavita-reading.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>
