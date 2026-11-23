@@ -714,6 +714,28 @@ export class ActionFactoryService {
             children: [],
           },
           {
+            action: Action.AnalyzeBook,
+            title: 'analyze-book',
+            description: 'analyze-book-tooltip',
+
+            callback: this.dummyCallback,
+            shouldRender: this.dummyShouldRender,
+
+            requiredRoles: [Role.Admin],
+            children: [],
+          },
+          {
+            action: Action.RemoveAnalysis,
+            title: 'remove-analysis',
+            description: 'remove-analysis-tooltip',
+
+            callback: this.dummyCallback,
+            shouldRender: this.dummyShouldRender,
+
+            requiredRoles: [Role.Admin],
+            children: [],
+          },
+          {
             action: Action.Delete,
             title: 'delete',
             description: 'delete-tooltip',
