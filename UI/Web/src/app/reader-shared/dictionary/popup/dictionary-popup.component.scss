@@ -1,0 +1,341 @@
+// shimen's design tokens, mapped once onto Kavita's theme variables. The reader themes set the drawer and accordion
+// variables on body, and the overlay lives in body, so inside the EPUB reader the popup follows the reader theme.
+// Mixes of ink and primary stand in for the tints Kavita has no variable for, so they work on light and dark grounds
+:host {
+  // surface-card, text-primary, text-secondary
+  --dp-surface: var(--drawer-bg-color, var(--popover-body-bg-color));
+  --dp-ink: var(--drawer-text-color, var(--body-text-color));
+  --dp-ink-secondary: var(--accordion-meta-text-color, var(--text-muted-color));
+  // text-link, the jade of a dictionary reading
+  --dp-link: var(--primary-color);
+  // tint-sky-text, the ink of an AI reading
+  --dp-ai-ink: color-mix(in srgb, #3b82c4 75%, var(--dp-ink));
+  // surface-tile, track, border-divider
+  --dp-tile: color-mix(in srgb, var(--dp-ink) 8%, transparent);
+  --dp-track: color-mix(in srgb, var(--dp-ink) 14%, transparent);
+  --dp-divider: var(--accordion-hairline-color, var(--hr-color));
+  // accent-soft and text-on-tint, the jade tag and a pressed chip
+  --dp-tint: color-mix(in srgb, var(--primary-color) 20%, transparent);
+  --dp-on-tint: color-mix(in srgb, var(--primary-color) 65%, var(--dp-ink));
+  --dp-ring-selected: inset 0 0 0 2px var(--primary-color);
+  // status-error-fill and status-error-text
+  --dp-error-fill: color-mix(in srgb, var(--error-color) 16%, transparent);
+  --dp-error: color-mix(in srgb, var(--error-color) 75%, var(--dp-ink));
+  --dp-focus: var(--primary-color);
+  // radius-block and radius-container follow the site's card corners. Pills stay pills
+  --dp-radius-block: var(--card-border-radius, 16px);
+  --dp-radius-control: var(--btn-actions-border-radius, 12px);
+  --dp-radius-pill: 999px;
+  // shadow-pop and shadow-3
+  --dp-shadow-3: 0 24px 60px var(--elevation-layer10-dark, rgba(0, 0, 0, 0.4));
+  --dp-shadow-pop: 0 0 0 2px var(--dp-divider), var(--dp-shadow-3);
+  --dp-font-ja: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans CJK JP", "Yu Gothic UI",
+    "Meiryo", system-ui, sans-serif;
+
+  display: block;
+  color-scheme: var(--color-scheme, normal);
+}
+
+.dp {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  // The presenter sets the two caps on the overlay pane when the popover fits on neither side of the word
+  width: min(380px, 84vw, var(--dp-max-width, 380px));
+  max-height: min(72vh, var(--dp-max-height, 72vh));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border-radius: var(--dp-radius-block);
+  background: var(--dp-surface);
+  color: var(--dp-ink);
+  box-shadow: var(--dp-shadow-pop);
+  font-size: 16px;
+  line-height: 1.5;
+  text-align: start;
+  writing-mode: horizontal-tb;
+
+  &:focus-visible {
+    outline: 3px solid var(--dp-focus);
+    outline-offset: 1px;
+  }
+
+  p {
+    margin: 0;
+  }
+}
+
+.dp-sheet {
+  width: 100%;
+  max-height: 82vh;
+  padding: 24px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  border-radius: var(--dp-radius-block) var(--dp-radius-block) 0 0;
+  box-shadow: var(--dp-shadow-3);
+}
+
+.dp-handle {
+  flex: none;
+  align-self: center;
+  width: 44px;
+  height: 5px;
+  margin-bottom: 4px;
+  border-radius: var(--dp-radius-pill);
+  background: var(--dp-track);
+}
+
+[lang="ja"] {
+  font-family: var(--dp-font-ja);
+}
+
+.dp-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dp-headword {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dp-lemma {
+  font-size: 36px;
+  font-weight: 500;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.dp-reading {
+  font-family: var(--dp-font-ja);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  color: var(--dp-link);
+}
+
+.dp-ai-reading {
+  color: var(--dp-ai-ink);
+}
+
+.dp-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  // A text button at the right edge pulls back by its own padding
+  margin-right: -12px;
+}
+
+.dp-text-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--dp-radius-pill);
+  background: transparent;
+  color: var(--dp-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms;
+
+  &:hover, &:active {
+    background: var(--dp-tile);
+  }
+}
+
+.dp-meta {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--dp-ink-secondary);
+}
+
+.dp-label {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.55;
+  letter-spacing: 0.04em;
+  color: var(--dp-ink-secondary);
+}
+
+.dp-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dp-skeleton {
+  display: block;
+  border-radius: 8px;
+  background: var(--dp-track);
+  animation: dp-pulse 1400ms cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.dp-skeleton-line {
+  width: 60%;
+  height: 16px;
+}
+
+.dp-skeleton-thin {
+  width: 85%;
+  height: 12px;
+}
+
+@keyframes dp-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-skeleton {
+    animation: none;
+  }
+}
+
+.dp-error {
+  padding: 12px 16px;
+  border-radius: var(--dp-radius-control);
+  background: var(--dp-error-fill);
+  color: var(--dp-error);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.dp-no-entry {
+  font-weight: 700;
+}
+
+.dp-senses {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-sense {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+
+  & + & {
+    border-top: 2px solid var(--dp-divider);
+  }
+
+  &:first-child {
+    padding-top: 0;
+  }
+
+  &:last-child {
+    padding-bottom: 0;
+  }
+}
+
+.dp-sense-n {
+  min-width: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--dp-ink-secondary);
+}
+
+.dp-sense-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dp-gloss {
+  line-height: 1.55;
+}
+
+.dp-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 2px 10px;
+  border-radius: var(--dp-radius-pill);
+  background: var(--dp-tint);
+  color: var(--dp-on-tint);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.dp-parts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--dp-radius-pill);
+  background: var(--dp-tile);
+  color: var(--dp-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  cursor: pointer;
+  transition: background-color 150ms, box-shadow 150ms;
+
+  &:hover {
+    background: var(--dp-tint);
+  }
+
+  &[aria-pressed="true"] {
+    background: var(--dp-tint);
+    color: var(--dp-on-tint);
+    box-shadow: var(--dp-ring-selected);
+  }
+}
+
+.dp-chip-reading {
+  font-weight: 500;
+  color: var(--dp-link);
+}
+
+.dp-text-btn, .dp-chip {
+  &:focus-visible {
+    outline: 3px solid var(--dp-focus);
+    outline-offset: 1px;
+  }
+}
+
+// AI note: the quietest text, a footnote that never competes with a message
+.dp-ai-note {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--dp-ink-secondary);
+}
