@@ -2,6 +2,7 @@ import {inject, Injectable, ViewContainerRef} from '@angular/core';
 import {Annotation} from "../book-reader/_models/annotations/annotation";
 import {EpubHighlightComponent} from "../book-reader/_components/_annotations/epub-highlight/epub-highlight.component";
 import {DOCUMENT} from "@angular/common";
+import {mountHighlight} from "./epub-highlight-mount";
 
 @Injectable({
   providedIn: 'root'
@@ -31,16 +32,8 @@ export class EpubHighlightService {
       if (!idAttr) continue;
 
       const annotationId = parseInt(idAttr.replace('epub-highlight-', ''), 10);
-      const componentRef = container.createComponent<EpubHighlightComponent>(EpubHighlightComponent,
-        {
-          projectableNodes: [
-            [document.createTextNode(highlight.textContent ?? '')]
-          ]
-        });
-
-      if (highlight.parentNode != null) {
-        highlight.parentNode.replaceChild(componentRef.location.nativeElement, highlight);
-      }
+      const componentRef = mountHighlight(highlight, content =>
+        container.createComponent<EpubHighlightComponent>(EpubHighlightComponent, {projectableNodes: [content]}));
 
       componentRef.setInput('annotation', annotationsMap[annotationId]);
 

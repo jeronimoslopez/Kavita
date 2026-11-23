@@ -101,6 +101,8 @@ export class ReaderDictionaryController {
   private open: OpenWord | null = null;
   private lookups = new Subscription();
   private dismissal: Dismissal | null = null;
+  /** The last click located, so the calls a reader makes for one click run the caret lookup once */
+  private lastHit: {event: MouseEvent, hit: EpubHit | null} | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => this.detach());
@@ -109,6 +111,7 @@ export class ReaderDictionaryController {
   attach(container: HTMLElement, options: ReaderDictionaryOptions): void {
     this.container = container;
     this.vertical = options.vertical;
+    this.lastHit = null;
     this.removeStyle ??= installOpenWordStyle(this.document);
     this.events ??= this.messageHub.messages$.pipe(
       filter(m => m.event === EVENTS.DictionaryPagesReady || m.event === EVENTS.DictionaryAnalysisReady),
@@ -135,15 +138,37 @@ export class ReaderDictionaryController {
     this.waitingForPage = false;
     this.pageReadyWhileLoading = false;
     this.dismissal = null;
+    this.lastHit = null;
   }
 
   /** Call when the reader shows a page. Lookups start working once its tokens arrive */
   setPage(chapterId: number, page: number): void {
-    this.hidePopup();
+    this.clearPage();
     this.chapterId = chapterId;
     this.page = page;
-    this.tokens = null;
     this.loadPage();
+  }
+
+  /**
+   * Call when the reader replaces the page's HTML. It closes the popup and drops the old page's tokens, so no tap
+   * looks up a word against the new DOM until setPage loads the new page's tokens
+   */
+  clearPage(): void {
+    this.hidePopup();
+    this.pageLoad?.unsubscribe();
+    this.pageLoad = null;
+    this.pageLoading = false;
+    this.waitingForPage = false;
+    this.pageReadyWhileLoading = false;
+    this.chapterId = null;
+    this.page = null;
+    this.tokens = null;
+    this.lastHit = null;
+  }
+
+  /** Forgets a pointer-down that closed the popup, so its click no longer counts as the dismissal */
+  cancelDismissal(): void {
+    this.dismissal = null;
   }
 
   /** Call when a chapter opens, so the server tokenizes it and the next one first */
@@ -194,14 +219,19 @@ export class ReaderDictionaryController {
   }
 
   hidePopup(): void {
+    this.dismissal = null;
     if (this.open === null) return;
     this.presenter.hide();
     this.closed();
   }
 
   private hitAt(event: MouseEvent): EpubHit | null {
-    if (this.container === null || this.tokens === null || this.hasSelection()) return null;
-    return this.locate(event.clientX, event.clientY, this.container, this.tokens);
+    if (this.lastHit?.event === event) return this.lastHit.hit;
+    const hit = this.container === null || this.tokens === null || this.hasSelection()
+      ? null
+      : this.locate(event.clientX, event.clientY, this.container, this.tokens);
+    this.lastHit = {event, hit};
+    return hit;
   }
 
   private hasSelection(): boolean {

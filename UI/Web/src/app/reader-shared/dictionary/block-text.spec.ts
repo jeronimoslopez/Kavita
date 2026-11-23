@@ -1,4 +1,6 @@
-import {blockIndexOf, blockOffsetOf, domPositionOf, enclosingBlock, rangeForBlockOffsets, readBlockText} from './block-text';
+import {
+  blockIndexOf, blockOffsetOf, domPositionOf, enclosingBlock, rangeForBlockOffsets, readBlockText, SKIPPED_TEXT_TAGS,
+} from './block-text';
 
 function block(html: string): HTMLElement {
   const host = document.createElement('div');
@@ -23,6 +25,46 @@ describe('readBlockText', () => {
     expect(text.text).toBe('漢字を読む');
     expect(text.nodes.map(n => n.data)).toEqual(['漢', '字', 'を', '読', 'む']);
     expect(text.starts).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('leaves out every element in the skip set', () => {
+    // Built by hand and kept out of the document, because the HTML parser reshapes the tree around several of these
+    // tags and jsdom would run the script
+    const el = document.createElement('p');
+    el.setAttribute('data-kb', '0');
+    el.appendChild(document.createTextNode('a'));
+    for (const tag of SKIPPED_TEXT_TAGS) {
+      const skipped = document.createElement(tag);
+      skipped.appendChild(document.createTextNode(tag));
+      el.appendChild(skipped);
+    }
+    el.appendChild(document.createTextNode('b'));
+    expect(readBlockText(el).text).toBe('ab');
+  });
+
+  it('compares tag names without regard to case', () => {
+    const el = block('<p data-kb="0">a</p>');
+    const rt = document.createElementNS('http://www.w3.org/1999/xhtml', 'RT');
+    rt.textContent = 'x';
+    el.appendChild(rt);
+    expect(readBlockText(el).text).toBe('a');
+  });
+
+  it('skips exactly the tags the server skips', () => {
+    expect([...SKIPPED_TEXT_TAGS].sort()).toEqual([
+      'iframe', 'noembed', 'noframes', 'noscript', 'plaintext', 'rp', 'rt', 'script', 'select', 'style', 'template',
+      'textarea', 'title', 'xmp',
+    ]);
+  });
+
+  it('does not descend into a descendant stamped with its own data-kb', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<div data-kb="0">外<p data-kb="1">内</p>側</div>';
+    const outer = host.firstElementChild!;
+    const text = readBlockText(outer);
+    expect(text.text).toBe('外側');
+    expect(blockOffsetOf(text, textNode(outer, '内'), 0)).toBeNull();
+    expect(readBlockText(host.querySelector('[data-kb="1"]')!).text).toBe('内');
   });
 
   it('keeps whitespace as it is', () => {

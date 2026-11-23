@@ -3,8 +3,15 @@
  * so token offsets from the API line up with offsets computed here.
  */
 
-/** Elements whose text isn't part of a block. Ruby readings would otherwise split the base text's offsets */
-const SKIPPED_TAGS = new Set(['rt', 'rp', 'script', 'style']);
+/**
+ * Elements whose text isn't part of a block. It must match the server's skip set in EpubTextBlocks, or the stored
+ * block length won't match and lookups turn off for the block. Ruby readings would otherwise split the base text's
+ * offsets
+ */
+export const SKIPPED_TEXT_TAGS: ReadonlySet<string> = new Set([
+  'rt', 'rp', 'script', 'style', 'noscript', 'template', 'iframe', 'noembed', 'noframes', 'xmp', 'plaintext', 'textarea',
+  'title', 'select',
+]);
 
 export const BLOCK_ATTRIBUTE = 'data-kb';
 
@@ -31,7 +38,10 @@ export function blockIndexOf(block: Element): number | null {
   return Number(value);
 }
 
-/** Walks a block's text nodes in document order, leaving out everything inside rt, rp, script and style */
+/**
+ * Walks a block's text nodes in document order. It leaves out everything inside SKIPPED_TEXT_TAGS and inside a
+ * descendant stamped with its own `data-kb`, whose text belongs to that block
+ */
 export function readBlockText(block: Element): BlockText {
   const nodes: Text[] = [];
   const starts: number[] = [];
@@ -44,13 +54,17 @@ export function readBlockText(block: Element): BlockText {
         nodes.push(child as Text);
         starts.push(text.length);
         text += data;
-      } else if (child.nodeType === Node.ELEMENT_NODE && !SKIPPED_TAGS.has((child as Element).localName.toLowerCase())) {
+      } else if (child.nodeType === Node.ELEMENT_NODE && isPartOfBlock(child as Element)) {
         visit(child);
       }
     }
   };
   visit(block);
   return {element: block, text, nodes, starts};
+}
+
+function isPartOfBlock(element: Element): boolean {
+  return !SKIPPED_TEXT_TAGS.has(element.localName.toLowerCase()) && !element.hasAttribute(BLOCK_ATTRIBUTE);
 }
 
 /** The block offset of a position in one of the block's text nodes, or null for a node the walk left out */
