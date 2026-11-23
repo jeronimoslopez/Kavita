@@ -91,16 +91,33 @@ describe('DictionaryPopupComponent', () => {
     expect(q(el, 'popup-ai-reading')).toBeNull();
   });
 
-  it('puts the chosen sense first, tags it and keeps its number', async () => {
+  it('puts the chosen sense first, tags it and numbers the list in display order', async () => {
     const el = await show(view({kind: 'result', result: result({
       analysis: {senseKey: '100:2', reading: 'からい', generator: 'claude'},
     })}));
     const senses = all(el, 'sense');
-    expect(senses.map(s => s.querySelector('.dp-sense-n')?.textContent)).toEqual(['2', '1', '3']);
+    expect(senses.map(s => s.querySelector('.dp-sense-n')?.textContent)).toEqual(['1', '2', '3']);
+    expect(senses.map(s => s.getAttribute('data-key'))).toEqual(['100:2', '100:1', '100:3']);
     expect(senses[0].getAttribute('data-chosen')).toBe('true');
     expect(senses[0].querySelector('[data-testid="sense-chosen"]')?.textContent).toBe(strings['used-here']);
     expect(all(el, 'sense-chosen')).toHaveLength(1);
     expect(q(el, 'popup-ai-note')?.textContent).toBe(strings['ai-sense']);
+  });
+
+  it('numbers senses from several entries 1 to N with the chosen one first and no key repeated', async () => {
+    const keys = ['1365860:1', '1365860:2', '1365860:3', '1365850:1', '1365850:2', '1365850:3', '1365850:4', '2096480:1'];
+    const el = await show(view({kind: 'result', result: result({
+      senses: keys.map(key => ({key, pos: ['adj-i'], gloss: [`gloss ${key}`]})),
+      analysis: {senseKey: '1365850:2', reading: null, generator: 'claude'},
+    })}));
+    const senses = all(el, 'sense');
+    expect(senses.map(s => s.querySelector('.dp-sense-n')?.textContent))
+      .toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    const rendered = senses.map(s => s.getAttribute('data-key'));
+    expect(rendered[0]).toBe('1365850:2');
+    expect(senses[0].getAttribute('data-chosen')).toBe('true');
+    expect(new Set(rendered).size).toBe(keys.length);
+    expect([...rendered].sort()).toEqual([...keys].sort());
   });
 
   it('shows the AI reading only when it differs from the usual one', async () => {

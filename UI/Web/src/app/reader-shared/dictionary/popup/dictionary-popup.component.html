@@ -47,9 +47,10 @@
 
         @if (senses().length > 0) {
           <ol class="dp-senses" [attr.aria-label]="t('senses')" data-testid="popup-senses">
-            @for (s of senses(); track s.n) {
-              <li class="dp-sense" [attr.data-chosen]="s.chosen || null" data-testid="sense">
-                <span class="dp-sense-n">{{ s.n }}</span>
+            @for (s of senses(); track s.sense.key) {
+              <li class="dp-sense" [attr.data-chosen]="s.chosen || null" [attr.data-key]="s.sense.key"
+                  data-testid="sense">
+                <span class="dp-sense-n">{{ s.label }}</span>
                 <span class="dp-sense-body">
                   @if (s.chosen) {
                     <span class="dp-badge" data-testid="sense-chosen">{{ t('used-here') }}</span>
