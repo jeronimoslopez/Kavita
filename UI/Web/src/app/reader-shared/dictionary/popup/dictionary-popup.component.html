@@ -1,0 +1,92 @@
+<ng-container *transloco="let t; prefix: 'dictionary-popup'">
+  <section #panel class="dp" [class.dp-sheet]="mode() === 'sheet'" role="dialog" tabindex="-1"
+           [attr.aria-label]="label() ?? t('senses')" data-testid="popup">
+    @if (mode() === 'sheet') {
+      <span class="dp-handle" aria-hidden="true"></span>
+    }
+
+    <div class="dp-head">
+      <div class="dp-headword">
+        @if (word(); as w) {
+          <span class="dp-lemma" lang="ja" data-testid="popup-lemma">{{ w.lemma }}</span>&ngsp;
+          <span class="dp-reading" lang="ja" data-testid="popup-reading">{{ w.reading }}</span>
+        } @else if (view().surface) {
+          <span class="dp-lemma" lang="ja" data-testid="popup-lemma">{{ view().surface }}</span>
+        }
+      </div>
+      <div class="dp-actions">
+        @if (view().canGoBack) {
+          <button type="button" class="dp-text-btn" data-testid="popup-back" (click)="back.emit()">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>{{ t('back') }}
+          </button>
+        }
+        <button type="button" class="dp-text-btn" data-testid="popup-close" (click)="dismiss.emit()">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>{{ t('close') }}
+        </button>
+      </div>
+    </div>
+
+    @switch (state().kind) {
+      @case ('loading') {
+        <div class="dp-loading" data-testid="popup-loading">
+          <p class="dp-meta">{{ t('loading') }}</p>
+          <span class="dp-skeleton dp-skeleton-line" aria-hidden="true"></span>
+          <span class="dp-skeleton dp-skeleton-thin" aria-hidden="true"></span>
+        </div>
+      }
+      @case ('failed') {
+        <p class="dp-error" role="alert" data-testid="popup-failed">{{ t('lookup-failed') }}</p>
+      }
+      @case ('empty') {
+        <p class="dp-no-entry" data-testid="popup-no-entry">{{ t('no-entry') }}</p>
+      }
+      @case ('result') {
+        @if (aiReading(); as reading) {
+          <p class="dp-reading dp-ai-reading" lang="ja" data-testid="popup-ai-reading">{{ reading }}</p>
+        }
+
+        @if (senses().length > 0) {
+          <ol class="dp-senses" [attr.aria-label]="t('senses')" data-testid="popup-senses">
+            @for (s of senses(); track s.n) {
+              <li class="dp-sense" [attr.data-chosen]="s.chosen || null" data-testid="sense">
+                <span class="dp-sense-n">{{ s.n }}</span>
+                <span class="dp-sense-body">
+                  @if (s.chosen) {
+                    <span class="dp-badge" data-testid="sense-chosen">{{ t('used-here') }}</span>
+                  }
+                  <span class="dp-gloss">{{ s.gloss }}</span>
+                  @if (s.pos) {
+                    <span class="dp-meta">{{ s.pos }}</span>
+                  }
+                </span>
+              </li>
+            }
+          </ol>
+        } @else {
+          <p class="dp-no-entry" data-testid="popup-no-entry">{{ t('no-entry') }}</p>
+        }
+
+        @if (parts().length > 0) {
+          <div class="dp-parts">
+            <p class="dp-label">{{ t('parts') }}</p>
+            <ul class="dp-chips">
+              @for (p of parts(); track p.sub) {
+                <li>
+                  <button type="button" class="dp-chip" data-testid="popup-part"
+                          [attr.aria-pressed]="view().openSub === p.sub" (click)="part.emit(p.sub)">
+                    <span lang="ja">{{ p.lemma }}</span>&ngsp;
+                    <span class="dp-chip-reading" lang="ja">{{ p.reading }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
+        @if (hasAi()) {
+          <p class="dp-ai-note" data-testid="popup-ai-note">{{ t('ai-sense') }}</p>
+        }
+      }
+    }
+  </section>
+</ng-container>
