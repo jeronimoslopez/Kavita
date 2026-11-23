@@ -107,20 +107,47 @@ public class ReadingDatabaseTests : IDisposable
     [InlineData(ReadingStore.PendingAnalysisSql, "ix_analysis_queue")]
     public async Task QueueQueries_ReadTheirIndexWithoutSorting(string sql, string index)
     {
+        var plan = await PlanAsync(sql);
+
+        Assert.Contains(plan, step => step.Contains(index));
+        Assert.DoesNotContain(plan, step => step.Contains("TEMP B-TREE"));
+    }
+
+    public static TheoryData<string, string, string> TargetedUpdates => new()
+    {
+        { ReadingStore.RaiseUnitPrioritySql, "sqlite_autoindex_unit_1", "ix_unit_queue" },
+        { ReadingStore.RaiseAnalysisPrioritySql, "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
+        { ReadingStore.QueueRequestedAnalysisSql(2), "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
+        { ReadingStore.RaiseRequestedAnalysisSql(2), "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
+    };
+
+    [Theory]
+    [MemberData(nameof(TargetedUpdates))]
+    public async Task TargetedUpdates_FindRowsByFileOrUnitAndNotByQueue(string sql, string index, string queueIndex)
+    {
+        var plan = await PlanAsync(sql);
+
+        Assert.Contains(plan, step => step.StartsWith("SEARCH unit") && step.Contains("sqlite_autoindex_unit_1"));
+        Assert.Contains(plan, step => step.Contains(index));
+        Assert.DoesNotContain(plan, step => step.Contains(queueIndex));
+        Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
+    }
+
+    private async Task<List<string>> PlanAsync(string sql)
+    {
         var database = new ReadingDatabase(_path);
         await using var connection = await database.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "EXPLAIN QUERY PLAN " + sql;
-        command.Parameters.AddWithValue("$minPriority", 0);
-        command.Parameters.AddWithValue("$limit", 10);
+        foreach (var name in new[] { "$minPriority", "$limit", "$priority", "$now", "$file", "$page", "$block", "$f0", "$f1" })
+        {
+            command.Parameters.AddWithValue(name, 1);
+        }
+        command.Parameters.AddWithValue("$kind", "epub");
 
         var plan = new List<string>();
-        await using (var reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync()) plan.Add(reader.GetString(3));
-        }
-
-        Assert.Contains(plan, step => step.Contains(index));
-        Assert.DoesNotContain(plan, step => step.Contains("TEMP B-TREE"));
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) plan.Add(reader.GetString(3));
+        return plan;
     }
 }

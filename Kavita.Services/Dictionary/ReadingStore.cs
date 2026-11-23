@@ -42,6 +42,30 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         """;
 
     /// <summary>
+    /// Raises one page's or one file's pending units. The unary plus keeps the planner off ix_unit_queue, whose
+    /// pending range covers every queued page of every book, so the update reads only the file's rows through the
+    /// (kind, manga_file_id, page) key. Public so the tests can check the plan
+    /// </summary>
+    public const string RaiseUnitPrioritySql = """
+        UPDATE unit SET priority = $priority, requested_utc = $now
+        WHERE kind = $kind AND manga_file_id = $file AND ($page IS NULL OR page = $page)
+          AND +state = 'pending' AND +priority < $priority
+        """;
+
+    /// <summary>
+    /// Raises the pending analysis rows of one page, one block or one file. The unary plus keeps the planner off
+    /// ix_analysis_queue for the same reason as <see cref="RaiseUnitPrioritySql"/>, so rows are found by unit_id.
+    /// Public so the tests can check the plan
+    /// </summary>
+    public const string RaiseAnalysisPrioritySql = """
+        UPDATE analysis SET priority = $priority, requested_utc = $now
+        WHERE +state = 'pending' AND +priority < $priority
+          AND unit_id IN (
+              SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND ($page IS NULL OR page = $page))
+          AND ($page IS NULL OR $block IS NULL OR block = $block)
+        """;
+
+    /// <summary>
     /// Ids per IN list. Older SQLite builds cap a statement at 999 parameters
     /// </summary>
     private const int BatchSize = 500;
@@ -335,11 +359,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     {
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE unit SET priority = $priority, requested_utc = $now
-            WHERE kind = $kind AND manga_file_id = $file AND ($page IS NULL OR page = $page)
-              AND state = 'pending' AND priority < $priority
-            """;
+        command.CommandText = RaiseUnitPrioritySql;
         command.Parameters.AddWithValue("$kind", Epub);
         command.Parameters.AddWithValue("$file", mangaFileId);
         command.Parameters.AddWithValue("$page", (object?) page ?? DBNull.Value);
@@ -386,37 +406,48 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             command.Parameters.AddWithValue("$kind", Epub);
             command.Parameters.AddWithValue("$priority", priority);
             command.Parameters.AddWithValue("$now", Now());
-            var files = AddInList(command, "f", batch);
+            AddInList(command, "f", batch);
             var values = string.Join(", ", batch.Select((_, i) => $"($f{i}, $priority, $now)"));
             command.CommandText = $"""
                 INSERT INTO analysis_request (manga_file_id, priority, requested_utc) VALUES {values}
                 ON CONFLICT (manga_file_id) DO UPDATE SET priority = MAX(priority, excluded.priority);
-
-                UPDATE analysis SET state = 'pending', priority = $priority, requested_utc = $now
-                WHERE state = 'idle'
-                  AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
-
-                UPDATE analysis SET priority = $priority, requested_utc = $now
-                WHERE state = 'pending' AND priority < $priority
-                  AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
+                {QueueRequestedAnalysisSql(batch.Length)};
+                {RaiseRequestedAnalysisSql(batch.Length)};
                 """;
             await command.ExecuteNonQueryAsync(ct);
         }
         await transaction.CommitAsync(ct);
     }
 
+    /// <summary>
+    /// Turns the idle analysis rows of the files <c>$f0</c> to <c>$f{fileCount - 1}</c> pending. The unary plus keeps
+    /// the planner off ix_analysis_queue, whose idle range is every book nobody asked for. Public so the tests can
+    /// check the plan
+    /// </summary>
+    public static string QueueRequestedAnalysisSql(int fileCount) => $"""
+        UPDATE analysis SET state = 'pending', priority = $priority, requested_utc = $now
+        WHERE +state = 'idle'
+          AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({FileList(fileCount)}))
+        """;
+
+    /// <summary>
+    /// Raises the pending analysis rows of the files <c>$f0</c> to <c>$f{fileCount - 1}</c>, found by unit_id as in
+    /// <see cref="QueueRequestedAnalysisSql"/>. Public so the tests can check the plan
+    /// </summary>
+    public static string RaiseRequestedAnalysisSql(int fileCount) => $"""
+        UPDATE analysis SET priority = $priority, requested_utc = $now
+        WHERE +state = 'pending' AND +priority < $priority
+          AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({FileList(fileCount)}))
+        """;
+
+    private static string FileList(int count) => string.Join(", ", Enumerable.Range(0, count).Select(i => $"$f{i}"));
+
     public async Task RaiseAnalysisPriorityAsync(int mangaFileId, int? page, int? block, int priority,
         CancellationToken ct = default)
     {
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            UPDATE analysis SET priority = $priority, requested_utc = $now
-            WHERE state = 'pending' AND priority < $priority
-              AND unit_id IN (
-                  SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND ($page IS NULL OR page = $page))
-              AND ($page IS NULL OR $block IS NULL OR block = $block)
-            """;
+        command.CommandText = RaiseAnalysisPrioritySql;
         command.Parameters.AddWithValue("$kind", Epub);
         command.Parameters.AddWithValue("$file", mangaFileId);
         command.Parameters.AddWithValue("$page", (object?) page ?? DBNull.Value);
@@ -432,9 +463,13 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         if (limit <= 0) return [];
 
         await using var connection = await database.OpenConnectionAsync(ct);
+        // One deferred transaction reads one WAL snapshot, so a re-tokenize that commits between the two reads can't
+        // pair a row's offsets with another version of its block's text
+        await using var snapshot = connection.BeginTransaction(deferred: true);
         var rows = new List<(long Id, long UnitId, int File, int Page, int Block, int S, int E, long Word, int Priority)>();
         await using (var command = connection.CreateCommand())
         {
+            command.Transaction = snapshot;
             command.CommandText = PendingAnalysisSql;
             command.Parameters.AddWithValue("$minPriority", minPriority);
             command.Parameters.AddWithValue("$limit", limit);
@@ -451,6 +486,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         foreach (var batch in rows.Select(r => r.UnitId).Distinct().Chunk(BatchSize))
         {
             await using var command = connection.CreateCommand();
+            command.Transaction = snapshot;
             command.CommandText = $"SELECT id, blocks FROM unit WHERE id IN ({AddInList(command, "u", batch)}) AND blocks IS NOT NULL";
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
@@ -477,16 +513,22 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var transaction = BeginWrite(connection);
 
-        var rows = new Dictionary<long, (AnalysisState State, long WordId)>();
+        var rows = new Dictionary<long, AnswerTarget>();
         foreach (var batch in answers.Select(a => a.Id).Distinct().Chunk(BatchSize))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandText = $"SELECT id, state, word_id FROM analysis WHERE id IN ({AddInList(command, "a", batch)})";
+            command.CommandText = $"""
+                SELECT a.id, a.state, a.word_id, u.manga_file_id, u.page
+                FROM analysis a
+                JOIN unit u ON u.id = a.unit_id
+                WHERE a.id IN ({AddInList(command, "a", batch)})
+                """;
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
-                rows[reader.GetInt64(0)] = (ParseAnalysisState(reader.GetString(1)), reader.GetInt64(2));
+                rows[reader.GetInt64(0)] = new AnswerTarget(ParseAnalysisState(reader.GetString(1)), reader.GetInt64(2),
+                    new AnalysisStoredPage(reader.GetInt32(3), reader.GetInt32(4)));
             }
         }
 
@@ -506,12 +548,12 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         var sense = update.Parameters.Add("$sense", SqliteType.Text);
         var reading = update.Parameters.Add("$reading", SqliteType.Text);
 
-        var seen = new HashSet<long>();
+        var accepted = new HashSet<long>();
+        var pages = new HashSet<AnalysisStoredPage>();
         var rejected = new List<AnalysisRejection>();
-        var stored = 0;
         foreach (var answer in answers)
         {
-            var reason = Check(answer, seen, rows, words);
+            var reason = Check(answer, accepted, rows, words);
             if (reason != null)
             {
                 rejected.Add(new AnalysisRejection(answer.Id, reason.Value));
@@ -522,11 +564,15 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             sense.Value = (object?) answer.SenseKey ?? DBNull.Value;
             reading.Value = (object?) answer.Reading ?? DBNull.Value;
             await update.ExecuteNonQueryAsync(ct);
-            stored++;
+            accepted.Add(answer.Id);
+            pages.Add(rows[answer.Id].Page);
         }
 
         await transaction.CommitAsync(ct);
-        return new AnalysisStoreOutcome(stored, rejected);
+        return new AnalysisStoreOutcome(accepted.Count, rejected)
+        {
+            StoredPages = pages.OrderBy(p => p.MangaFileId).ThenBy(p => p.Page).ToList(),
+        };
     }
 
     public async Task ClearAnalysisAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default)
@@ -594,10 +640,12 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             analysis.GetValueOrDefault(Name(AnalysisState.Done)));
     }
 
-    private static AnalysisRejectReason? Check(AnalysisAnswer answer, HashSet<long> seen,
-        Dictionary<long, (AnalysisState State, long WordId)> rows, Dictionary<long, StoredWord> words)
+    /// <param name="accepted">Ids already stored in this batch. A rejected answer doesn't count, so a later answer
+    /// for the same id still gets its own check</param>
+    private static AnalysisRejectReason? Check(AnalysisAnswer answer, HashSet<long> accepted,
+        Dictionary<long, AnswerTarget> rows, Dictionary<long, StoredWord> words)
     {
-        if (!seen.Add(answer.Id)) return AnalysisRejectReason.Duplicate;
+        if (accepted.Contains(answer.Id)) return AnalysisRejectReason.Duplicate;
         if (!rows.TryGetValue(answer.Id, out var row) || row.State != AnalysisState.Pending)
         {
             return AnalysisRejectReason.NotPending;
@@ -679,6 +727,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         (JsonSerializer.Deserialize<List<BlockJson>>(json) ?? [])
         .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens))
         .ToList();
+
+    private sealed record AnswerTarget(AnalysisState State, long WordId, AnalysisStoredPage Page);
 
     /// <summary>
     /// A block in unit.blocks. Tokens use TokenDto's array converters, the same form the sidecar and the reader use

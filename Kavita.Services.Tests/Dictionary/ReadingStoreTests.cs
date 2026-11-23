@@ -552,6 +552,22 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task RequestAnalysis_RaisesRowsThatAreAlreadyPending()
+    {
+        var (hot, cold, _) = await SeedWordsAsync();
+        var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, cold)]);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.WholeBook);
+
+        await _store.RequestAnalysisAsync([1], ReadingPriority.OpenChapter);
+
+        Assert.All(await _store.GetUnitAnalysisAsync(unitId), r =>
+        {
+            Assert.Equal(AnalysisState.Pending, r.State);
+            Assert.Equal(ReadingPriority.OpenChapter, r.Priority);
+        });
+    }
+
+    [Fact]
     public async Task RequestAnalysis_KeepsTheHigherRequestPriorityForRowsAddedLater()
     {
         var (hot, cold, _) = await SeedWordsAsync();
@@ -706,6 +722,70 @@ public class ReadingStoreTests : IDisposable
             Assert.Equal("v2", r.PromptVersion);
         });
         Assert.Equal(3, (await _store.GetPendingAnalysisAsync(10, 0)).Count);
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_ARejectedAnswerDoesNotBlockALaterOneForTheSameId()
+    {
+        var (hot, _, _) = await SeedWordsAsync();
+        var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot)]);
+        await _store.RequestAnalysisAsync([1], 0);
+        var id = Assert.Single(await _store.GetUnitAnalysisAsync(unitId)).Id;
+
+        var outcome = await _store.StoreAnalysisAsync("gen", "p1",
+        [
+            new AnalysisAnswer(id, "nope:1", null),
+            new AnalysisAnswer(id, "hot:2", null),
+            new AnalysisAnswer(id, "hot:1", null),
+        ]);
+
+        Assert.Equal(1, outcome.Stored);
+        Assert.Equal(
+        [
+            new AnalysisRejection(id, AnalysisRejectReason.SenseNotOffered),
+            new AnalysisRejection(id, AnalysisRejectReason.Duplicate),
+        ], outcome.Rejected);
+        Assert.Equal("hot:2", Assert.Single(await _store.GetUnitAnalysisAsync(unitId)).SenseKey);
+    }
+
+    [Fact]
+    public async Task StoreAnalysis_ListsEachPageThatGainedAnAnswerOnceInFileThenPageOrder()
+    {
+        var (hot, _, _) = await SeedWordsAsync();
+        AnalysisSpan[] spans = [new(0, 0, 1, hot), new(0, 2, 3, hot)];
+        await _store.SeedFileAsync(5, 3, Stamp, 0);
+        await _store.SeedFileAsync(2, 1, Stamp, 0);
+        var units = new Dictionary<(int File, int Page), long>();
+        foreach (var (file, page) in new[] { (5, 2), (5, 0), (5, 1), (2, 0) })
+        {
+            var unit = (await _store.GetUnitAsync(file, page))!;
+            Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [Block(0, "abc")], spans));
+            units[(file, page)] = unit.Id;
+        }
+        await _store.RequestAnalysisAsync([5, 2], 0);
+        async Task<long[]> Ids((int, int) key) =>
+            (await _store.GetUnitAnalysisAsync(units[key])).Select(a => a.Id).ToArray();
+        var p52 = await Ids((5, 2));
+        var p50 = await Ids((5, 0));
+        var p51 = await Ids((5, 1));
+        var p20 = await Ids((2, 0));
+
+        var outcome = await _store.StoreAnalysisAsync("gen", "p1",
+        [
+            new AnalysisAnswer(p52[0], null, null),
+            new AnalysisAnswer(p20[1], null, null),
+            new AnalysisAnswer(p52[1], null, null),
+            new AnalysisAnswer(p50[0], null, null),
+            new AnalysisAnswer(p51[0], "bad", null),
+        ]);
+
+        Assert.Equal(4, outcome.Stored);
+        Assert.Equal([new AnalysisStoredPage(2, 0), new AnalysisStoredPage(5, 0), new AnalysisStoredPage(5, 2)],
+            outcome.StoredPages);
+
+        var none = await _store.StoreAnalysisAsync("gen", "p1", [new AnalysisAnswer(p52[0], null, null)]);
+        Assert.Empty(none.StoredPages);
+        Assert.Empty((await _store.StoreAnalysisAsync("gen", "p1", [])).StoredPages);
     }
 
     [Fact]

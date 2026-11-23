@@ -119,7 +119,19 @@ public sealed record AnalysisAnswer(long Id, string? SenseKey, string? Reading);
 
 public sealed record AnalysisRejection(long Id, AnalysisRejectReason Reason);
 
-public sealed record AnalysisStoreOutcome(int Stored, IReadOnlyList<AnalysisRejection> Rejected);
+public sealed record AnalysisStoreOutcome(int Stored, IReadOnlyList<AnalysisRejection> Rejected)
+{
+    /// <summary>
+    /// The pages that gained at least one answer in this call, each once, ordered by file then page
+    /// </summary>
+    public IReadOnlyList<AnalysisStoredPage> StoredPages { get; init; } = [];
+}
+
+/// <summary>
+/// A page that gained answers, so the API can tell readers of that page to fetch it again
+/// </summary>
+/// <param name="Page">0-based page, as the book reader counts them</param>
+public sealed record AnalysisStoredPage(int MangaFileId, int Page);
 
 /// <summary>
 /// Row counts by state, for status displays

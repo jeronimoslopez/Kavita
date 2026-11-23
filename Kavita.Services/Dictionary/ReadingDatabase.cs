@@ -117,13 +117,21 @@ public class ReadingDatabase
     {
         await EnsureCreatedAsync(ct);
         var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        await using var command = connection.CreateCommand();
-        // Several services and the tokenize worker write at once, and the busy timeout makes a second writer wait
-        // for the first instead of failing with SQLITE_BUSY
-        command.CommandText = "PRAGMA busy_timeout = 10000; PRAGMA synchronous = NORMAL; PRAGMA temp_store = MEMORY;";
-        await command.ExecuteNonQueryAsync(ct);
-        return connection;
+        try
+        {
+            await connection.OpenAsync(ct);
+            await using var command = connection.CreateCommand();
+            // Several services and the tokenize worker write at once, and the busy timeout makes a second writer
+            // wait for the first instead of failing with SQLITE_BUSY
+            command.CommandText = "PRAGMA busy_timeout = 10000; PRAGMA synchronous = NORMAL; PRAGMA temp_store = MEMORY;";
+            await command.ExecuteNonQueryAsync(ct);
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
     }
 
     private async Task EnsureCreatedAsync(CancellationToken ct)
