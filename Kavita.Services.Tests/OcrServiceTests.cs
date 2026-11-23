@@ -16,6 +16,7 @@ using Kavita.Models.Entities.Enums;
 using Kavita.Services.Builders;
 using Kavita.Services.Ocr;
 using Kavita.Services.Scanner;
+using Kavita.Services.Tests.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
@@ -23,6 +24,7 @@ using Xunit.Abstractions;
 
 namespace Kavita.Services.Tests;
 
+[Collection(HangfireStorageCollection.Name)]
 public class OcrServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(outputHelper), IDisposable
 {
     private const string PdfPath = "/books/Quartet/Quartet 1.pdf";
