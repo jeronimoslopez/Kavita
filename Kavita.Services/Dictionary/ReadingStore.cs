@@ -123,8 +123,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             isProper.Value = word.IsProper ? 1 : 0;
             reading.Value = word.Reading;
             jlpt.Value = (object?) word.Jlpt ?? DBNull.Value;
-            readings.Value = JsonSerializer.Serialize(word.Readings);
-            senses.Value = JsonSerializer.Serialize(word.Senses);
+            readings.Value = JsonSerializer.Serialize(word.Readings, ReadingJson.Options);
+            senses.Value = JsonSerializer.Serialize(word.Senses, ReadingJson.Options);
             ids.Add(Convert.ToInt64(await command.ExecuteScalarAsync(ct)));
         }
 
@@ -809,7 +809,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     private static AnalysisState ParseAnalysisState(string value) => Enum.Parse<AnalysisState>(value, ignoreCase: true);
 
     private static string SerializeBlocks(IReadOnlyList<StoredBlock> blocks) =>
-        JsonSerializer.Serialize(blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens)).ToList());
+        JsonSerializer.Serialize(blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens)).ToList(), ReadingJson.Options);
 
     private static List<StoredBlock> DeserializeBlocks(string json) =>
         (JsonSerializer.Deserialize<List<BlockJson>>(json) ?? [])

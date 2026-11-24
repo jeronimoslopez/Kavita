@@ -983,6 +983,76 @@ public class ReadingStoreTests : IDisposable
 
     #endregion
 
+    #region Stored JSON
+
+    private async Task<string> RawAsync(string sql)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (string) (await command.ExecuteScalarAsync())!;
+    }
+
+    [Fact]
+    public async Task StoredJson_KeepsJapaneseTextUnescapedAndRoundTrips()
+    {
+        var word = Word("食べる", senses: 2) with { Readings = ["たべる", "くう"] };
+        var id = (await _store.UpsertWordsAsync([word], Lexicon))[0];
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        StoredBlock[] blocks = [Block(0, "「食べ物」を𠮟る & <b>", Token(1, 3, id, "たべもの"))];
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var rawBlocks = await RawAsync($"SELECT blocks FROM unit WHERE id = {unit.Id}");
+        Assert.Contains("「食べ物」を", rawBlocks);
+        Assert.Contains("たべもの", rawBlocks);
+        Assert.Contains("& <b>", rawBlocks);
+        Assert.Contains("たべる", await RawAsync($"SELECT readings FROM word WHERE id = {id}"));
+        Assert.Contains("食べる", await RawAsync($"SELECT senses FROM word WHERE id = {id}"));
+
+        var stored = (await _store.GetUnitAsync(1, 0))!.Blocks.Single();
+        Assert.Equal(blocks[0].Text, stored.Text);
+        Assert.Equal(blocks[0].Tokens, stored.Tokens);
+        var read = (await _store.GetWordsAsync([id]))[id];
+        Assert.Equal(word.Readings, read.Readings);
+        Assert.Equal(word.Senses.Select(s => s.Key), read.Senses.Select(s => s.Key));
+    }
+
+    [Fact]
+    public async Task StoredJson_ReadsRowsWrittenWithEscapes()
+    {
+        var id = (await _store.UpsertWordsAsync([Word("x")], Lexicon))[0];
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        var escapedBlocks = JsonSerializer.Serialize(new object[]
+        {
+            new { i = 0, text = "食べ物", tokens = new object[] { new object?[] { 0, 3, id, "たべもの", null } } },
+        });
+        Assert.Contains("\\u98DF", escapedBlocks);
+        await using (var connection = await OpenAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                UPDATE unit SET blocks = $blocks, state = 'done' WHERE id = $unit;
+                UPDATE word SET readings = $readings WHERE id = $word;
+                """;
+            command.Parameters.AddWithValue("$blocks", escapedBlocks);
+            command.Parameters.AddWithValue("$unit", unit.Id);
+            command.Parameters.AddWithValue("$readings", JsonSerializer.Serialize(new[] { "たべる" }));
+            command.Parameters.AddWithValue("$word", id);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var block = (await _store.GetUnitAsync(1, 0))!.Blocks.Single();
+
+        Assert.Equal("食べ物", block.Text);
+        Assert.Equal(Token(0, 3, id, "たべもの"), block.Tokens.Single());
+        Assert.Equal(["たべる"], (await _store.GetWordsAsync([id]))[id].Readings);
+    }
+
+    #endregion
+
     #region Counts
 
     [Fact]
