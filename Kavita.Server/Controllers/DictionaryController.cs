@@ -8,6 +8,7 @@ using Kavita.Models.Constants;
 using Kavita.Models.DTOs.Dictionary;
 using Kavita.Server.Attributes;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kavita.Server.Controllers;
@@ -24,7 +25,8 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     /// The page's blocks with their tokens, the words they point at, and the stored AI answers
     /// </summary>
     /// <param name="page">0-based, as the book reader counts pages</param>
-    /// <returns>No content when the page isn't tokenized yet. It moves up the queue, and DictionaryPagesReady follows</returns>
+    /// <returns>No content when the page isn't tokenized yet. It moves up the queue, and DictionaryPagesReady follows.
+    /// Also no content while reading.db is being upgraded</returns>
     [ChapterAccess]
     [HttpGet("epub-page")]
     public async Task<ActionResult<EpubPageTokensDto>> GetEpubPage(int chapterId, int page)
@@ -56,19 +58,33 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     [HttpPost("chapter/prioritize")]
     public async Task<ActionResult> PrioritizeChapter(int chapterId)
     {
-        await dictionaryService.PrioritizeChapterAsync(chapterId, HttpContext.RequestAborted);
+        try
+        {
+            await dictionaryService.PrioritizeChapterAsync(chapterId, HttpContext.RequestAborted);
+        }
+        catch (ReadingStoreNotReadyException)
+        {
+            // The worker reaches the chapter on its own once the upgrade is done
+        }
         return Ok();
     }
 
     /// <summary>
     /// Queues AI analysis of every EPUB in the series, behind anything a reader has open
     /// </summary>
-    /// <returns>How many files were queued</returns>
+    /// <returns>How many files were queued, or 503 while reading.db is being upgraded</returns>
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
     [HttpPost("series/analyze")]
     public async Task<ActionResult<int>> AnalyzeSeries(DictionarySeriesRequestDto dto)
     {
-        return Ok(await dictionaryService.AnalyzeSeriesAsync(dto.SeriesId, HttpContext.RequestAborted));
+        try
+        {
+            return Ok(await dictionaryService.AnalyzeSeriesAsync(dto.SeriesId, HttpContext.RequestAborted));
+        }
+        catch (ReadingStoreNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
     }
 
     /// <summary>
@@ -78,7 +94,14 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     [HttpPost("series/remove")]
     public async Task<ActionResult> RemoveSeries(DictionarySeriesRequestDto dto)
     {
-        await dictionaryService.RemoveSeriesAsync(dto.SeriesId, HttpContext.RequestAborted);
+        try
+        {
+            await dictionaryService.RemoveSeriesAsync(dto.SeriesId, HttpContext.RequestAborted);
+        }
+        catch (ReadingStoreNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
         return Ok();
     }
 
@@ -87,20 +110,28 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     /// </summary>
     /// <param name="limit">Passages to return, 4 when left out and at most 20</param>
     /// <param name="minPriority">Leaves out rows below this priority</param>
-    /// <returns>No content when nothing is waiting</returns>
+    /// <returns>No content when nothing is waiting or reading.db is being upgraded</returns>
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
     [HttpGet("analysis/pending")]
     public async Task<ActionResult<IList<AnalysisPassageDto>>> GetPendingAnalysis(int? limit, int minPriority = 0)
     {
         var count = Math.Clamp(limit ?? DefaultPassageLimit, 1, MaxPassageLimit);
-        var passages = await dictionaryService.GetPendingAnalysisAsync(count, minPriority, HttpContext.RequestAborted);
-        return passages.Count == 0 ? NoContent() : Ok(passages);
+        try
+        {
+            var passages = await dictionaryService.GetPendingAnalysisAsync(count, minPriority, HttpContext.RequestAborted);
+            return passages.Count == 0 ? NoContent() : Ok(passages);
+        }
+        catch (ReadingStoreNotReadyException)
+        {
+            return NoContent();
+        }
     }
 
     /// <summary>
     /// Stores the runner's answers. Each answer is checked on its own, so one bad answer doesn't lose the rest
     /// </summary>
-    /// <returns>How many were stored, and why each of the others wasn't</returns>
+    /// <returns>How many were stored, and why each of the others wasn't. 503 while reading.db is being upgraded, with
+    /// nothing stored</returns>
     [Authorize(Policy = PolicyGroups.AdminPolicy)]
     [HttpPost("analysis")]
     public async Task<ActionResult<AnalysisStoreResultDto>> StoreAnalysis(AnalysisStoreRequestDto dto)
@@ -113,5 +144,12 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
         {
             return BadRequest(ex.Message);
         }
+        catch (ReadingStoreNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
     }
+
+    private ObjectResult NotReady(ReadingStoreNotReadyException ex) =>
+        StatusCode(StatusCodes.Status503ServiceUnavailable, ex.Message);
 }

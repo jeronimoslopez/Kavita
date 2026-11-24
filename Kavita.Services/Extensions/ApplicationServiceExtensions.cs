@@ -21,6 +21,7 @@ using Kavita.Services.Scanner;
 using Kavita.Services.SignalR;
 using Kavita.Services.Yomitan;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Kavita.Services.Extensions;
 
@@ -139,7 +140,8 @@ public static class ApplicationServiceExtensions
         services.AddHostedService(sp => sp.GetRequiredService<OcrWorkerHostedService>());
 
         // Tokens and AI analysis for the dictionary popup live in their own SQLite file (config/reading/reading.db)
-        services.AddSingleton(_ => new ReadingDatabase(ReadingDatabase.DefaultDatabasePath));
+        services.AddSingleton(sp => new ReadingDatabase(ReadingDatabase.DefaultDatabasePath,
+            sp.GetService<ILogger<ReadingDatabase>>()));
         services.AddSingleton<IReadingStore, ReadingStore>();
         services.AddSingleton<IEpubTextBlocks, EpubTextBlocks>();
         services.AddSingleton<ITextSidecarClient, TextSidecarClient>();

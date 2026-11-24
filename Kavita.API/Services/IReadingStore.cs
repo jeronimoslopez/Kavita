@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -12,7 +13,9 @@ namespace Kavita.API.Services;
 /// <remarks>
 /// A unit is one page of one file, keyed on (kind, manga file id, page). Every method here works on EPUB units, and
 /// pages are 0-based as the book reader counts them. Ids from reading.db are longs. Queues order by priority, highest
-/// first, then by the time the row was queued or last raised, oldest first, then by id.
+/// first, then by the time the row was queued or last raised, oldest first, then by id. While an upgrade rewrites
+/// reading.db's rows, <see cref="GetUnitAsync"/> returns null and every other method throws
+/// <see cref="ReadingStoreNotReadyException"/>.
 /// </remarks>
 public interface IReadingStore
 {
@@ -71,7 +74,8 @@ public interface IReadingStore
     /// stay as they are, and a unit that isn't pending is left alone
     /// </summary>
     Task DeferUnitAsync(long unitId, CancellationToken ct = default);
-    /// <returns>The unit with its blocks, in any state, or null when the page has no unit</returns>
+    /// <returns>The unit with its blocks, in any state, or null when the page has no unit or reading.db is being
+    /// upgraded</returns>
     Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default);
     /// <summary>
     /// Raises the priority of the file's pending units to at least <paramref name="priority"/>. Units already at or
@@ -123,6 +127,12 @@ public interface IReadingStore
     /// <param name="mangaFileIds">The files to count, or null for the whole store</param>
     Task<ReadingStoreCounts> GetCountsAsync(IReadOnlyCollection<int>? mangaFileIds, CancellationToken ct = default);
 }
+
+/// <summary>
+/// reading.db is being upgraded and its existing rows rewritten, which can take a minute or more after an update.
+/// Try again later
+/// </summary>
+public class ReadingStoreNotReadyException() : Exception("The dictionary's reading store is being upgraded");
 
 /// <summary>
 /// The queue priorities contract B sets, for units and analysis rows alike

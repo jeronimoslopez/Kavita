@@ -134,4 +134,19 @@ public class DictionaryControllerTests
 
         Assert.Equal("generator is required", Assert.IsType<BadRequestObjectResult>(result.Result).Value);
     }
+
+    [Fact]
+    public async Task WhileTheStoreIsUpgraded_ReaderCallsSucceedQuietlyAndRunnerWritesAreUnavailable()
+    {
+        _service.PrioritizeChapterAsync(3, Arg.Any<CancellationToken>()).Returns(_ => throw new ReadingStoreNotReadyException());
+        _service.GetPendingAnalysisAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns<IList<AnalysisPassageDto>>(_ => throw new ReadingStoreNotReadyException());
+        _service.StoreAnalysisAsync(Arg.Any<AnalysisStoreRequestDto>(), Arg.Any<CancellationToken>())
+            .Returns<AnalysisStoreResultDto>(_ => throw new ReadingStoreNotReadyException());
+
+        Assert.IsType<OkResult>(await CreateController().PrioritizeChapter(3));
+        Assert.IsType<NoContentResult>((await CreateController(isAdmin: true).GetPendingAnalysis(null)).Result);
+        var stored = await CreateController(isAdmin: true).StoreAnalysis(new AnalysisStoreRequestDto());
+        Assert.Equal(StatusCodes.Status503ServiceUnavailable, Assert.IsType<ObjectResult>(stored.Result).StatusCode);
+    }
 }

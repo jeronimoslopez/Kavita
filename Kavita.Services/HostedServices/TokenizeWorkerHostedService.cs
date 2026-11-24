@@ -8,6 +8,7 @@ using Kavita.API.Database;
 using Kavita.API.Services;
 using Kavita.API.Services.SignalR;
 using Kavita.Models.DTOs.SignalR;
+using Kavita.Services.Dictionary;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -51,6 +52,7 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await Task.Yield();
+        if (!await InitializeStoreAsync(stoppingToken)) return;
         var backoff = TimeSpan.Zero;
 
         while (!stoppingToken.IsCancellationRequested)
@@ -83,6 +85,31 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
 
             await WaitAsync(wait, stoppingToken);
         }
+    }
+
+    /// <summary>
+    /// Opens reading.db at startup, so an upgrade that rewrites its rows starts here and doesn't wait for the first
+    /// request. Requests that arrive during it are told the store isn't ready
+    /// </summary>
+    /// <returns>False when Kavita is shutting down</returns>
+    internal async Task<bool> InitializeStoreAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var database = scope.ServiceProvider.GetService<ReadingDatabase>();
+            if (database != null) await database.InitializeAsync(ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception ex)
+        {
+            // Each pass opens the file again, which retries the upgrade
+            logger.LogError(ex, "[TokenizeWorker] Couldn't open reading.db");
+        }
+        return true;
     }
 
     /// <returns>The wait after one more pass the sidecar didn't answer, doubling from a minute up to ten</returns>

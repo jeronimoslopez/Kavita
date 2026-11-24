@@ -403,7 +403,17 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     public async Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default)
     {
-        await using var connection = await database.OpenConnectionAsync(ct);
+        SqliteConnection connection;
+        try
+        {
+            connection = await database.OpenConnectionAsync(ct);
+        }
+        catch (ReadingStoreNotReadyException)
+        {
+            return null;
+        }
+
+        await using var _ = connection;
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, kind, state, source_stamp, tokenizer_version, blocks
