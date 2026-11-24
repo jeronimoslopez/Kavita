@@ -117,8 +117,6 @@ public class ReadingDatabaseTests : IDisposable
     {
         { ReadingStore.RaiseUnitPrioritySql, "sqlite_autoindex_unit_1", "ix_unit_queue" },
         { ReadingStore.RaiseAnalysisPrioritySql, "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
-        { ReadingStore.QueueRequestedAnalysisSql(2), "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
-        { ReadingStore.RaiseRequestedAnalysisSql(2), "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
     };
 
     [Theory]

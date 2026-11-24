@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Kavita.API.Services;
 using Kavita.Models.DTOs.Dictionary;
 using Kavita.Services.Dictionary;
@@ -80,6 +81,32 @@ public class ReadingStoreTests : IDisposable
         await _store.GetNextPendingUnitAsync() ?? throw new InvalidOperationException("Nothing is pending");
 
     /// <summary>
+    /// Where a test wants an analysis row, given as a top-level token over a word
+    /// </summary>
+    private sealed record AnalysisSpan(int Block, int S, int E, long WordId);
+
+    /// <summary>
+    /// Saves the blocks with one top-level token per span added to them, so the store finds those spans when the
+    /// span's word is ambiguous
+    /// </summary>
+    private Task<bool> SaveAsync(long unitId, string stamp, IReadOnlyList<StoredBlock> blocks,
+        IReadOnlyList<AnalysisSpan> spans)
+    {
+        var withTokens = blocks.Select(b => b.Index).Concat(spans.Select(s => s.Block)).Distinct().Order()
+            .Select(index =>
+            {
+                var block = blocks.FirstOrDefault(b => b.Index == index) ?? Block(index, $"block-{index}");
+                var tokens = block.Tokens
+                    .Concat(spans.Where(s => s.Block == index).Select(s => Token(s.S, s.E, s.WordId)))
+                    .OrderBy(t => t.S)
+                    .ToList();
+                return block with { Tokens = tokens };
+            })
+            .ToList();
+        return _store.SaveTokenizedUnitAsync(unitId, stamp, Tokenizer, withTokens);
+    }
+
+    /// <summary>
     /// Seeds one page of the file and tokenizes it with the given spans
     /// </summary>
     private async Task<long> TokenizedPageAsync(int file, IReadOnlyList<AnalysisSpan> spans, int pageCount = 1,
@@ -89,7 +116,7 @@ public class ReadingStoreTests : IDisposable
         var unit = (await _store.GetUnitAsync(file, 0))!;
         var blocks = spans.Select(s => s.Block).Append(0).Distinct().Order()
             .Select(b => Block(b, $"{text}-{b}")).ToList();
-        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks, spans));
+        Assert.True(await SaveAsync(unit.Id, Stamp, blocks, spans));
         return unit.Id;
     }
 
@@ -207,9 +234,11 @@ public class ReadingStoreTests : IDisposable
     {
         var (hot, _, _) = await SeedWordsAsync();
         await _store.SeedFileAsync(1, 3, Stamp, 0);
+        await _store.RequestAnalysisAsync([1], 0);
         var last = (await _store.GetUnitAsync(1, 2))!;
-        Assert.True(await _store.SaveTokenizedUnitAsync(last.Id, Stamp, Tokenizer, [Block(0, "abc")],
+        Assert.True(await SaveAsync(last.Id, Stamp, [Block(0, "abc")],
             [new AnalysisSpan(0, 0, 1, hot)]));
+        Assert.Equal(1, await ScalarAsync("SELECT COUNT(*) FROM analysis"));
 
         await _store.SeedFileAsync(1, 2, Stamp, 0);
 
@@ -226,6 +255,7 @@ public class ReadingStoreTests : IDisposable
     {
         var (hot, _, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 3, hot)], pageCount: 2);
+        await _store.RequestAnalysisAsync([1], 0);
         await _store.RecordFailedAttemptAsync((await NextAsync()).Id, 5);
 
         await _store.SeedFileAsync(1, 2, NewStamp, ReadingPriority.OpenChapter);
@@ -325,7 +355,7 @@ public class ReadingStoreTests : IDisposable
             order.Add((next.MangaFileId, next.Page));
             Assert.Equal(Stamp, next.SourceStamp);
             Assert.Equal(ReadingUnitKind.Epub, next.Kind);
-            Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, next.SourceStamp, Tokenizer, [], []));
+            Assert.True(await SaveAsync(next.Id, next.SourceStamp, [], []));
         }
 
         Assert.Equal([(2, 0), (3, 0), (1, 0), (1, 1)], order);
@@ -343,7 +373,7 @@ public class ReadingStoreTests : IDisposable
             Block(1, "𠮟る", Token(0, 3, 7, "しかる")),
         ];
 
-        Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, Stamp, Tokenizer, blocks, []));
+        Assert.True(await SaveAsync(next.Id, Stamp, blocks, []));
 
         var unit = (await _store.GetUnitAsync(1, 0))!;
         Assert.Equal(ReadingUnitState.Done, unit.State);
@@ -367,9 +397,9 @@ public class ReadingStoreTests : IDisposable
         var picked = await NextAsync();
         await _store.SeedFileAsync(1, 1, NewStamp, 0);
 
-        Assert.False(await _store.SaveTokenizedUnitAsync(picked.Id, picked.SourceStamp, Tokenizer,
+        Assert.False(await SaveAsync(picked.Id, picked.SourceStamp,
             [Block(0, "abc")], [new AnalysisSpan(0, 0, 1, hot)]));
-        Assert.False(await _store.SaveTokenizedUnitAsync(picked.Id + 100, Stamp, Tokenizer, [Block(0, "abc")], []));
+        Assert.False(await SaveAsync(picked.Id + 100, Stamp, [Block(0, "abc")], []));
 
         var unit = (await _store.GetUnitAsync(1, 0))!;
         Assert.Equal(ReadingUnitState.Pending, unit.State);
@@ -394,7 +424,7 @@ public class ReadingStoreTests : IDisposable
         await _store.SeedFileAsync(1, 1, NewStamp, 0);
         var added = new AnalysisSpan(0, 4, 7, cold);
         var sameStartOtherWord = new AnalysisSpan(1, 0, 2, hot);
-        Assert.True(await _store.SaveTokenizedUnitAsync(unitId, NewStamp, Tokenizer, [Block(0, "x"), Block(1, "y")],
+        Assert.True(await SaveAsync(unitId, NewStamp, [Block(0, "x"), Block(1, "y")],
             [kept, added, sameStartOtherWord]));
 
         var after = await _store.GetUnitAnalysisAsync(unitId);
@@ -420,22 +450,77 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveTokenizedUnit_NewRowsAreIdleWithoutARequest()
+    public async Task SaveTokenizedUnit_WithoutARequest_WritesNoRowsAndDeletesOldOnes()
     {
         var (hot, cold, _) = await SeedWordsAsync();
 
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(2, 3, 5, cold)]);
 
-        var rows = await _store.GetUnitAnalysisAsync(unitId);
-        Assert.Equal(2, rows.Count);
+        Assert.Empty(await _store.GetUnitAnalysisAsync(unitId));
+        Assert.Empty(await _store.GetPendingAnalysisAsync(10, 0));
+
+        // Rows left behind by a request that's gone, as an older store kept them
+        await _store.RequestAnalysisAsync([1], 0);
+        Assert.Equal(2, (await _store.GetUnitAnalysisAsync(unitId)).Count);
+        await ScalarAsync("DELETE FROM analysis_request");
+
+        await _store.SeedFileAsync(1, 1, NewStamp, 0);
+        Assert.True(await SaveAsync(unitId, NewStamp, [Block(0, "x")], [new AnalysisSpan(0, 0, 1, hot)]));
+
+        Assert.Empty(await _store.GetUnitAnalysisAsync(unitId));
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_WithARequest_AddsPendingRowsForAmbiguousTopLevelTokensOnly()
+    {
+        var (hot, cold, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+
+        // The compound is plain, and its ambiguous part never gets a row of its own
+        StoredBlock[] blocks =
+        [
+            Block(0, "abcdefgh", Token(0, 2, hot), Token(2, 3, plain), Token(3, 4, null),
+                Token(4, 6, plain, sub: [new SubTokenDto(4, 5, hot, null), new SubTokenDto(5, 6, cold, null)])),
+            Block(1, "xyz", Token(0, 3, cold)),
+        ];
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var rows = await _store.GetUnitAnalysisAsync(unit.Id);
+        Assert.Equal([(0, 0, 2, hot), (1, 0, 3, cold)], rows.Select(r => (r.Block, r.S, r.E, r.WordId)));
         Assert.All(rows, r =>
         {
-            Assert.Equal(AnalysisState.Idle, r.State);
-            Assert.Equal(unitId, r.UnitId);
+            Assert.Equal(AnalysisState.Pending, r.State);
+            Assert.Equal(ReadingPriority.NextChapter, r.Priority);
             Assert.Null(r.Generator);
         });
-        Assert.Equal([0, 2], rows.Select(r => r.Block));
-        Assert.Empty(await _store.GetPendingAnalysisAsync(10, 0));
+    }
+
+    [Fact]
+    public async Task AmbiguousWords_MatchSidecarWordDtoIsAmbiguous()
+    {
+        var sample = JsonSerializer.Deserialize<TokenizeResponseDto>(File.ReadAllText(
+            Path.Join(Directory.GetCurrentDirectory(), "../../../../text-sidecar-contract/sample-response.json")))!;
+        List<SidecarWordDto> words =
+        [
+            ..sample.Words,
+            Word("one-one"), Word("two-senses", senses: 2), Word("two-readings", readings: 2),
+            Word("no-senses", senses: 0), Word("no-senses-two-readings", senses: 0, readings: 2),
+            Word("no-readings-two-senses", senses: 2, readings: 0),
+        ];
+        Assert.Contains(words, w => w.IsAmbiguous);
+        Assert.Contains(words, w => !w.IsAmbiguous);
+        var ids = await _store.UpsertWordsAsync(words, Lexicon);
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        await _store.RequestAnalysisAsync([1], 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+
+        var tokens = ids.Select((id, i) => Token(i, i + 1, id)).ToArray();
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [Block(0, new string('x', ids.Count), tokens)]));
+
+        var expected = ids.Where((_, i) => words[i].IsAmbiguous).ToList();
+        Assert.Equal(expected, (await _store.GetUnitAnalysisAsync(unit.Id)).Select(r => r.WordId));
     }
 
     [Fact]
@@ -451,7 +536,7 @@ public class ReadingStoreTests : IDisposable
         // Its queue time moved past page 1's, so page 1 goes first
         var second = await NextAsync();
         Assert.Equal(1, second.Page);
-        Assert.True(await _store.SaveTokenizedUnitAsync(second.Id, Stamp, Tokenizer, [], []));
+        Assert.True(await SaveAsync(second.Id, Stamp, [], []));
         var retry = await NextAsync();
         Assert.Equal(first.Id, retry.Id);
         Assert.Equal(1, retry.Attempts);
@@ -484,7 +569,7 @@ public class ReadingStoreTests : IDisposable
         {
             order.Add(next.MangaFileId);
             if (next.Id == first.Id) Assert.Equal(0, next.Attempts);
-            Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, next.SourceStamp, Tokenizer, [], []));
+            Assert.True(await SaveAsync(next.Id, next.SourceStamp, [], []));
         }
 
         // File 1 kept its priority, so it still goes before file 3
@@ -502,7 +587,7 @@ public class ReadingStoreTests : IDisposable
         await _store.SeedFileAsync(1, 3, Stamp, ReadingPriority.WholeBook);
         await _store.SeedFileAsync(2, 1, Stamp, ReadingPriority.OpenChapter);
         var done = (await _store.GetUnitAsync(1, 2))!;
-        Assert.True(await _store.SaveTokenizedUnitAsync(done.Id, Stamp, Tokenizer, [], []));
+        Assert.True(await SaveAsync(done.Id, Stamp, [], []));
 
         await _store.RaiseUnitPriorityAsync(1, 1, ReadingPriority.Tapped);
         Assert.Equal((1, 1), Page(await NextAsync()));
@@ -539,34 +624,77 @@ public class ReadingStoreTests : IDisposable
     #region Analysis queue
 
     [Fact]
-    public async Task RequestAnalysis_QueuesIdleRowsRaisesPendingRowsAndLeavesDoneRows()
+    public async Task RequestAnalysis_CreatesRowsForTokenizedUnitsOfThatFileOnly()
+    {
+        var (hot, cold, plain) = await SeedWordsAsync();
+        var unitId = await TokenizedPageAsync(1,
+            [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, cold), new AnalysisSpan(1, 4, 5, plain)],
+            pageCount: 2);
+        var other = await TokenizedPageAsync(2, [new AnalysisSpan(0, 0, 1, hot)]);
+
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+
+        var rows = await _store.GetUnitAnalysisAsync(unitId);
+        Assert.Equal([(0, 0, 1, hot), (0, 2, 3, cold)], rows.Select(r => (r.Block, r.S, r.E, r.WordId)));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(AnalysisState.Pending, r.State);
+            Assert.Equal(ReadingPriority.NextChapter, r.Priority);
+        });
+        // Page 1 was never tokenized, and file 2 has no request
+        Assert.Equal(2, await ScalarAsync("SELECT COUNT(*) FROM analysis"));
+        Assert.Empty(await _store.GetUnitAnalysisAsync(other));
+
+        // Tokenizing the second page later gives it rows at the request's priority
+        var page1 = (await _store.GetUnitAsync(1, 1))!;
+        Assert.True(await SaveAsync(page1.Id, Stamp, [Block(0, "x")], [new AnalysisSpan(0, 0, 1, cold)]));
+        Assert.Equal(ReadingPriority.NextChapter, Assert.Single(await _store.GetUnitAnalysisAsync(page1.Id)).Priority);
+    }
+
+    [Fact]
+    public async Task RequestAnalysis_AgainLeavesRowsAndAnswersAndOnlyRaisesPendingRows()
     {
         var (hot, cold, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1,
             [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, cold), new AnalysisSpan(0, 4, 5, hot)]);
-        var other = await TokenizedPageAsync(2, [new AnalysisSpan(0, 0, 1, hot)]);
 
         await _store.RequestAnalysisAsync([1], ReadingPriority.WholeBook);
-        var rows = await _store.GetUnitAnalysisAsync(unitId);
-        Assert.All(rows, r => Assert.Equal(AnalysisState.Pending, r.State));
-        await _store.StoreAnalysisAsync("gen", "p1", [new AnalysisAnswer(rows[0].Id, null, null)]);
+        var first = await _store.GetUnitAnalysisAsync(unitId);
+        await _store.StoreAnalysisAsync("gen", "p1", [new AnalysisAnswer(first[0].Id, "hot:2", "hot-r1")]);
         await _store.RaiseAnalysisPriorityAsync(1, 0, null, ReadingPriority.Tapped);
 
         await _store.RequestAnalysisAsync([1], ReadingPriority.OpenChapter);
+        await _store.RequestAnalysisAsync([1, 1], ReadingPriority.WholeBook);
 
-        rows = await _store.GetUnitAnalysisAsync(unitId);
-        Assert.Equal(AnalysisState.Done, rows[0].State);
-        Assert.Equal(ReadingPriority.WholeBook, rows[0].Priority);
+        var rows = await _store.GetUnitAnalysisAsync(unitId);
+        Assert.Equal(first.Select(r => r.Id), rows.Select(r => r.Id));
+        Assert.Equal((AnalysisState.Done, "hot:2", "hot-r1", "gen", ReadingPriority.WholeBook),
+            (rows[0].State, rows[0].SenseKey, rows[0].Reading, rows[0].Generator, rows[0].Priority));
         Assert.All(rows.Skip(1), r =>
         {
             Assert.Equal(AnalysisState.Pending, r.State);
             Assert.Equal(ReadingPriority.Tapped, r.Priority);
         });
-        Assert.Equal(AnalysisState.Idle, Assert.Single(await _store.GetUnitAnalysisAsync(other)).State);
     }
 
     [Fact]
-    public async Task RequestAnalysis_TurnsIdleRowsPendingAtTheGivenPriority()
+    public async Task RequestAnalysis_CoversABookLongerThanOneBatch()
+    {
+        var (hot, _, _) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 60, Stamp, 0);
+        for (var page = 0; page < 60; page++)
+        {
+            var unit = (await _store.GetUnitAsync(1, page))!;
+            Assert.True(await SaveAsync(unit.Id, Stamp, [Block(0, "abc")], [new AnalysisSpan(0, 0, 1, hot)]));
+        }
+
+        await _store.RequestAnalysisAsync([1], 0);
+
+        Assert.Equal(60, await ScalarAsync("SELECT COUNT(*) FROM analysis"));
+    }
+
+    [Fact]
+    public async Task RequestAnalysis_AfterAClearCreatesFreshRowsAtTheGivenPriority()
     {
         var (hot, _, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot)]);
@@ -606,7 +734,7 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(ReadingPriority.OpenChapter, await ScalarAsync("SELECT priority FROM analysis_request"));
 
         await _store.SeedFileAsync(1, 1, NewStamp, 0);
-        Assert.True(await _store.SaveTokenizedUnitAsync(unitId, NewStamp, Tokenizer, [Block(0, "x")],
+        Assert.True(await SaveAsync(unitId, NewStamp, [Block(0, "x")],
             [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, cold)]));
 
         var added = (await _store.GetUnitAnalysisAsync(unitId))[1];
@@ -615,7 +743,7 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task RaiseAnalysisPriority_NeverQueuesIdleRows()
+    public async Task RaiseAnalysisPriority_WithoutARequestQueuesNothing()
     {
         var (hot, _, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot)]);
@@ -623,9 +751,7 @@ public class ReadingStoreTests : IDisposable
         await _store.RaiseAnalysisPriorityAsync(1, 0, 0, ReadingPriority.Tapped);
         await _store.RaiseAnalysisPriorityAsync(1, null, null, ReadingPriority.Tapped);
 
-        var row = Assert.Single(await _store.GetUnitAnalysisAsync(unitId));
-        Assert.Equal(AnalysisState.Idle, row.State);
-        Assert.Equal(ReadingPriority.WholeBook, row.Priority);
+        Assert.Empty(await _store.GetUnitAnalysisAsync(unitId));
         Assert.Empty(await _store.GetPendingAnalysisAsync(10, 0));
     }
 
@@ -637,8 +763,8 @@ public class ReadingStoreTests : IDisposable
         var page0 = (await _store.GetUnitAsync(1, 0))!.Id;
         var page1 = (await _store.GetUnitAsync(1, 1))!.Id;
         AnalysisSpan[] spans = [new(0, 0, 1, hot), new(1, 0, 1, hot)];
-        Assert.True(await _store.SaveTokenizedUnitAsync(page0, Stamp, Tokenizer, [Block(0, "a"), Block(1, "b")], spans));
-        Assert.True(await _store.SaveTokenizedUnitAsync(page1, Stamp, Tokenizer, [Block(0, "a"), Block(1, "b")], spans));
+        Assert.True(await SaveAsync(page0, Stamp, [Block(0, "a"), Block(1, "b")], spans));
+        Assert.True(await SaveAsync(page1, Stamp, [Block(0, "a"), Block(1, "b")], spans));
         var other = await TokenizedPageAsync(2, [new AnalysisSpan(1, 0, 1, hot)]);
         await _store.RequestAnalysisAsync([1, 2], ReadingPriority.WholeBook);
 
@@ -708,10 +834,8 @@ public class ReadingStoreTests : IDisposable
             new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 1, 2, hot), new AnalysisSpan(0, 2, 3, cold),
             new AnalysisSpan(0, 3, 4, cold), new AnalysisSpan(0, 4, 5, hot), new AnalysisSpan(0, 5, 6, hot),
         ]);
-        var idle = await TokenizedPageAsync(2, [new AnalysisSpan(0, 0, 1, hot)]);
         await _store.RequestAnalysisAsync([1], 0);
         var ids = (await _store.GetUnitAnalysisAsync(unitId)).Select(a => a.Id).ToArray();
-        var idleId = Assert.Single(await _store.GetUnitAnalysisAsync(idle)).Id;
 
         var outcome = await _store.StoreAnalysisAsync("claude-sonnet", "v2",
         [
@@ -721,7 +845,6 @@ public class ReadingStoreTests : IDisposable
             new AnalysisAnswer(ids[3], null, null),
             new AnalysisAnswer(ids[4], null, "hot-r0"),
             new AnalysisAnswer(ids[0], "hot:1", null),
-            new AnalysisAnswer(idleId, null, null),
             new AnalysisAnswer(ids[5] + 1000, null, null),
         ]);
 
@@ -731,7 +854,6 @@ public class ReadingStoreTests : IDisposable
             new AnalysisRejection(ids[1], AnalysisRejectReason.SenseNotOffered),
             new AnalysisRejection(ids[2], AnalysisRejectReason.ReadingNotOffered),
             new AnalysisRejection(ids[0], AnalysisRejectReason.Duplicate),
-            new AnalysisRejection(idleId, AnalysisRejectReason.NotPending),
             new AnalysisRejection(ids[5] + 1000, AnalysisRejectReason.NotPending),
         ], outcome.Rejected);
 
@@ -788,7 +910,7 @@ public class ReadingStoreTests : IDisposable
         foreach (var (file, page) in new[] { (5, 2), (5, 0), (5, 1), (2, 0) })
         {
             var unit = (await _store.GetUnitAsync(file, page))!;
-            Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [Block(0, "abc")], spans));
+            Assert.True(await SaveAsync(unit.Id, Stamp, [Block(0, "abc")], spans));
             units[(file, page)] = unit.Id;
         }
         await _store.RequestAnalysisAsync([5, 2], 0);
@@ -836,7 +958,7 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task ClearAnalysis_SendsRowsBackToIdleAndDropsTheRequest()
+    public async Task ClearAnalysis_DeletesTheRowsAndTheRequest()
     {
         var (hot, cold, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, hot)]);
@@ -847,23 +969,16 @@ public class ReadingStoreTests : IDisposable
 
         await _store.ClearAnalysisAsync([1]);
 
-        Assert.All(await _store.GetUnitAnalysisAsync(unitId), r =>
-        {
-            Assert.Equal(AnalysisState.Idle, r.State);
-            Assert.Equal(ReadingPriority.WholeBook, r.Priority);
-            Assert.Null(r.SenseKey);
-            Assert.Null(r.Reading);
-            Assert.Null(r.Generator);
-            Assert.Null(r.PromptVersion);
-        });
+        Assert.Empty(await _store.GetUnitAnalysisAsync(unitId));
+        Assert.NotNull(await _store.GetUnitAsync(1, 0));
         Assert.Equal(AnalysisState.Pending, Assert.Single(await _store.GetUnitAnalysisAsync(other)).State);
         Assert.Equal(2, await ScalarAsync("SELECT manga_file_id FROM analysis_request"));
 
-        // Without a request, rows added by a later tokenize start idle
+        // Without a request, a later tokenize adds no rows
         await _store.SeedFileAsync(1, 1, NewStamp, 0);
-        Assert.True(await _store.SaveTokenizedUnitAsync(unitId, NewStamp, Tokenizer, [Block(0, "x")],
+        Assert.True(await SaveAsync(unitId, NewStamp, [Block(0, "x")],
             [new AnalysisSpan(0, 4, 5, cold)]));
-        Assert.Equal(AnalysisState.Idle, Assert.Single(await _store.GetUnitAnalysisAsync(unitId)).State);
+        Assert.Empty(await _store.GetUnitAnalysisAsync(unitId));
     }
 
     #endregion
@@ -873,7 +988,7 @@ public class ReadingStoreTests : IDisposable
     [Fact]
     public async Task GetCounts_CountsByStateForTheWholeStoreOrSomeFiles()
     {
-        Assert.Equal(new ReadingStoreCounts(0, 0, 0, 0, 0, 0), await _store.GetCountsAsync(null));
+        Assert.Equal(new ReadingStoreCounts(0, 0, 0, 0, 0), await _store.GetCountsAsync(null));
 
         var (hot, _, _) = await SeedWordsAsync();
         var unitId = await TokenizedPageAsync(1, [new AnalysisSpan(0, 0, 1, hot), new AnalysisSpan(0, 2, 3, hot)],
@@ -884,10 +999,10 @@ public class ReadingStoreTests : IDisposable
         var id = (await _store.GetUnitAnalysisAsync(unitId))[0].Id;
         await _store.StoreAnalysisAsync("gen", "p1", [new AnalysisAnswer(id, null, null)]);
 
-        Assert.Equal(new ReadingStoreCounts(1, 2, 1, 1, 1, 1), await _store.GetCountsAsync(null));
-        Assert.Equal(new ReadingStoreCounts(1, 1, 1, 0, 1, 1), await _store.GetCountsAsync([1]));
-        Assert.Equal(new ReadingStoreCounts(0, 1, 0, 1, 0, 0), await _store.GetCountsAsync([2, 2]));
-        Assert.Equal(new ReadingStoreCounts(0, 0, 0, 0, 0, 0), await _store.GetCountsAsync([]));
+        Assert.Equal(new ReadingStoreCounts(1, 2, 1, 1, 1), await _store.GetCountsAsync(null));
+        Assert.Equal(new ReadingStoreCounts(1, 1, 1, 1, 1), await _store.GetCountsAsync([1]));
+        Assert.Equal(new ReadingStoreCounts(0, 1, 0, 0, 0), await _store.GetCountsAsync([2, 2]));
+        Assert.Equal(new ReadingStoreCounts(0, 0, 0, 0, 0), await _store.GetCountsAsync([]));
         Assert.Equal(await _store.GetCountsAsync(null),
             await _store.GetCountsAsync(Enumerable.Range(1, 1200).ToList()));
     }
@@ -906,12 +1021,12 @@ public class ReadingStoreTests : IDisposable
             await _store.SeedFileAsync(file, 5, Stamp, 0);
             await _store.UpsertWordsAsync([Word("shared"), Word($"own{file}")], Lexicon);
             var unit = (await _store.GetUnitAsync(file, 0))!;
-            await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [Block(0, "x")],
+            await SaveAsync(unit.Id, Stamp, [Block(0, "x")],
                 [new AnalysisSpan(0, 0, 1, words.Hot)]);
             await _store.RequestAnalysisAsync([file], 0);
         })));
 
-        Assert.Equal(new ReadingStoreCounts(80, 20, 0, 0, 20, 0), await _store.GetCountsAsync(null));
+        Assert.Equal(new ReadingStoreCounts(80, 20, 0, 20, 0), await _store.GetCountsAsync(null));
         Assert.Equal(24, await ScalarAsync("SELECT COUNT(*) FROM word"));
     }
 

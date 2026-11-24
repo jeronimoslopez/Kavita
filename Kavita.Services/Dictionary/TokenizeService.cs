@@ -155,12 +155,10 @@ public class TokenizeService : ITokenizeService
             var blocks = (pageBlocks ?? []).OrderBy(b => b.Index).ToList();
 
             List<StoredBlock> stored;
-            List<AnalysisSpan> ambiguous;
             var tokenizerVersion = string.Empty;
             if (blocks.Count == 0)
             {
                 stored = [];
-                ambiguous = [];
             }
             else
             {
@@ -173,11 +171,11 @@ public class TokenizeService : ITokenizeService
                     return await EndBeforeSavingAsync(after, file, unit, ct);
 
                 var wordIds = await _readingStore.UpsertWordsAsync(response.Words.ToList(), LexiconVersion(response.Version), ct);
-                (stored, ambiguous) = ToStored(blocks, response, wordIds);
+                stored = ToStored(blocks, response, wordIds);
                 tokenizerVersion = response.Version;
             }
 
-            var saved = await _readingStore.SaveTokenizedUnitAsync(unit.Id, unit.SourceStamp, tokenizerVersion, stored, ambiguous, ct);
+            var saved = await _readingStore.SaveTokenizedUnitAsync(unit.Id, unit.SourceStamp, tokenizerVersion, stored, ct);
             return new TokenizeUnitResult(saved ? TokenizeUnitOutcome.UnitDone : TokenizeUnitOutcome.FileChanged,
                 file.SeriesId, file.ChapterId, unit.Page);
         }
@@ -441,11 +439,10 @@ public class TokenizeService : ITokenizeService
             throw new InvalidDataException($"Token [{s}, {e}] in block {block.Index} points at word {index} of {wordCount}");
     }
 
-    private static (List<StoredBlock>, List<AnalysisSpan>) ToStored(IReadOnlyList<EpubTextBlock> blocks,
-        TokenizeResponseDto response, IReadOnlyList<long> wordIds)
+    private static List<StoredBlock> ToStored(IReadOnlyList<EpubTextBlock> blocks, TokenizeResponseDto response,
+        IReadOnlyList<long> wordIds)
     {
         var stored = new List<StoredBlock>(blocks.Count);
-        var ambiguous = new List<AnalysisSpan>();
 
         for (var i = 0; i < blocks.Count; i++)
         {
@@ -459,16 +456,12 @@ public class TokenizeService : ITokenizeService
                     W = wordId,
                     Sub = token.Sub?.Select(part => part with { W = part.W is { } pw ? wordIds[(int) pw] : null }).ToList(),
                 });
-
-                // Parts of a compound never get an analysis row
-                if (wordId != null && response.Words[(int) token.W!.Value].IsAmbiguous)
-                    ambiguous.Add(new AnalysisSpan(block.Index, token.S, token.E, wordId.Value));
             }
 
             stored.Add(new StoredBlock(block.Index, block.Text, tokens));
         }
 
-        return (stored, ambiguous);
+        return stored;
     }
 
     /// <summary>

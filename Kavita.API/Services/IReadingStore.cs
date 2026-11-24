@@ -48,18 +48,18 @@ public interface IReadingStore
     /// <returns>The pending unit to tokenize next in queue order, or null when nothing is pending</returns>
     Task<ReadingUnitRef?> GetNextPendingUnitAsync(CancellationToken ct = default);
     /// <summary>
-    /// Stores a tokenized unit and marks it done, and replaces its analysis rows, in one transaction. A row whose
-    /// (block, s, e, word id) is in <paramref name="ambiguous"/> keeps its state, priority and answer. Other rows are
-    /// deleted. A span that has no row yet gets one, pending at the file's analysis request priority when the file has
-    /// a request and idle otherwise
+    /// Stores a tokenized unit and marks it done, and replaces its analysis rows, in one transaction. When the file
+    /// has no analysis request the unit is left with no rows. When it has one, the unit's spans are its top-level
+    /// tokens whose word is ambiguous, which is the rule <see cref="SidecarWordDto.IsAmbiguous"/> applies to the
+    /// stored word. A row whose (block, s, e, word id) is still a span keeps its state, priority and answer, other
+    /// rows are deleted, and a span with no row gets one, pending at the request's priority. Parts of compounds never
+    /// get a row
     /// </summary>
     /// <param name="sourceStamp">The stamp from the <see cref="ReadingUnitRef"/> that was tokenized</param>
-    /// <param name="blocks">Every block of the page in index order, with word ids in its tokens</param>
-    /// <param name="ambiguous">The top-level tokens whose word <see cref="SidecarWordDto.IsAmbiguous"/>. Parts of
-    /// compounds never get a row</param>
+    /// <param name="blocks">Every block of the page in index order, with reading.db word ids in its tokens</param>
     /// <returns>False, with nothing saved, when the unit is gone or was seeded with another stamp after it was picked</returns>
     Task<bool> SaveTokenizedUnitAsync(long unitId, string sourceStamp, string tokenizerVersion,
-        IReadOnlyList<StoredBlock> blocks, IReadOnlyList<AnalysisSpan> ambiguous, CancellationToken ct = default);
+        IReadOnlyList<StoredBlock> blocks, CancellationToken ct = default);
     /// <summary>
     /// Counts a failed attempt on a pending unit. When the count reaches <paramref name="maxAttempts"/> the unit becomes
     /// failed. Below that it stays pending, and its queue time moves to now so other units go first
@@ -80,18 +80,21 @@ public interface IReadingStore
     /// <param name="page">One page, or null for every page of the file</param>
     Task RaiseUnitPriorityAsync(int mangaFileId, int? page, int priority, CancellationToken ct = default);
 
-    /// <returns>Every analysis row of the unit in any state, ordered by block then start offset</returns>
+    /// <returns>Every analysis row of the unit in any state, ordered by block then start offset. Empty when the file
+    /// has no analysis request</returns>
     Task<IReadOnlyList<StoredAnalysis>> GetUnitAnalysisAsync(long unitId, CancellationToken ct = default);
     /// <summary>
-    /// Asks for the files' analysis. It records a request per file at the higher of its old priority and
-    /// <paramref name="priority"/>, turns the files' idle rows pending at <paramref name="priority"/>, and raises their
-    /// pending rows to at least <paramref name="priority"/>. The request outlives re-tokenizing, so rows added later
-    /// start pending too
+    /// Asks for the files' analysis, one transaction per file. It records the file's request at the higher of its old
+    /// priority and <paramref name="priority"/>, and raises the file's pending rows to at least
+    /// <paramref name="priority"/>. Every unit that already has blocks gets a pending row per span at the request's
+    /// priority, with spans picked as <see cref="SaveTokenizedUnitAsync"/> picks them. Rows that exist, done ones
+    /// included, are left as they are, so asking twice changes nothing but priorities. The request outlives
+    /// re-tokenizing, so units tokenized later get their rows too
     /// </summary>
     Task RequestAnalysisAsync(IReadOnlyCollection<int> mangaFileIds, int priority, CancellationToken ct = default);
     /// <summary>
-    /// Raises pending analysis rows to at least <paramref name="priority"/>. Idle rows stay idle, so this never queues
-    /// a book nobody asked to analyze
+    /// Raises pending analysis rows to at least <paramref name="priority"/>. A file without a request has no rows, so
+    /// this never queues a book nobody asked to analyze
     /// </summary>
     /// <param name="page">One page, or null for every page of the file</param>
     /// <param name="block">One block of <paramref name="page"/>, or null for the whole page. Ignored when
@@ -113,7 +116,7 @@ public interface IReadingStore
     Task<AnalysisStoreOutcome> StoreAnalysisAsync(string generator, string promptVersion,
         IReadOnlyList<AnalysisAnswer> answers, CancellationToken ct = default);
     /// <summary>
-    /// Drops the files' analysis requests and sends every one of their rows back to idle with its answer cleared
+    /// Deletes the files' analysis requests and every one of their analysis rows, answers included. Units and words stay
     /// </summary>
     Task ClearAnalysisAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default);
 

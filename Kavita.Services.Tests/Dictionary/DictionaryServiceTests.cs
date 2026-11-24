@@ -113,7 +113,6 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         _store.GetUnitAnalysisAsync(unit.Id, Arg.Any<CancellationToken>()).Returns([
             Row(1, unit.Id, 0, 3, 5, Karai.Id, AnalysisState.Done, sense: HarshSense.Key, reading: "つらい", generator: "claude-sonnet"),
             Row(2, unit.Id, 1, 0, 3, Nihongo.Id, AnalysisState.Pending),
-            Row(3, unit.Id, 1, 3, 4, Nihongo.Id, AnalysisState.Idle),
         ]);
 
         var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);

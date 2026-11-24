@@ -187,13 +187,21 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
             Assert.Equal(ReadingUnitState.Done, saved.State);
             Assert.Equal(expected.Select(b => (b.Index, b.Text)), saved.Blocks.Select(b => (b.Index, b.Text)));
             Assert.All(saved.Blocks, b => Assert.Equal(b.Text.Length == 0 ? 0 : 1, b.Tokens.Count));
-            Assert.Equal(expected.Count(b => b.Text.Length > 0), (await _store.GetUnitAnalysisAsync(saved.Id)).Count);
+            // Nobody asked for this book's analysis
+            Assert.Empty(await _store.GetUnitAnalysisAsync(saved.Id));
         }
 
         // The ruby text stays out of the blocks, as the reader's walk leaves it out
         var first = (await _store.GetUnitAsync(files[0].Id, 0))!;
         Assert.Contains(first.Blocks, b => b.Text == "吾輩は猫である。");
         Assert.Null(await service.GetNextUnitAsync());
+
+        await _store.RequestAnalysisAsync([files[0].Id], ReadingPriority.WholeBook);
+        for (var page = 0; page < 2; page++)
+        {
+            var saved = (await _store.GetUnitAsync(files[0].Id, page))!;
+            Assert.Equal(saved.Blocks.Count(b => b.Text.Length > 0), (await _store.GetUnitAnalysisAsync(saved.Id)).Count);
+        }
     }
 
     [Fact]

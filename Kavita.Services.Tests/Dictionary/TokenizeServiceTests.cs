@@ -100,7 +100,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         _pages.GetEpubPageCountAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(PageCount);
         _store.GetFileStampsAsync(Arg.Any<CancellationToken>()).Returns(new Dictionary<int, string>());
-        _store.SaveTokenizedUnitAsync(default, default!, default!, default!, default!, default).ReturnsForAnyArgs(true);
+        _store.SaveTokenizedUnitAsync(default, default!, default!, default!, default).ReturnsForAnyArgs(true);
 
         var service = new TokenizeService(Substitute.For<ILogger<TokenizeService>>(), unitOfWork, _pages,
             new DirectoryService(Substitute.For<ILogger<DirectoryService>>(), _fileSystem), _store, new TextSidecarClient(),
@@ -155,11 +155,11 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
             (IReadOnlyList<long>) call.Arg<IReadOnlyList<SidecarWordDto>>().Select((_, i) => 100L + i).ToList());
     }
 
-    private (IReadOnlyList<StoredBlock> Blocks, IReadOnlyList<AnalysisSpan> Ambiguous, string Version) SavedUnit()
+    private (IReadOnlyList<StoredBlock> Blocks, string Version) SavedUnit()
     {
         var call = _store.ReceivedCalls().Single(c => c.GetMethodInfo().Name == nameof(IReadingStore.SaveTokenizedUnitAsync));
         var args = call.GetArguments();
-        return ((IReadOnlyList<StoredBlock>) args[3]!, (IReadOnlyList<AnalysisSpan>) args[4]!, (string) args[2]!);
+        return ((IReadOnlyList<StoredBlock>) args[3]!, (string) args[2]!);
     }
 
     #region Detection
@@ -366,7 +366,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     #region Processing
 
     [Fact]
-    public async Task ProcessUnit_MapsWordIndicesToStoreIdsAndQueuesAmbiguousTopLevelTokens()
+    public async Task ProcessUnit_MapsWordIndicesToStoreIds()
     {
         var (_, service, files) = await Setup();
         var blocks = SampleBlocks();
@@ -383,7 +383,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         await _store.Received(1).UpsertWordsAsync(Arg.Is<IReadOnlyList<SidecarWordDto>>(w => w.Count == sample.Words.Count),
             TokenizeService.LexiconVersion(sample.Version), Arg.Any<CancellationToken>());
 
-        var (stored, ambiguous, version) = SavedUnit();
+        var (stored, version) = SavedUnit();
         Assert.Equal(sample.Version, version);
         Assert.Equal([0, 1, 2, 3], stored.Select(b => b.Index));
         Assert.Equal(blocks.Select(b => b.Text), stored.Select(b => b.Text));
@@ -395,16 +395,6 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal([new SubTokenDto(6, 8, 102, "けいざい"), new SubTokenDto(8, 10, 103, "せいさく")], compound.Sub);
         Assert.Null(stored[0].Tokens[1].W);
         Assert.Equal(108, stored[1].Tokens[4].W);
-
-        // 経済 has three senses but is only a part, and the compound itself has one sense and one reading
-        Assert.DoesNotContain(ambiguous, s => s.Block == 0 && s.S == 6);
-        Assert.Contains(new AnalysisSpan(0, 0, 2, 100), ambiguous);
-        Assert.Contains(new AnalysisSpan(1, 6, 8, 108), ambiguous);
-        var expected = sample.Blocks
-            .SelectMany((b, i) => b.Tokens.Where(t => t.W != null && sample.Words[(int) t.W].IsAmbiguous)
-                .Select(t => new AnalysisSpan(i, t.S, t.E, 100 + t.W!.Value)))
-            .ToList();
-        Assert.Equal(expected, ambiguous);
     }
 
     [Fact]
@@ -428,7 +418,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal(Enumerable.Range(0, 16).Select(i => i.ToString()), SentIds(_httpTest.CallLog[0]));
         Assert.Equal(Enumerable.Range(16, 4).Select(i => i.ToString()), SentIds(_httpTest.CallLog[1]));
 
-        var (stored, _, _) = SavedUnit();
+        var (stored, _) = SavedUnit();
         Assert.Equal(21, stored.Count);
         Assert.Equal(100, stored[0].Tokens[0].W);
         Assert.Equal(100, stored[15].Tokens[0].W);
@@ -483,9 +473,8 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         Assert.Equal(TokenizeUnitOutcome.UnitDone, result.Outcome);
         Assert.Empty(_httpTest.CallLog);
-        var (stored, ambiguous, _) = SavedUnit();
+        var (stored, _) = SavedUnit();
         Assert.Empty(stored);
-        Assert.Empty(ambiguous);
     }
 
     [Fact]
@@ -495,7 +484,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 0, Arg.Any<CancellationToken>()).Returns(SampleBlocks());
         _httpTest.RespondWith(SampleResponse);
         ReturnWordIds();
-        _store.SaveTokenizedUnitAsync(default, default!, default!, default!, default!, default).ReturnsForAnyArgs(false);
+        _store.SaveTokenizedUnitAsync(default, default!, default!, default!, default).ReturnsForAnyArgs(false);
 
         var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
 
@@ -513,7 +502,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         Assert.Equal(TokenizeUnitOutcome.SidecarUnavailable, result.Outcome);
         await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);
-        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
     }
 
     [Fact]
@@ -559,7 +548,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
         await _store.Received(1).RecordFailedAttemptAsync(7, TokenizeService.MaxUnitAttempts, Arg.Any<CancellationToken>());
-        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
     }
 
     [Theory]
@@ -588,7 +577,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
         await _store.DidNotReceiveWithAnyArgs().UpsertWordsAsync(default!, default!);
-        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
     }
 
     [Fact]
@@ -603,7 +592,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         await _store.Received(1).DeferUnitAsync(7, Arg.Any<CancellationToken>());
         await _pages.DidNotReceiveWithAnyArgs().GetEpubPageBlocksAsync(default!, default);
         await _store.DidNotReceiveWithAnyArgs().RecordFailedAttemptAsync(default, default);
-        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
         await _store.DidNotReceiveWithAnyArgs().DeleteFilesAsync(default!);
     }
 
@@ -638,7 +627,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
 
         Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
-        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!, default!);
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
     }
 
     [Fact]

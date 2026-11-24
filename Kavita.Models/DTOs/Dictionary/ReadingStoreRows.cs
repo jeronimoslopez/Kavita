@@ -31,14 +31,11 @@ public enum ReadingUnitState
 }
 
 /// <summary>
-/// Where an occurrence is in the AI analysis queue. Stored as the lowercase name
+/// Where an occurrence is in the AI analysis queue. Stored as the lowercase name. Only files with an analysis request
+/// have rows, so there's no state for a book nobody asked for
 /// </summary>
 public enum AnalysisState
 {
-    /// <summary>
-    /// Nobody asked for this book's analysis, so the runner never sees the row
-    /// </summary>
-    Idle = 0,
     Pending = 1,
     Done = 2,
 }
@@ -87,11 +84,6 @@ public sealed record ReadingUnit(long Id, ReadingUnitKind Kind, int MangaFileId,
 public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens);
 
 /// <summary>
-/// An occurrence of an ambiguous word that should get an analysis row, found by its top-level token
-/// </summary>
-public sealed record AnalysisSpan(int Block, int S, int E, long WordId);
-
-/// <summary>
 /// A row of reading.db's word table
 /// </summary>
 /// <param name="Jlpt">1 (N1) to 5 (N5), or null when the word isn't listed</param>
@@ -136,5 +128,5 @@ public sealed record AnalysisStoredPage(int MangaFileId, int Page);
 /// <summary>
 /// Row counts by state, for status displays
 /// </summary>
-public sealed record ReadingStoreCounts(int UnitsPending, int UnitsDone, int UnitsFailed, int AnalysisIdle,
-    int AnalysisPending, int AnalysisDone);
+public sealed record ReadingStoreCounts(int UnitsPending, int UnitsDone, int UnitsFailed, int AnalysisPending,
+    int AnalysisDone);
