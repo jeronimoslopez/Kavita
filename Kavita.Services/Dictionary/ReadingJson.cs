@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace Kavita.Services.Dictionary;
 
 /// <summary>
-/// How reading.db writes the JSON in unit.blocks, word.readings and word.senses
+/// How reading.db writes the JSON in word.readings and word.senses, and the JSON that unit.blocks compresses
 /// </summary>
 /// <remarks>
 /// The default encoder writes every Japanese character as a six-byte \uXXXX escape. The relaxed one writes kana and

@@ -255,7 +255,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             UPDATE unit SET state = 'done', tokenizer_version = $version, blocks = $blocks WHERE id = $unit
             """;
         command.Parameters.AddWithValue("$version", tokenizerVersion);
-        command.Parameters.AddWithValue("$blocks", SerializeBlocks(blocks));
+        command.Parameters.Add("$blocks", SqliteType.Blob).Value = ReadingBlocks.Encode(blocks);
         await command.ExecuteNonQueryAsync(ct);
 
         command.CommandText = "SELECT priority FROM analysis_request WHERE manga_file_id = $file";
@@ -419,7 +419,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         return new ReadingUnit(reader.GetInt64(0), ParseKind(reader.GetString(1)), mangaFileId, page,
             ParseUnitState(reader.GetString(2)), reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4),
-            reader.IsDBNull(5) ? [] : DeserializeBlocks(reader.GetString(5)));
+            reader.IsDBNull(5) ? [] : ReadingBlocks.Decode(reader.GetValue(5), reader.GetInt64(0)));
     }
 
     public async Task RaiseUnitPriorityAsync(int mangaFileId, int? page, int priority, CancellationToken ct = default)
@@ -520,7 +520,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
                 await using var reader = await command.ExecuteReaderAsync(ct);
                 while (await reader.ReadAsync(ct))
                 {
-                    units.Add((reader.GetInt64(0), DeserializeBlocks(reader.GetString(2))));
+                    units.Add((reader.GetInt64(0), ReadingBlocks.Decode(reader.GetValue(2), reader.GetInt64(0))));
                     afterPage = reader.GetInt32(1);
                 }
             }
@@ -585,7 +585,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             while (await reader.ReadAsync(ct))
             {
                 var unitId = reader.GetInt64(0);
-                foreach (var stored in DeserializeBlocks(reader.GetString(1)))
+                foreach (var stored in ReadingBlocks.Decode(reader.GetValue(1), unitId))
                 {
                     texts[(unitId, stored.Index)] = stored.Text;
                 }
@@ -808,26 +808,10 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     private static AnalysisState ParseAnalysisState(string value) => Enum.Parse<AnalysisState>(value, ignoreCase: true);
 
-    private static string SerializeBlocks(IReadOnlyList<StoredBlock> blocks) =>
-        JsonSerializer.Serialize(blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens)).ToList(), ReadingJson.Options);
-
-    private static List<StoredBlock> DeserializeBlocks(string json) =>
-        (JsonSerializer.Deserialize<List<BlockJson>>(json) ?? [])
-        .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens))
-        .ToList();
-
     private sealed record AnswerTarget(AnalysisState State, long WordId, AnalysisStoredPage Page);
 
     /// <summary>
     /// Where an analysis row sits, found by its top-level token
     /// </summary>
     private sealed record AnalysisSpan(int Block, int S, int E, long WordId);
-
-    /// <summary>
-    /// A block in unit.blocks. Tokens use TokenDto's array converters, the same form the sidecar and the reader use
-    /// </summary>
-    private sealed record BlockJson(
-        [property: JsonPropertyName("i")] int Index,
-        [property: JsonPropertyName("text")] string Text,
-        [property: JsonPropertyName("tokens")] IReadOnlyList<TokenDto> Tokens);
 }
