@@ -80,7 +80,8 @@ public sealed record SidecarWordDto
     public IList<SenseDto> Senses { get; init; } = [];
 
     /// <summary>
-    /// A word with more than one sense or more than one reading. Only its occurrences get an analysis row
+    /// A word with more than one sense or more than one reading. Only its occurrences get an analysis row. The reading
+    /// store applies the same rule to the stored word's JSON arrays, and its tests check the two agree
     /// </summary>
     [JsonIgnore]
     public bool IsAmbiguous => Senses.Count > 1 || Readings.Count > 1;

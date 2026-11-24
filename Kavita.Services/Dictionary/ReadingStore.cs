@@ -66,9 +66,21 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         """;
 
     /// <summary>
+    /// <see cref="SidecarWordDto.IsAmbiguous"/> as a condition on a word row, which stores readings and senses as JSON
+    /// arrays. It's the only place the store decides which words get analysis rows
+    /// </summary>
+    public const string AmbiguousWord = "(json_array_length(senses) > 1 OR json_array_length(readings) > 1)";
+
+    /// <summary>
     /// Ids per IN list. Older SQLite builds cap a statement at 999 parameters
     /// </summary>
     private const int BatchSize = 500;
+
+    /// <summary>
+    /// Units whose blocks <see cref="RequestAnalysisAsync"/> holds in memory at once. A page's blocks run to a few
+    /// hundred KB of JSON, so this keeps a request for a long book to a few MB
+    /// </summary>
+    private const int UnitsPerRequestBatch = 16;
 
     private const string Epub = "epub";
 
@@ -111,8 +123,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             isProper.Value = word.IsProper ? 1 : 0;
             reading.Value = word.Reading;
             jlpt.Value = (object?) word.Jlpt ?? DBNull.Value;
-            readings.Value = JsonSerializer.Serialize(word.Readings);
-            senses.Value = JsonSerializer.Serialize(word.Senses);
+            readings.Value = JsonSerializer.Serialize(word.Readings, ReadingJson.Options);
+            senses.Value = JsonSerializer.Serialize(word.Senses, ReadingJson.Options);
             ids.Add(Convert.ToInt64(await command.ExecuteScalarAsync(ct)));
         }
 
@@ -223,7 +235,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     }
 
     public async Task<bool> SaveTokenizedUnitAsync(long unitId, string sourceStamp, string tokenizerVersion,
-        IReadOnlyList<StoredBlock> blocks, IReadOnlyList<AnalysisSpan> ambiguous, CancellationToken ct = default)
+        IReadOnlyList<StoredBlock> blocks, CancellationToken ct = default)
     {
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var transaction = BeginWrite(connection);
@@ -243,14 +255,23 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             UPDATE unit SET state = 'done', tokenizer_version = $version, blocks = $blocks WHERE id = $unit
             """;
         command.Parameters.AddWithValue("$version", tokenizerVersion);
-        command.Parameters.AddWithValue("$blocks", SerializeBlocks(blocks));
+        command.Parameters.Add("$blocks", SqliteType.Blob).Value = ReadingBlocks.Encode(blocks);
         await command.ExecuteNonQueryAsync(ct);
 
         command.CommandText = "SELECT priority FROM analysis_request WHERE manga_file_id = $file";
         command.Parameters.AddWithValue("$file", mangaFileId);
         var requestPriority = await command.ExecuteScalarAsync(ct) is { } p ? Convert.ToInt32(p) : (int?) null;
 
-        var wanted = ambiguous.ToHashSet();
+        if (requestPriority == null)
+        {
+            command.CommandText = "DELETE FROM analysis WHERE unit_id = $unit";
+            await command.ExecuteNonQueryAsync(ct);
+            await transaction.CommitAsync(ct);
+            return true;
+        }
+
+        var ambiguousWords = await AmbiguousWordIdsAsync(connection, transaction, TopLevelWordIds(blocks), ct);
+        var wanted = Spans(blocks, ambiguousWords).ToHashSet();
         var kept = new HashSet<AnalysisSpan>();
         var stale = new List<long>();
         command.CommandText = "SELECT id, block, s, e, word_id FROM analysis WHERE unit_id = $unit";
@@ -273,22 +294,34 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             await delete.ExecuteNonQueryAsync(ct);
         }
 
+        await InsertPendingRowsAsync(connection, transaction, unitId, wanted.Where(span => !kept.Contains(span)),
+            requestPriority.Value, ct);
+
+        await transaction.CommitAsync(ct);
+        return true;
+    }
+
+    /// <summary>
+    /// Adds a pending row per span. A span whose (block, s) already has a row is skipped, so the row and its answer stay
+    /// </summary>
+    private async Task InsertPendingRowsAsync(SqliteConnection connection, SqliteTransaction transaction, long unitId,
+        IEnumerable<AnalysisSpan> spans, int priority, CancellationToken ct)
+    {
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO analysis (unit_id, block, s, e, word_id, state, priority, requested_utc)
-            VALUES ($unit, $block, $s, $e, $word, $state, $priority, $now)
+            VALUES ($unit, $block, $s, $e, $word, 'pending', $priority, $now)
             ON CONFLICT (unit_id, block, s) DO NOTHING
             """;
         insert.Parameters.AddWithValue("$unit", unitId);
-        insert.Parameters.AddWithValue("$state", requestPriority == null ? "idle" : "pending");
-        insert.Parameters.AddWithValue("$priority", requestPriority ?? ReadingPriority.WholeBook);
+        insert.Parameters.AddWithValue("$priority", priority);
         insert.Parameters.AddWithValue("$now", Now());
         var block = insert.Parameters.Add("$block", SqliteType.Integer);
         var s = insert.Parameters.Add("$s", SqliteType.Integer);
         var e = insert.Parameters.Add("$e", SqliteType.Integer);
         var word = insert.Parameters.Add("$word", SqliteType.Integer);
-        foreach (var span in wanted.Where(span => !kept.Contains(span)))
+        foreach (var span in spans)
         {
             block.Value = span.Block;
             s.Value = span.S;
@@ -296,9 +329,33 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             word.Value = span.WordId;
             await insert.ExecuteNonQueryAsync(ct);
         }
+    }
 
-        await transaction.CommitAsync(ct);
-        return true;
+    private static IEnumerable<long> TopLevelWordIds(IEnumerable<StoredBlock> blocks) =>
+        blocks.SelectMany(b => b.Tokens).Select(t => t.W).OfType<long>();
+
+    /// <summary>
+    /// The top-level tokens whose word is in <paramref name="ambiguousWords"/>. Parts of compounds never get a row
+    /// </summary>
+    private static IEnumerable<AnalysisSpan> Spans(IEnumerable<StoredBlock> blocks, HashSet<long> ambiguousWords) =>
+        blocks.SelectMany(b => b.Tokens
+            .Where(t => t.W is { } w && ambiguousWords.Contains(w))
+            .Select(t => new AnalysisSpan(b.Index, t.S, t.E, t.W!.Value)));
+
+    /// <returns>The ids among <paramref name="wordIds"/> whose stored word is ambiguous by <see cref="AmbiguousWord"/></returns>
+    private static async Task<HashSet<long>> AmbiguousWordIdsAsync(SqliteConnection connection,
+        SqliteTransaction transaction, IEnumerable<long> wordIds, CancellationToken ct)
+    {
+        var result = new HashSet<long>();
+        foreach (var batch in wordIds.Distinct().Chunk(BatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"SELECT id FROM word WHERE id IN ({AddInList(command, "w", batch)}) AND {AmbiguousWord}";
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) result.Add(reader.GetInt64(0));
+        }
+        return result;
     }
 
     public async Task<ReadingUnitState> RecordFailedAttemptAsync(long unitId, int maxAttempts, CancellationToken ct = default)
@@ -346,7 +403,17 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     public async Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default)
     {
-        await using var connection = await database.OpenConnectionAsync(ct);
+        SqliteConnection connection;
+        try
+        {
+            connection = await database.OpenConnectionAsync(ct);
+        }
+        catch (ReadingStoreNotReadyException)
+        {
+            return null;
+        }
+
+        await using var _ = connection;
         await using var command = connection.CreateCommand();
         command.CommandText = """
             SELECT id, kind, state, source_stamp, tokenizer_version, blocks
@@ -362,7 +429,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         return new ReadingUnit(reader.GetInt64(0), ParseKind(reader.GetString(1)), mangaFileId, page,
             ParseUnitState(reader.GetString(2)), reader.GetString(3),
             reader.IsDBNull(4) ? null : reader.GetString(4),
-            reader.IsDBNull(5) ? [] : DeserializeBlocks(reader.GetString(5)));
+            reader.IsDBNull(5) ? [] : ReadingBlocks.Decode(reader.GetValue(5), reader.GetInt64(0)));
     }
 
     public async Task RaiseUnitPriorityAsync(int mangaFileId, int? page, int priority, CancellationToken ct = default)
@@ -408,49 +475,75 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         if (mangaFileIds.Count == 0) return;
 
         await using var connection = await database.OpenConnectionAsync(ct);
-        await using var transaction = BeginWrite(connection);
-        foreach (var batch in mangaFileIds.Distinct().Chunk(BatchSize))
+        foreach (var file in mangaFileIds.Distinct())
         {
+            await using var transaction = BeginWrite(connection);
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.Parameters.AddWithValue("$kind", Epub);
+            command.Parameters.AddWithValue("$file", file);
+            command.Parameters.AddWithValue("$page", DBNull.Value);
+            command.Parameters.AddWithValue("$block", DBNull.Value);
             command.Parameters.AddWithValue("$priority", priority);
             command.Parameters.AddWithValue("$now", Now());
-            AddInList(command, "f", batch);
-            var values = string.Join(", ", batch.Select((_, i) => $"($f{i}, $priority, $now)"));
-            command.CommandText = $"""
-                INSERT INTO analysis_request (manga_file_id, priority, requested_utc) VALUES {values}
-                ON CONFLICT (manga_file_id) DO UPDATE SET priority = MAX(priority, excluded.priority);
-                {QueueRequestedAnalysisSql(batch.Length)};
-                {RaiseRequestedAnalysisSql(batch.Length)};
+
+            command.CommandText = """
+                INSERT INTO analysis_request (manga_file_id, priority, requested_utc) VALUES ($file, $priority, $now)
+                ON CONFLICT (manga_file_id) DO UPDATE SET priority = MAX(priority, excluded.priority)
+                RETURNING priority
                 """;
+            var requestPriority = Convert.ToInt32(await command.ExecuteScalarAsync(ct));
+
+            command.CommandText = RaiseAnalysisPrioritySql;
             await command.ExecuteNonQueryAsync(ct);
+
+            await AddMissingRowsAsync(connection, transaction, file, requestPriority, ct);
+            await transaction.CommitAsync(ct);
         }
-        await transaction.CommitAsync(ct);
     }
 
     /// <summary>
-    /// Turns the idle analysis rows of the files <c>$f0</c> to <c>$f{fileCount - 1}</c> pending. The unary plus keeps
-    /// the planner off ix_analysis_queue, whose idle range is every book nobody asked for. Public so the tests can
-    /// check the plan
+    /// Gives each unit of the file that has blocks and no rows its pending rows. Every write of rows covers a whole
+    /// unit in one transaction, so a unit with any row already has all of them
     /// </summary>
-    public static string QueueRequestedAnalysisSql(int fileCount) => $"""
-        UPDATE analysis SET state = 'pending', priority = $priority, requested_utc = $now
-        WHERE +state = 'idle'
-          AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({FileList(fileCount)}))
-        """;
+    private async Task AddMissingRowsAsync(SqliteConnection connection, SqliteTransaction transaction, int file,
+        int priority, CancellationToken ct)
+    {
+        var afterPage = -1;
+        while (true)
+        {
+            var units = new List<(long Id, List<StoredBlock> Blocks)>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = """
+                    SELECT u.id, u.page, u.blocks FROM unit u
+                    WHERE u.kind = $kind AND u.manga_file_id = $file AND u.page > $after AND u.blocks IS NOT NULL
+                      AND NOT EXISTS (SELECT 1 FROM analysis a WHERE a.unit_id = u.id)
+                    ORDER BY u.page
+                    LIMIT $limit
+                    """;
+                command.Parameters.AddWithValue("$kind", Epub);
+                command.Parameters.AddWithValue("$file", file);
+                command.Parameters.AddWithValue("$after", afterPage);
+                command.Parameters.AddWithValue("$limit", UnitsPerRequestBatch);
+                await using var reader = await command.ExecuteReaderAsync(ct);
+                while (await reader.ReadAsync(ct))
+                {
+                    units.Add((reader.GetInt64(0), ReadingBlocks.Decode(reader.GetValue(2), reader.GetInt64(0))));
+                    afterPage = reader.GetInt32(1);
+                }
+            }
+            if (units.Count == 0) return;
 
-    /// <summary>
-    /// Raises the pending analysis rows of the files <c>$f0</c> to <c>$f{fileCount - 1}</c>, found by unit_id as in
-    /// <see cref="QueueRequestedAnalysisSql"/>. Public so the tests can check the plan
-    /// </summary>
-    public static string RaiseRequestedAnalysisSql(int fileCount) => $"""
-        UPDATE analysis SET priority = $priority, requested_utc = $now
-        WHERE +state = 'pending' AND +priority < $priority
-          AND unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({FileList(fileCount)}))
-        """;
-
-    private static string FileList(int count) => string.Join(", ", Enumerable.Range(0, count).Select(i => $"$f{i}"));
+            var ambiguousWords = await AmbiguousWordIdsAsync(connection, transaction,
+                units.SelectMany(u => TopLevelWordIds(u.Blocks)), ct);
+            foreach (var (unitId, blocks) in units)
+            {
+                await InsertPendingRowsAsync(connection, transaction, unitId, Spans(blocks, ambiguousWords), priority, ct);
+            }
+        }
+    }
 
     public async Task RaiseAnalysisPriorityAsync(int mangaFileId, int? page, int? block, int priority,
         CancellationToken ct = default)
@@ -502,7 +595,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             while (await reader.ReadAsync(ct))
             {
                 var unitId = reader.GetInt64(0);
-                foreach (var stored in DeserializeBlocks(reader.GetString(1)))
+                foreach (var stored in ReadingBlocks.Decode(reader.GetValue(1), unitId))
                 {
                     texts[(unitId, stored.Index)] = stored.Text;
                 }
@@ -596,15 +689,11 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.Parameters.AddWithValue("$kind", Epub);
-            command.Parameters.AddWithValue("$priority", ReadingPriority.WholeBook);
             var files = AddInList(command, "f", batch);
             command.CommandText = $"""
                 DELETE FROM analysis_request WHERE manga_file_id IN ({files});
-
-                UPDATE analysis
-                SET state = 'idle', priority = $priority, sense_key = NULL, reading = NULL, generator = NULL,
-                    prompt_version = NULL
-                WHERE unit_id IN (SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
+                DELETE FROM analysis WHERE unit_id IN (
+                    SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
                 """;
             await command.ExecuteNonQueryAsync(ct);
         }
@@ -645,7 +734,6 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             units.GetValueOrDefault(Name(ReadingUnitState.Pending)),
             units.GetValueOrDefault(Name(ReadingUnitState.Done)),
             units.GetValueOrDefault(Name(ReadingUnitState.Failed)),
-            analysis.GetValueOrDefault(Name(AnalysisState.Idle)),
             analysis.GetValueOrDefault(Name(AnalysisState.Pending)),
             analysis.GetValueOrDefault(Name(AnalysisState.Done)));
     }
@@ -730,21 +818,10 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     private static AnalysisState ParseAnalysisState(string value) => Enum.Parse<AnalysisState>(value, ignoreCase: true);
 
-    private static string SerializeBlocks(IReadOnlyList<StoredBlock> blocks) =>
-        JsonSerializer.Serialize(blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens)).ToList());
-
-    private static List<StoredBlock> DeserializeBlocks(string json) =>
-        (JsonSerializer.Deserialize<List<BlockJson>>(json) ?? [])
-        .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens))
-        .ToList();
-
     private sealed record AnswerTarget(AnalysisState State, long WordId, AnalysisStoredPage Page);
 
     /// <summary>
-    /// A block in unit.blocks. Tokens use TokenDto's array converters, the same form the sidecar and the reader use
+    /// Where an analysis row sits, found by its top-level token
     /// </summary>
-    private sealed record BlockJson(
-        [property: JsonPropertyName("i")] int Index,
-        [property: JsonPropertyName("text")] string Text,
-        [property: JsonPropertyName("tokens")] IReadOnlyList<TokenDto> Tokens);
+    private sealed record AnalysisSpan(int Block, int S, int E, long WordId);
 }
