@@ -9,6 +9,8 @@ using Kavita.API.Services.SignalR;
 using Kavita.Database.Tests;
 using Kavita.Models.Builders;
 using Kavita.Models.DTOs.Dictionary;
+using Kavita.Models.DTOs.SignalR;
+using Kavita.Models.DTOs.SignalR.Bodies;
 using Kavita.Models.Entities;
 using Kavita.Models.Entities.Enums;
 using Kavita.Services.Builders;
@@ -134,14 +136,15 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
 
     /// <summary>
     /// What the sidecar would answer for the page, with one token over the first character of each block that has
-    /// text, all pointing at a word with two senses so each gets an analysis row
+    /// text, all pointing at a word with two senses so each gets an analysis row. As <paramref name="sidecar"/> 2, a
+    /// block of two or more characters also gets a token over its second character and a phrase over both
     /// </summary>
-    private async Task<string> SidecarAnswerAsync(string filePath, int page)
+    private async Task<string> SidecarAnswerAsync(string filePath, int page, int sidecar = 1)
     {
         var blocks = await _bookService.GetEpubPageBlocksAsync(filePath, page) ?? [];
         var answer = new
         {
-            version = "sudachipy=0.6;modes=C/A;words=6;lexicon=test;sidecar=1",
+            version = Version(sidecar),
             words = new[]
             {
                 new
@@ -154,15 +157,26 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
                         new { key = "1:2", pos = new[] { "pn" }, gloss = new[] { "me" } },
                     },
                 },
+                new
+                {
+                    lemma = "吾輩は", pos = "表現", isProper = false, reading = "わがはいは", jlpt = (int?) null,
+                    readings = new[] { "わがはいは" },
+                    senses = new[] { new { key = "2:1", pos = new[] { "exp" }, gloss = new[] { "as for me" } } },
+                },
             },
             blocks = blocks.Select(b => new
             {
                 id = b.Index.ToString(),
-                tokens = b.Text.Length == 0 ? [] : new[] { new object?[] { 0, 1, 0, null, null } },
+                tokens = b.Text.Length == 0 ? []
+                    : sidecar == 1 || b.Text.Length < 2 ? new[] { new object?[] { 0, 1, 0, null, null } }
+                    : new[] { new object?[] { 0, 1, 0, null, null }, new object?[] { 1, 2, null, null, null } },
+                phrases = sidecar == 1 || b.Text.Length < 2 ? [] : new[] { new[] { 0, 2, 1 } },
             }),
         };
         return JsonSerializer.Serialize(answer);
     }
+
+    private static string Version(int sidecar) => $"sudachipy=0.6;modes=C/A;words=6;lexicon=test;sidecar={sidecar}";
 
     [Fact]
     public async Task ProcessUnit_SavesTheBlocksBookServiceReads()
@@ -231,5 +245,43 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
         Assert.Equal(missing.Id, waiting.Id);
         Assert.Equal(0, waiting.Attempts);
         Assert.Equal(2, _httpTest.CallLog.Count);
+    }
+
+    [Fact]
+    public async Task OpeningAChapterAfterTheSidecarChanges_RetokenizesItAndTellsTheReader()
+    {
+        var (unitOfWork, service, files) = await Setup([FirstPage]);
+        var file = files[0];
+        await service.DetectNewFilesAsync();
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0));
+        Assert.Equal(TokenizeUnitOutcome.UnitDone, (await service.ProcessUnitAsync((await service.GetNextUnitAsync())!, SidecarUrl)).Outcome);
+
+        _httpTest.RespondWithJson(new { version = Version(2) });
+        await service.PrioritizeChapterAsync(file.ChapterId);
+
+        // Until the worker gets to it, the page keeps the tokens it had
+        var waiting = (await _store.GetUnitAsync(file.Id, 0))!;
+        Assert.Equal(ReadingUnitState.Refresh, waiting.State);
+        Assert.Equal(Version(1), waiting.TokenizerVersion);
+        Assert.All(waiting.Blocks, b => Assert.Empty(b.Phrases));
+
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 2));
+        var eventHub = Substitute.For<IEventHub>();
+        var services = new ServiceCollection();
+        services.AddSingleton(unitOfWork);
+        services.AddSingleton<ITokenizeService>(service);
+        services.AddSingleton(eventHub);
+        var worker = new TokenizeWorkerHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<ILogger<TokenizeWorkerHostedService>>());
+        Assert.False(await worker.RunPassAsync(CancellationToken.None));
+        await worker.FlushReadyPagesAsync(force: true, CancellationToken.None);
+
+        var saved = (await _store.GetUnitAsync(file.Id, 0))!;
+        Assert.Equal(ReadingUnitState.Done, saved.State);
+        Assert.Equal(Version(2), saved.TokenizerVersion);
+        Assert.Contains(saved.Blocks, b => b.Phrases.Count == 1);
+        await eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryPagesReady,
+            Arg.Is<SignalRMessageDto>(m => ((DictionaryPagesReadyEventBodyDto) m.Body!).Pages.SequenceEqual(new[] { 0 })),
+            false, Arg.Any<CancellationToken>());
     }
 }

@@ -423,6 +423,7 @@ public class ReadingDatabaseTests : IDisposable
     {
         { ReadingStore.RaiseUnitPrioritySql, "sqlite_autoindex_unit_1", "ix_unit_queue" },
         { ReadingStore.RaiseAnalysisPrioritySql, "sqlite_autoindex_analysis_1", "ix_analysis_queue" },
+        { ReadingStore.RefreshUnitsSql, "sqlite_autoindex_unit_1", "ix_unit_queue" },
     };
 
     [Theory]
@@ -443,11 +444,12 @@ public class ReadingDatabaseTests : IDisposable
         await using var connection = await database.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = "EXPLAIN QUERY PLAN " + sql;
-        foreach (var name in new[] { "$minPriority", "$limit", "$priority", "$now", "$file", "$page", "$block", "$f0", "$f1" })
+        foreach (var name in new[] { "$minPriority", "$limit", "$priority", "$now", "$file", "$page", "$block", "$f0", "$f1", "$version" })
         {
             command.Parameters.AddWithValue(name, 1);
         }
         command.Parameters.AddWithValue("$kind", "epub");
+        command.Parameters.AddWithValue("$state", "pending");
 
         var plan = new List<string>();
         await using var reader = await command.ExecuteReaderAsync();

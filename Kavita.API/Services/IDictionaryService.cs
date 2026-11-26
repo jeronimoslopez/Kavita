@@ -16,7 +16,8 @@ public interface IDictionaryService
     /// yet, its unit goes up to <see cref="ReadingPriority.OpenChapter"/> and the worker is woken
     /// </summary>
     /// <param name="page">0-based, as the book reader counts pages</param>
-    /// <returns>Null when the page isn't tokenized yet, which the controller answers with 204</returns>
+    /// <returns>Null when the page isn't tokenized yet, which the controller answers with 204. A page waiting to be
+    /// tokenized again by a newer sidecar returns its current tokens</returns>
     Task<EpubPageTokensDto?> GetEpubPageAsync(int chapterId, int page, CancellationToken ct = default);
     /// <summary>
     /// <c>POST lookup</c>. The tapped word, its senses, its stored analysis, its parts and the phrases it's part of, or

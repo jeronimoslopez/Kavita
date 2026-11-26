@@ -19,12 +19,14 @@ namespace Kavita.Services.Dictionary;
 public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider = null) : IReadingStore
 {
     /// <summary>
-    /// The next pending unit in queue order. Public so the tests can check that it reads ix_unit_queue
+    /// The first unit in queue order in one state, pending or refresh. Taking each state's front row on its own keeps
+    /// both reads on the front of ix_unit_queue, where one query over both states would sort them. Public so the tests
+    /// can check that it reads ix_unit_queue
     /// </summary>
     public const string NextPendingUnitSql = """
-        SELECT id, kind, manga_file_id, page, source_stamp, attempts
+        SELECT id, kind, manga_file_id, page, source_stamp, attempts, priority, requested_utc
         FROM unit
-        WHERE state = 'pending'
+        WHERE state = $state
         ORDER BY priority DESC, requested_utc, id
         LIMIT 1
         """;
@@ -49,7 +51,19 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     public const string RaiseUnitPrioritySql = """
         UPDATE unit SET priority = $priority, requested_utc = $now
         WHERE kind = $kind AND manga_file_id = $file AND ($page IS NULL OR page = $page)
-          AND +state = 'pending' AND +priority < $priority
+          AND +state IN ('pending', 'refresh') AND +priority < $priority
+        """;
+
+    /// <summary>
+    /// Queues a file's done units whose blocks came from another sidecar version. A unit saved with no version has no
+    /// blocks, so tokenizing it again can't change anything. The unary plus keeps the planner on the
+    /// (kind, manga_file_id, page) key for the same reason as <see cref="RaiseUnitPrioritySql"/>. Public so the tests
+    /// can check the plan
+    /// </summary>
+    public const string RefreshUnitsSql = """
+        UPDATE unit SET state = 'refresh', attempts = 0, priority = MAX(priority, $priority), requested_utc = $now
+        WHERE kind = $kind AND manga_file_id = $file AND +state = 'done'
+          AND tokenizer_version IS NOT NULL AND tokenizer_version <> '' AND tokenizer_version <> $version
         """;
 
     /// <summary>
@@ -225,13 +239,49 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     public async Task<ReadingUnitRef?> GetNextPendingUnitAsync(CancellationToken ct = default)
     {
         await using var connection = await database.OpenConnectionAsync(ct);
+        // One snapshot for both reads, so a unit moving between the states can't be read twice or missed
+        await using var snapshot = connection.BeginTransaction(deferred: true);
         await using var command = connection.CreateCommand();
+        command.Transaction = snapshot;
         command.CommandText = NextPendingUnitSql;
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct)) return null;
+        var state = command.Parameters.Add("$state", SqliteType.Text);
 
-        return new ReadingUnitRef(reader.GetInt64(0), ParseKind(reader.GetString(1)), reader.GetInt32(2),
-            reader.GetInt32(3), reader.GetString(4), reader.GetInt32(5));
+        (ReadingUnitRef Unit, int Priority, long RequestedUtc)? best = null;
+        foreach (var name in new[] { Name(ReadingUnitState.Pending), Name(ReadingUnitState.Refresh) })
+        {
+            state.Value = name;
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct)) continue;
+
+            var unit = new ReadingUnitRef(reader.GetInt64(0), ParseKind(reader.GetString(1)), reader.GetInt32(2),
+                reader.GetInt32(3), reader.GetString(4), reader.GetInt32(5));
+            var candidate = (unit, reader.GetInt32(6), reader.GetInt64(7));
+            if (best == null || QueueOrder(candidate, best.Value) < 0) best = candidate;
+        }
+        return best?.Unit;
+    }
+
+    /// <returns>Below 0 when <paramref name="a"/> comes first in the queue order IReadingStore documents</returns>
+    private static int QueueOrder((ReadingUnitRef Unit, int Priority, long RequestedUtc) a,
+        (ReadingUnitRef Unit, int Priority, long RequestedUtc) b)
+    {
+        if (a.Priority != b.Priority) return b.Priority.CompareTo(a.Priority);
+        if (a.RequestedUtc != b.RequestedUtc) return a.RequestedUtc.CompareTo(b.RequestedUtc);
+        return a.Unit.Id.CompareTo(b.Unit.Id);
+    }
+
+    public async Task<int> RefreshUnitsAsync(int mangaFileId, string tokenizerVersion, int priority,
+        CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = RefreshUnitsSql;
+        command.Parameters.AddWithValue("$kind", Epub);
+        command.Parameters.AddWithValue("$file", mangaFileId);
+        command.Parameters.AddWithValue("$version", tokenizerVersion);
+        command.Parameters.AddWithValue("$priority", priority);
+        command.Parameters.AddWithValue("$now", Now());
+        return await command.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<bool> SaveTokenizedUnitAsync(long unitId, string sourceStamp, string tokenizerVersion,
@@ -376,10 +426,15 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             state = ParseUnitState(reader.GetString(0));
             attempts = reader.GetInt32(1);
         }
-        if (state != ReadingUnitState.Pending) return state;
+        if (state is not (ReadingUnitState.Pending or ReadingUnitState.Refresh)) return state;
 
+        // A refresh that keeps failing leaves the unit with the blocks it had, which still match the file
         attempts++;
-        state = attempts >= maxAttempts ? ReadingUnitState.Failed : ReadingUnitState.Pending;
+        if (attempts >= maxAttempts)
+        {
+            state = state == ReadingUnitState.Refresh ? ReadingUnitState.Done : ReadingUnitState.Failed;
+            if (state == ReadingUnitState.Done) attempts = 0;
+        }
         command.CommandText = """
             UPDATE unit SET attempts = $attempts, state = $state, requested_utc = $now WHERE id = $unit
             """;
@@ -395,7 +450,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     {
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var command = connection.CreateCommand();
-        command.CommandText = "UPDATE unit SET requested_utc = $now WHERE id = $unit AND state = 'pending'";
+        command.CommandText = "UPDATE unit SET requested_utc = $now WHERE id = $unit AND state IN ('pending', 'refresh')";
         command.Parameters.AddWithValue("$unit", unitId);
         command.Parameters.AddWithValue("$now", Now());
         await command.ExecuteNonQueryAsync(ct);
@@ -731,7 +786,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         }
 
         return new ReadingStoreCounts(
-            units.GetValueOrDefault(Name(ReadingUnitState.Pending)),
+            units.GetValueOrDefault(Name(ReadingUnitState.Pending)) + units.GetValueOrDefault(Name(ReadingUnitState.Refresh)),
             units.GetValueOrDefault(Name(ReadingUnitState.Done)),
             units.GetValueOrDefault(Name(ReadingUnitState.Failed)),
             analysis.GetValueOrDefault(Name(AnalysisState.Pending)),

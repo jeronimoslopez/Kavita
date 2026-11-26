@@ -759,6 +759,47 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     }
 
     [Fact]
+    public async Task PrioritizeChapter_RefreshesOnlyTheOpenChaptersFileAgainstTheSidecarsVersion()
+    {
+        var (_, service, files) = await Setup();
+        _httpTest.RespondWithJson(new { version = "lexicon=x;sidecar=2" });
+
+        await service.PrioritizeChapterAsync(files.FirstChapter.Id);
+
+        Assert.Equal($"{SidecarUrl}/health", Assert.Single(_httpTest.CallLog).Request.Url.ToString());
+        await _store.Received(1).RefreshUnitsAsync(files.Chapter1.Id, "lexicon=x;sidecar=2", ReadingPriority.OpenChapter,
+            Arg.Any<CancellationToken>());
+        await _store.DidNotReceive().RefreshUnitsAsync(files.Chapter2.Id, Arg.Any<string>(), Arg.Any<int>(),
+            Arg.Any<CancellationToken>());
+        _signal.Received().Wake();
+    }
+
+    [Theory]
+    [InlineData(503)]
+    [InlineData(404)]
+    public async Task PrioritizeChapter_HealthCheckFails_RefreshesNothing(int status)
+    {
+        var (_, service, files) = await Setup();
+        _httpTest.RespondWith("down", status);
+
+        var result = await service.PrioritizeChapterAsync(files.FirstChapter.Id);
+
+        Assert.Equal([files.Chapter1.Id], result.OpenChapterFileIds);
+        await _store.DidNotReceiveWithAnyArgs().RefreshUnitsAsync(default, default!, default);
+    }
+
+    [Fact]
+    public async Task PrioritizeChapter_WithoutASidecarUrl_DoesNotAskForItsVersion()
+    {
+        var (_, service, files) = await Setup(sidecarUrl: false);
+
+        await service.PrioritizeChapterAsync(files.FirstChapter.Id);
+
+        Assert.Empty(_httpTest.CallLog);
+        await _store.DidNotReceiveWithAnyArgs().RefreshUnitsAsync(default, default!, default);
+    }
+
+    [Fact]
     public async Task PrioritizeChapter_LastChapter_HasNoNextFiles()
     {
         var (_, service, files) = await Setup();

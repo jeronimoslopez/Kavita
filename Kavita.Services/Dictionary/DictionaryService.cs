@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -50,7 +51,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (fileId == null) return null;
 
         var unit = await readingStore.GetUnitAsync(fileId.Value, page, ct);
-        if (unit is not { State: ReadingUnitState.Done })
+        if (!IsServed(unit))
         {
             // A missing or failed unit won't be tokenized however high it's raised, so only a pending one is worth a write
             if (unit is { State: ReadingUnitState.Pending })
@@ -87,7 +88,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (fileId == null) return null;
 
         var unit = await readingStore.GetUnitAsync(fileId.Value, request.Page, ct);
-        if (unit is not { State: ReadingUnitState.Done }) return null;
+        if (!IsServed(unit)) return null;
 
         var block = unit.Blocks.FirstOrDefault(b => b.Index == request.Block);
         if (block == null) return null;
@@ -530,6 +531,13 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             .Select(f => f.Id)
             .ToList();
     }
+
+    /// <summary>
+    /// A refresh unit's blocks still match its file, so the reader keeps them until the new ones are saved and
+    /// DictionaryPagesReady tells it to fetch the page again
+    /// </summary>
+    private static bool IsServed([NotNullWhen(true)] ReadingUnit? unit) =>
+        unit is { State: ReadingUnitState.Done or ReadingUnitState.Refresh };
 
     private static string Slice(string text, int s, int e)
     {

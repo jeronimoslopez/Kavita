@@ -231,9 +231,36 @@ public class TokenizeService : ITokenizeService
 
         foreach (var file in openFiles) await _readingStore.RaiseUnitPriorityAsync(file.Id, null, ReadingPriority.OpenChapter, ct);
         foreach (var file in nextFiles) await _readingStore.RaiseUnitPriorityAsync(file.Id, null, ReadingPriority.NextChapter, ct);
+        await RefreshOpenFilesAsync(openFiles, ct);
 
         if (openFiles.Count > 0 || nextFiles.Count > 0) _workerSignal.Wake();
         return new PrioritizedFiles(openFiles.Select(f => f.Id).ToList(), nextFiles.Select(f => f.Id).ToList());
+    }
+
+    /// <summary>
+    /// Queues the open chapter's pages that an older sidecar tokenized, so a book is brought up to date when someone
+    /// reads it and never all at once. The next chapter waits until it's opened itself
+    /// </summary>
+    private async Task RefreshOpenFilesAsync(IReadOnlyList<EpubFile> openFiles, CancellationToken ct)
+    {
+        if (openFiles.Count == 0) return;
+
+        var settings = await _unitOfWork.SettingsRepository.GetSettingsDtoAsync(ct);
+        if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return;
+
+        // An unknown version can't tell old pages from current ones, so they're left as they are
+        var version = await _sidecarClient.GetVersionAsync(settings.TextSidecarUrl, ct);
+        if (version == null) return;
+
+        foreach (var file in openFiles)
+        {
+            var queued = await _readingStore.RefreshUnitsAsync(file.Id, version, ReadingPriority.OpenChapter, ct);
+            if (queued > 0)
+            {
+                _logger.LogInformation("[TokenizeService] Queued {Pages} pages of {FilePath} to tokenize again with {Version}",
+                    queued, file.FilePath, version);
+            }
+        }
     }
 
     /// <summary>

@@ -28,6 +28,13 @@ public enum ReadingUnitState
     /// Tokenizing failed as many times as the caller allows. It stays out of the queue until its file changes
     /// </summary>
     Failed = 2,
+    /// <summary>
+    /// Tokenized from the file as it is now by an older sidecar version, and queued to be tokenized again. Its blocks
+    /// are still served until the new ones are saved. If tokenizing fails as many times as the caller allows, it goes
+    /// back to done with its old blocks. Builds from before this state can't parse it, so rolling back needs every
+    /// refresh unit set to done first
+    /// </summary>
+    Refresh = 3,
 }
 
 /// <summary>
@@ -133,7 +140,8 @@ public sealed record AnalysisStoreOutcome(int Stored, IReadOnlyList<AnalysisReje
 public sealed record AnalysisStoredPage(int MangaFileId, int Page);
 
 /// <summary>
-/// Row counts by state, for status displays
+/// Row counts by state, for status displays. <see cref="UnitsPending"/> includes units waiting for a refresh, since
+/// they're in the queue too
 /// </summary>
 public sealed record ReadingStoreCounts(int UnitsPending, int UnitsDone, int UnitsFailed, int AnalysisPending,
     int AnalysisDone);

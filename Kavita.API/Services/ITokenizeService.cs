@@ -36,7 +36,9 @@ public interface ITokenizeService
 
     /// <summary>
     /// Moves the chapter's EPUB pages ahead in the tokenization queue at <see cref="ReadingPriority.OpenChapter"/>, and the
-    /// next chapter's at <see cref="ReadingPriority.NextChapter"/>, then wakes the worker
+    /// next chapter's at <see cref="ReadingPriority.NextChapter"/>, then wakes the worker. The open chapter's pages that
+    /// an older sidecar version tokenized are queued again at <see cref="ReadingPriority.OpenChapter"/>, judged by the
+    /// version the sidecar's health check reports, and nothing is queued again when that check fails
     /// </summary>
     /// <returns>The files it raised, so the caller can queue their analysis at the same priorities</returns>
     Task<PrioritizedFiles> PrioritizeChapterAsync(int chapterId, CancellationToken ct = default);

@@ -129,6 +129,22 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
+    public async Task GetEpubPageAndLookup_ServeTheOldTokensWhileARefreshWaits()
+    {
+        var book = await Setup();
+        GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Refresh);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var lookup = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+
+        Assert.NotNull(page);
+        Assert.Equal("sidecar=1", page.Version);
+        Assert.Equal(2, page.Blocks.Count);
+        Assert.Equal(Karai.Id, lookup?.Word.Id);
+        await _store.DidNotReceiveWithAnyArgs().RaiseUnitPriorityAsync(default, default, default, default);
+    }
+
+    [Fact]
     public async Task GetEpubPage_IsNullAndRaisesAPendingUnit()
     {
         var book = await Setup();
