@@ -1,7 +1,7 @@
 import {ComponentFixture, TestBed} from '@angular/core/testing';
 import {TranslocoTestingModule} from '@jsverse/transloco';
 import en from '../../../../assets/langs/en.json';
-import {DictionaryLookupResult} from '../../../_models/dictionary/dictionary';
+import {DictionaryLookupResult, LookupReadings, ReadingGroup} from '../../../_models/dictionary/dictionary';
 import {DictionaryPopupComponent} from './dictionary-popup.component';
 import {DictionaryPopupState, DictionaryPopupView} from './popup-state';
 
@@ -25,7 +25,7 @@ function result(overrides: Partial<DictionaryLookupResult> = {}): DictionaryLook
 }
 
 function view(state: DictionaryPopupState, extra: Partial<DictionaryPopupView> = {}): DictionaryPopupView {
-  return {state, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null, ...extra};
+  return {state, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null, openGroup: null, canChoose: false, ...extra};
 }
 
 describe('DictionaryPopupComponent', () => {
@@ -256,5 +256,171 @@ describe('DictionaryPopupComponent', () => {
     keyboard.componentRef.setInput('viaKeyboard', true);
     await keyboard.whenStable();
     expect(document.activeElement).toBe(q(keyboard.nativeElement, 'popup'));
+  });
+
+  describe('reading groups', () => {
+    const spicy: ReadingGroup = {seq: 100, readings: ['からい'], common: true, senses: [
+      {key: '100:1', pos: ['adj-i'], gloss: ['spicy', 'hot']},
+      {key: '100:3', pos: [], gloss: ['salty']},
+    ]};
+    const painful: ReadingGroup = {seq: 200, readings: ['つらい', 'づらい'], common: true, senses: [
+      {key: '200:1', pos: ['adj-i'], gloss: ['painful', 'hard']},
+    ]};
+
+    function readings(overrides: Partial<LookupReadings> = {}): LookupReadings {
+      return {
+        level: 'likely', source: 'tokenizer', shown: null, pick: null, bookOnly: false, groups: [spicy, painful],
+        ...overrides,
+      };
+    }
+
+    const withReadings = (r: LookupReadings, extra: Partial<DictionaryPopupView> = {}) =>
+      view({kind: 'result', result: result({readings: r})}, extra);
+    const keys = (el: HTMLElement) => all(el, 'sense').map(s => s.getAttribute('data-key'));
+    const text = (el: Element | null) => el?.textContent?.replace(/\s+/g, ' ').trim();
+
+    it('draws a tab per group with the first selected, and only with two or more groups', async () => {
+      let el = await show(withReadings(readings()));
+      const tabs = all(el, 'popup-tab');
+      expect(tabs.map(t => t.querySelector('span')?.textContent)).toEqual(['からい', 'つらい']);
+      expect(tabs.map(t => t.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+      expect(tabs.every(t => t.localName === 'button' && t.getAttribute('type') === 'button')).toBe(true);
+      expect(tabs[1].getAttribute('title')).toBe('つらい、づらい');
+      expect(q(el, 'popup-tabs')?.getAttribute('aria-label')).toBe(strings.readings);
+      expect(keys(el)).toEqual(['100:1', '100:3']);
+      expect(q(el, 'popup-reading')?.textContent).toBe('からい');
+
+      el = await show(withReadings(readings({groups: [painful], level: 'certain', source: 'dictionary'})));
+      expect(q(el, 'popup-tabs')).toBeNull();
+      expect(keys(el)).toEqual(['200:1']);
+      expect(q(el, 'popup-reading')?.textContent).toBe('つらい');
+    });
+
+    it('emits the key of a pressed tab', async () => {
+      const el = await show(withReadings(readings()));
+      const emitted: string[] = [];
+      fixture.componentInstance.group.subscribe(key => emitted.push(key));
+      all(el, 'popup-tab')[1].click();
+      expect(emitted).toEqual(['200:つらい']);
+    });
+
+    it("shows the selected tab's senses, its reading in the headword and its other readings", async () => {
+      const el = await show(withReadings(readings({level: 'guess'}), {openGroup: '200:つらい'}));
+      expect(all(el, 'popup-tab').map(t => t.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+      expect(keys(el)).toEqual(['200:1']);
+      expect(all(el, 'sense').map(s => s.querySelector('.dp-sense-n')?.textContent)).toEqual(['1']);
+      expect(q(el, 'popup-reading')?.textContent).toBe('つらい');
+      expect(text(q(el, 'popup-tab-others'))).toBe('づらい');
+      expect(q(el, 'popup-source')).toBeNull();
+    });
+
+    it('shows the pick in the headword on the first tab, under shown, and the group reading on other tabs', async () => {
+      const groups = [painful, spicy];
+      let el = await show(withReadings(readings({groups, pick: 'づらい'})));
+      expect(q(el, 'popup-reading')?.textContent).toBe('づらい');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい', shown: 'ヅライ'})));
+      expect(q(el, 'popup-reading')?.textContent).toBe('ヅライ');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい'}), {openGroup: '100:からい'}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('からい');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい'}), {openGroup: '200:つらい'}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('づらい');
+    });
+
+    it("saves the first tab's first reading, not the pick", async () => {
+      const el = await show(withReadings(readings({groups: [painful, spicy], pick: 'づらい'}), {canChoose: true}));
+      const emitted: string[] = [];
+      fixture.componentInstance.chooseReading.subscribe(r => emitted.push(r));
+      (q(el, 'popup-use-reading') as HTMLElement).click();
+      expect(emitted).toEqual(['つらい']);
+    });
+
+    it('falls back to the first tab when the selected key is no longer a group', async () => {
+      const el = await show(withReadings(readings(), {openGroup: '999:x'}));
+      expect(all(el, 'popup-tab').map(t => t.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
+    });
+
+    const labels: [Partial<LookupReadings>, string | null][] = [
+      [{level: 'certain', source: 'furigana', groups: [spicy]}, strings['from-book']],
+      [{level: 'likely', source: 'book'}, strings['from-book']],
+      [{level: 'likely', source: 'series'}, strings['from-series']],
+      [{level: 'likely', source: 'choice'}, strings['your-choice']],
+      [{level: 'likely', source: 'tokenizer'}, null],
+      [{level: 'guess', source: 'tokenizer'}, strings['best-guess']],
+      [{level: 'guess', source: 'dictionary'}, strings['best-guess']],
+      [{level: 'certain', source: 'dictionary', groups: [spicy]}, null],
+      [{level: 'certain', source: 'dictionary', groups: []}, null],
+    ];
+    for (const [overrides, label] of labels) {
+      it(`labels ${overrides.source} at ${overrides.level} as ${label}`, async () => {
+        const el = await show(withReadings(readings(overrides)));
+        expect(q(el, 'popup-source')?.textContent ?? null).toBe(label);
+      });
+    }
+
+    it('shows the book reading over the one group it matches', async () => {
+      const el = await show(withReadings(readings({level: 'certain', source: 'furigana', shown: 'カライ', groups: [spicy]})));
+      expect(q(el, 'popup-reading')?.textContent).toBe('カライ');
+      expect(q(el, 'popup-tabs')).toBeNull();
+      expect(keys(el)).toEqual(['100:1', '100:3']);
+    });
+
+    it('lists every sense with the book reading for bookOnly, with no tabs or action', async () => {
+      const el = await show(withReadings(
+        readings({level: 'certain', source: 'furigana', shown: 'ひりり', bookOnly: true, groups: []}), {canChoose: true}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('ひりり');
+      expect(keys(el)).toEqual(['100:1', '100:2', '100:3']);
+      expect(q(el, 'popup-tabs')).toBeNull();
+      expect(q(el, 'popup-use-reading')).toBeNull();
+      expect(q(el, 'popup-source')?.textContent).toBe(strings['from-book']);
+    });
+
+    it("shows today's layout for a result without readings", async () => {
+      const el = await show(view({kind: 'result', result: result()}, {canChoose: true}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('からい');
+      expect(keys(el)).toEqual(['100:1', '100:2', '100:3']);
+      expect(q(el, 'popup-tabs')).toBeNull();
+      expect(q(el, 'popup-source')).toBeNull();
+      expect(q(el, 'popup-use-reading')).toBeNull();
+    });
+
+    it("offers Use this reading only where a reading can be saved, and emits the tab's first reading", async () => {
+      let el = await show(withReadings(readings()));
+      expect(q(el, 'popup-use-reading')).toBeNull();
+
+      el = await show(withReadings(readings({groups: [spicy], level: 'certain', source: 'dictionary'}), {canChoose: true}));
+      expect(q(el, 'popup-use-reading')).toBeNull();
+
+      el = await show(withReadings(readings(), {canChoose: true, openGroup: '200:つらい'}));
+      const use = q(el, 'popup-use-reading') as HTMLElement;
+      expect(use.textContent?.trim()).toBe(strings['use-reading']);
+      expect(q(el, 'popup-clear-reading')).toBeNull();
+      const emitted: string[] = [];
+      fixture.componentInstance.chooseReading.subscribe(r => emitted.push(r));
+      use.click();
+      expect(emitted).toEqual(['つらい']);
+    });
+
+    it('offers Stop using this reading on the saved choice and Use on the other tabs', async () => {
+      let el = await show(withReadings(readings({source: 'choice'}), {canChoose: true}));
+      const clear = q(el, 'popup-clear-reading') as HTMLElement;
+      expect(clear.textContent?.trim()).toBe(strings['stop-using-reading']);
+      expect(q(el, 'popup-use-reading')).toBeNull();
+      let cleared = 0;
+      fixture.componentInstance.clearReading.subscribe(() => cleared++);
+      clear.click();
+      expect(cleared).toBe(1);
+
+      el = await show(withReadings(readings({source: 'choice'}), {canChoose: true, openGroup: '200:つらい'}));
+      expect(q(el, 'popup-clear-reading')).toBeNull();
+      expect(q(el, 'popup-use-reading')).not.toBeNull();
+    });
+
+    it('offers Use this reading on the first tab when it is not a saved choice', async () => {
+      const el = await show(withReadings(readings({source: 'series'}), {canChoose: true}));
+      expect(q(el, 'popup-use-reading')).not.toBeNull();
+    });
   });
 });

@@ -51,6 +51,8 @@ interface StackEntry {
   /** What the page highlights while the entry shows, the phrase's span for a phrase and the word otherwise */
   range: Range;
   state: DictionaryPopupState;
+  /** The groupKey of the reading tab selected on this entry, or null for the first */
+  group: string | null;
 }
 
 interface OpenWord {
@@ -108,6 +110,8 @@ export class ReaderDictionaryController {
   private waitingForPage = false;
   /** DictionaryPagesReady arrived for this page while its request was out, so the answer may be stale */
   private pageReadyWhileLoading = false;
+  /** A reading choice was saved or cleared, so the open word looks up again once the page's data reloads */
+  private choiceChanged = false;
   private readonly prioritized = new Set<number>();
 
   private open: OpenWord | null = null;
@@ -149,6 +153,7 @@ export class ReaderDictionaryController {
     this.page = null;
     this.waitingForPage = false;
     this.pageReadyWhileLoading = false;
+    this.choiceChanged = false;
     this.dismissal = null;
     this.lastHit = null;
   }
@@ -172,6 +177,7 @@ export class ReaderDictionaryController {
     this.pageLoading = false;
     this.waitingForPage = false;
     this.pageReadyWhileLoading = false;
+    this.choiceChanged = false;
     this.chapterId = null;
     this.page = null;
     this.tokens = null;
@@ -265,7 +271,8 @@ export class ReaderDictionaryController {
         this.pageLoading = false;
         if (tokens !== null) {
           this.tokens = tokens;
-          this.showArrivedAnalysis();
+          if (this.choiceChanged) this.refreshAfterChoice();
+          else this.showArrivedAnalysis();
         }
         if (this.pageReadyWhileLoading) this.loadPage();
         else if (tokens === null) this.waitingForPage = true;
@@ -309,7 +316,7 @@ export class ReaderDictionaryController {
     const blockText = blockTextOf(hit);
     const open: OpenWord = {
       hit, blockText, surface: blockText?.slice(hit.s, hit.e) ?? '', chapterId, page,
-      stack: [{sub: null, phrase: null, range: hit.range, state: {kind: 'loading'}}],
+      stack: [{sub: null, phrase: null, range: hit.range, state: {kind: 'loading'}, group: null}],
       analysisArrived: false,
     };
     this.open = open;
@@ -317,6 +324,9 @@ export class ReaderDictionaryController {
     this.presenter.show(hit.range, {vertical: this.vertical(), viaKeyboard}, {
       part: sub => this.openPart(sub),
       phrase: index => this.openPhrase(index),
+      group: key => this.selectGroup(key),
+      chooseReading: reading => this.saveChoice(reading),
+      clearReading: () => this.saveChoice(null),
       back: () => this.back(),
       closed: reason => this.closedByPopup(reason),
     });
@@ -328,7 +338,7 @@ export class ReaderDictionaryController {
   private openPart(sub: number) {
     const open = this.open;
     if (open === null || open.stack[open.stack.length - 1].sub === sub) return;
-    const entry: StackEntry = {sub, phrase: null, range: open.hit.range, state: {kind: 'loading'}};
+    const entry: StackEntry = {sub, phrase: null, range: open.hit.range, state: {kind: 'loading'}, group: null};
     this.push(open, entry);
   }
 
@@ -340,7 +350,42 @@ export class ReaderDictionaryController {
     const phrase = top.state.result.partOf?.find(p => p.index === index);
     if (phrase === undefined) return;
     const range = phraseRange(open.hit, phrase.s, phrase.e) ?? open.hit.range;
-    this.push(open, {sub: null, phrase: index, range, state: {kind: 'loading'}});
+    this.push(open, {sub: null, phrase: index, range, state: {kind: 'loading'}, group: null});
+  }
+
+  private selectGroup(key: string) {
+    const open = this.open;
+    if (open === null) return;
+    const top = open.stack[open.stack.length - 1];
+    if (top.group === key) return;
+    top.group = key;
+    this.render();
+  }
+
+  /**
+   * Saves the reading for the tapped word, or clears the saved one when `reading` is null, and then reloads the
+   * page's data so the open word and later taps use it. The request isn't cancelled when the popup closes
+   */
+  private saveChoice(reading: string | null) {
+    const open = this.open;
+    const seriesId = this.tokens?.seriesId;
+    if (open === null || seriesId === undefined || open.stack.length !== 1) return;
+    const state = open.stack[0].state;
+    if (state.kind !== 'result') return;
+    const wordId = state.result.word.id;
+    const {chapterId, page} = open;
+    const request = reading === null
+      ? this.dictionary.clearReadingChoice(seriesId, wordId)
+      : this.dictionary.saveReadingChoice({seriesId, wordId, reading});
+    request.subscribe({
+      next: () => {
+        if (this.chapterId !== chapterId || this.page !== page) return;
+        this.choiceChanged = true;
+        this.loadPage();
+      },
+      // The popup keeps showing the reading it had
+      error: () => {},
+    });
   }
 
   private push(open: OpenWord, entry: StackEntry) {
@@ -401,6 +446,26 @@ export class ReaderDictionaryController {
   }
 
   /**
+   * Looks the open word up again from the reloaded page, keeping its selected tab, so the popup shows the saved
+   * choice without closing. A page from an older server asks the server again
+   */
+  private refreshAfterChoice() {
+    this.choiceChanged = false;
+    const open = this.open;
+    if (open === null) return;
+    const entry = open.stack[0];
+    if (entry.state.kind !== 'result') return;
+    const result = this.lookUpLocally(open, entry);
+    if (result === undefined) {
+      this.fetch(open, entry, true);
+      return;
+    }
+    if (result === null) return;
+    entry.state = {kind: 'result', result};
+    this.renderIfShowing(open, entry);
+  }
+
+  /**
    * Asks the server about one stack entry and stores the answer on it. A silent fetch refreshes an entry already showing a result,
    * so a failure or an empty answer leaves that result in place
    */
@@ -442,6 +507,8 @@ export class ReaderDictionaryController {
       canGoBack: open.stack.length > 1,
       openSub: top.sub,
       openPhrase: top.phrase,
+      openGroup: top.group,
+      canChoose: top === open.stack[0] && this.tokens?.seriesId !== undefined,
     });
   }
 

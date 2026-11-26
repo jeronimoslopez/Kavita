@@ -32,6 +32,10 @@ export type PopupCloseReason = 'close-button' | 'escape' | 'outside' | 'out-of-v
 export interface PopupHandlers {
   part(sub: number): void;
   phrase(index: number): void;
+  /** A reading tab was pressed, with the groupKey of its group */
+  group(key: string): void;
+  chooseReading(reading: string): void;
+  clearReading(): void;
   back(): void;
   closed(reason: PopupCloseReason): void;
 }
@@ -136,6 +140,9 @@ export class DictionaryPopupPresenter {
     ref.setInput('mode', this.mode);
     this.subscriptions.add(ref.instance.part.subscribe(sub => this.handlers?.part(sub)));
     this.subscriptions.add(ref.instance.phrase.subscribe(index => this.handlers?.phrase(index)));
+    this.subscriptions.add(ref.instance.group.subscribe(key => this.handlers?.group(key)));
+    this.subscriptions.add(ref.instance.chooseReading.subscribe(reading => this.handlers?.chooseReading(reading)));
+    this.subscriptions.add(ref.instance.clearReading.subscribe(() => this.handlers?.clearReading()));
     this.subscriptions.add(ref.instance.back.subscribe(() => this.handlers?.back()));
     this.subscriptions.add(ref.instance.dismiss.subscribe(() => this.closeSelf('close-button', true)));
     // Anything else that disposes the overlay still runs the full close

@@ -6,7 +6,10 @@ import en from '../../../../assets/langs/en.json';
 import {DictionaryPopupPresenter, PopupCloseReason, PopupHandlers} from './dictionary-popup.presenter';
 import {DictionaryPopupView} from './popup-state';
 
-const VIEW: DictionaryPopupView = {state: {kind: 'loading'}, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null};
+const VIEW: DictionaryPopupView = {
+  state: {kind: 'loading'}, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null, openGroup: null,
+  canChoose: false,
+};
 
 describe('DictionaryPopupPresenter', () => {
   let presenter: DictionaryPopupPresenter;
@@ -28,7 +31,10 @@ describe('DictionaryPopupPresenter', () => {
     });
     presenter = TestBed.inject(DictionaryPopupPresenter);
     reasons = [];
-    handlers = {part: vi.fn(), phrase: vi.fn(), back: vi.fn(), closed: reason => reasons.push(reason)};
+    handlers = {
+      part: vi.fn(), phrase: vi.fn(), group: vi.fn(), chooseReading: vi.fn(), clearReading: vi.fn(), back: vi.fn(),
+      closed: reason => reasons.push(reason),
+    };
     word = document.createElement('p');
     word.textContent = '辛い';
     word.tabIndex = 0;
@@ -103,6 +109,30 @@ describe('DictionaryPopupPresenter', () => {
     popup()?.querySelector<HTMLElement>('[data-testid="popup-phrase"]')?.click();
     expect(handlers.phrase).toHaveBeenCalledWith(2);
     expect(handlers.part).not.toHaveBeenCalled();
+  });
+
+  it('passes reading tabs and the reading actions on', () => {
+    open();
+    const groups = [
+      {seq: 1, readings: ['またたく', 'まばたく'], common: true, senses: [{key: '1:1', pos: [], gloss: ['to twinkle']}]},
+      {seq: 2, readings: ['しばたたく'], common: false, senses: [{key: '2:1', pos: [], gloss: ['to blink']}]},
+    ];
+    const state: DictionaryPopupView['state'] = {kind: 'result', result: {
+      word: {id: 1, surface: '瞬く', lemma: '瞬く', pos: '動詞', isProper: false, occurrenceReading: null, reading: 'またたく', readings: [], jlpt: null},
+      senses: [], analysis: null, parts: [],
+      readings: {level: 'likely', source: 'choice', shown: null, pick: 'またたく', bookOnly: false, groups},
+    }};
+    presenter.render({...VIEW, canChoose: true, state});
+    TestBed.tick();
+    popup()?.querySelectorAll<HTMLElement>('[data-testid="popup-tab"]')[1]?.click();
+    popup()?.querySelector<HTMLElement>('[data-testid="popup-clear-reading"]')?.click();
+    expect(handlers.group).toHaveBeenCalledWith('2:しばたたく');
+    expect(handlers.clearReading).toHaveBeenCalledTimes(1);
+
+    presenter.render({...VIEW, canChoose: true, openGroup: '2:しばたたく', state});
+    TestBed.tick();
+    popup()?.querySelector<HTMLElement>('[data-testid="popup-use-reading"]')?.click();
+    expect(handlers.chooseReading).toHaveBeenCalledWith('しばたたく');
   });
 
   it('closes on Close and passes part chips and Back on', () => {

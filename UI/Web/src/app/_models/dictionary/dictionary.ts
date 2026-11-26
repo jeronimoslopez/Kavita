@@ -17,6 +17,53 @@ export interface Sense {
   key: string;
   pos: string[];
   gloss: string[];
+  /** The readings of its entry the sense is restricted to. Missing when it applies to every reading */
+  r?: string[];
+}
+
+/** One JMdict entry of a word, in the order the word's senses appear */
+export interface WordEntry {
+  seq: number;
+  common: boolean;
+  /** Hiragana */
+  readings: string[];
+}
+
+/** Where the reading of a word's first reading group came from */
+export type ReadingSource = 'furigana' | 'book' | 'series' | 'choice' | 'tokenizer' | 'dictionary';
+
+/** How sure the first reading group is */
+export type ReadingLevel = 'certain' | 'likely' | 'guess';
+
+/** The reading the book or its series marks for a word */
+export interface ReadingHint {
+  /** Hiragana */
+  reading: string;
+  /** As the book prints it */
+  printed: string;
+  source: 'book' | 'series';
+}
+
+/** One JMdict entry, or the part of one whose senses apply to the same readings */
+export interface ReadingGroup {
+  seq: number;
+  /** In entry order */
+  readings: string[];
+  common: boolean;
+  senses: Sense[];
+}
+
+/** The reading groups of a lookup, with the one that fits the occurrence first */
+export interface LookupReadings {
+  level: ReadingLevel;
+  source: ReadingSource;
+  /** A reading to show in the headword in place of the first group's, or null */
+  shown: string | null;
+  /** The reading, in hiragana, that put the first group first, or null when nothing picked one */
+  pick: string | null;
+  /** The book marks a reading no group has, so the popup lists every sense ungrouped */
+  bookOnly: boolean;
+  groups: ReadingGroup[];
 }
 
 export interface EpubPageBlock {
@@ -32,6 +79,8 @@ export interface EpubPageBlock {
    * the book prints it. Missing when the block has none
    */
   ruby?: [s: number, e: number, reading: string][];
+  /** Start offsets of the top-level tokens whose reading the tokenizer chose by fixed cost. Missing when there are none */
+  blind?: number[];
 }
 
 /**
@@ -48,6 +97,11 @@ export interface EpubPageWord {
   isProper?: boolean;
   readings?: string[];
   senses?: Sense[];
+  /** The word's JMdict entries. Version 2 data leaves them out */
+  entries?: WordEntry[];
+  hint?: ReadingHint;
+  /** The reading the user saved for this word in this series */
+  choice?: string;
 }
 
 export interface AnalysisEntry {
@@ -63,6 +117,8 @@ export interface AnalysisEntry {
 export interface EpubPageTokens {
   /** Changes when the page is tokenized again */
   version: string;
+  /** The chapter's series. An older server leaves it out */
+  seriesId?: number;
   blocks: EpubPageBlock[];
   /** Every word a lookup on the page can return, keyed by word id. JSON keys are strings */
   words: Record<string, EpubPageWord>;
@@ -135,6 +191,14 @@ export interface DictionaryLookupResult {
   parts: DictionaryPart[];
   /** Expressions the word is part of. An older server leaves it out, and a phrase's own result has none */
   partOf?: DictionaryPhrase[];
+  /** The word's reading groups and which fits this occurrence. An older server leaves it out */
+  readings?: LookupReadings;
+}
+
+export interface ReadingChoiceRequest {
+  seriesId: number;
+  wordId: number;
+  reading: string;
 }
 
 export interface AnalysisItem {

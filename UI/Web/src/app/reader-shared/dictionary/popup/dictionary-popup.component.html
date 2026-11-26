@@ -9,7 +9,10 @@
       <div class="dp-headword">
         @if (word(); as w) {
           <span class="dp-lemma" lang="ja" data-testid="popup-lemma">{{ w.lemma }}</span>&ngsp;
-          <span class="dp-reading" lang="ja" data-testid="popup-reading">{{ w.reading }}</span>
+          <span class="dp-reading" lang="ja" data-testid="popup-reading">{{ headwordReading() }}</span>
+          @if (sourceLabel(); as key) {
+            <span class="dp-source" [attr.data-source]="key" data-testid="popup-source">{{ t(key) }}</span>
+          }
         } @else if (view().surface) {
           <span class="dp-lemma" lang="ja" data-testid="popup-lemma">{{ view().surface }}</span>
         }
@@ -41,6 +44,35 @@
         <p class="dp-no-entry" data-testid="popup-no-entry">{{ t('no-entry') }}</p>
       }
       @case ('result') {
+        @if (tabs().length > 0) {
+          <div class="dp-tabs-row">
+            <ul class="dp-tabs" [attr.aria-label]="t('readings')" data-testid="popup-tabs">
+              @for (tab of tabs(); track tab.key) {
+                <li>
+                  <button type="button" class="dp-tab" data-testid="popup-tab" [attr.data-key]="tab.key"
+                          [attr.aria-pressed]="tab.key === selectedKey()" [attr.title]="tab.group.readings.join('、')"
+                          (click)="group.emit(tab.key)">
+                    <span lang="ja">{{ tab.group.readings[0] }}</span>
+                    @if (tab.key === selectedKey() && tab.others) {
+                      <span class="dp-tab-others" lang="ja" data-testid="popup-tab-others">{{ tab.others }}</span>
+                    }
+                  </button>
+                </li>
+              }
+            </ul>
+            @switch (choiceAction()) {
+              @case ('use') {
+                <button type="button" class="dp-text-btn dp-choice-btn" data-testid="popup-use-reading"
+                        (click)="choose()">{{ t('use-reading') }}</button>
+              }
+              @case ('clear') {
+                <button type="button" class="dp-text-btn dp-choice-btn" data-testid="popup-clear-reading"
+                        (click)="clearReading.emit()">{{ t('stop-using-reading') }}</button>
+              }
+            }
+          </div>
+        }
+
         @if (aiReading(); as reading) {
           <p class="dp-reading dp-ai-reading" lang="ja" data-testid="popup-ai-reading">{{ reading }}</p>
         }

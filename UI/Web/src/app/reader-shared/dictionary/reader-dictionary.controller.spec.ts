@@ -5,6 +5,7 @@ import {
   DictionaryLookupResult,
   DictionaryPagesEvent,
   EpubPageTokens,
+  ReadingChoiceRequest,
 } from '../../_models/dictionary/dictionary';
 import {DictionaryService} from '../../_services/dictionary.service';
 import {EVENTS, Message, MessageHubService} from '../../_services/message-hub.service';
@@ -62,6 +63,7 @@ class FakeDictionary {
   pages: {chapterId: number, page: number, reply: Subject<EpubPageTokens | null>}[] = [];
   lookups: {request: DictionaryLookupRequest, reply: Subject<DictionaryLookupResult | null>}[] = [];
   prioritized: number[] = [];
+  choices: {request: ReadingChoiceRequest | {seriesId: number, wordId: number, reading: null}, reply: Subject<unknown>}[] = [];
 
   getEpubPage(chapterId: number, page: number) {
     const reply = new Subject<EpubPageTokens | null>();
@@ -73,6 +75,23 @@ class FakeDictionary {
     const reply = new Subject<DictionaryLookupResult | null>();
     this.lookups.push({request, reply});
     return reply;
+  }
+
+  saveReadingChoice(request: ReadingChoiceRequest) {
+    const reply = new Subject<unknown>();
+    this.choices.push({request, reply});
+    return reply;
+  }
+
+  clearReadingChoice(seriesId: number, wordId: number) {
+    const reply = new Subject<unknown>();
+    this.choices.push({request: {seriesId, wordId, reading: null}, reply});
+    return reply;
+  }
+
+  answerChoice(i: number) {
+    this.choices[i].reply.next(null);
+    this.choices[i].reply.complete();
   }
 
   prioritizeChapter(chapterId: number) {
@@ -536,6 +555,151 @@ describe('ReaderDictionaryController', () => {
 
     controller.isLookupClick(click());
     expect(locates).toBe(before + 2);
+  });
+
+  describe('reading choices', () => {
+    /**
+     * localTokens with two entries on 新聞社, read しんぶんしゃ by the tokenizer, in series 9. The choice, when given,
+     * is the user's saved reading
+     */
+    function choiceTokens(choice?: string, seriesId: number | null = 9): EpubPageTokens {
+      const tokens = localTokens();
+      if (seriesId !== null) tokens.seriesId = seriesId;
+      tokens.words[1] = {
+        ...tokens.words[1],
+        senses: [sense('1:1', 'newspaper company'), sense('5:1', 'a rarer reading')],
+        entries: [{seq: 1, common: true, readings: ['しんぶんしゃ']}, {seq: 5, common: false, readings: ['しんもんしゃ']}],
+        ...(choice === undefined ? {} : {choice}),
+      };
+      return tokens;
+    }
+
+    const firsts = () => {
+      const state = presenter.view.state;
+      return state.kind === 'result' ? state.result.readings?.groups.map(g => g.readings[0]) : undefined;
+    };
+
+    function openWith(tokens: EpubPageTokens) {
+      controller.setPage(5, 2);
+      dictionary.answerPage(0, tokens);
+      expect(controller.handleClick(click())).toBe(true);
+    }
+
+    it('selects a tab on the open entry and offers the choice only on the tapped word', () => {
+      openWith(choiceTokens());
+      expect(presenter.view).toMatchObject({openGroup: null, canChoose: true});
+
+      presenter.handlers?.group('5:しんもんしゃ');
+      expect(presenter.view).toMatchObject({openGroup: '5:しんもんしゃ', canChoose: true});
+
+      presenter.handlers?.part(0);
+      expect(presenter.view).toMatchObject({openGroup: null, canChoose: false, openSub: 0});
+      presenter.handlers?.back();
+      expect(presenter.view).toMatchObject({openGroup: '5:しんもんしゃ', canChoose: true});
+
+      presenter.handlers?.phrase(0);
+      expect(presenter.view).toMatchObject({canChoose: false, openPhrase: 0});
+    });
+
+    it('loses the selected tab when the popup closes', () => {
+      openWith(choiceTokens());
+      presenter.handlers?.group('5:しんもんしゃ');
+      presenter.closeFromPopup();
+      controller.handleClick(click());
+      expect(presenter.view.openGroup).toBeNull();
+    });
+
+    it('saves a reading, reloads the page and shows the choice without closing', () => {
+      openWith(choiceTokens());
+      presenter.handlers?.group('5:しんもんしゃ');
+      presenter.handlers?.chooseReading('しんもんしゃ');
+      expect(dictionary.choices[0].request).toEqual({seriesId: 9, wordId: 1, reading: 'しんもんしゃ'});
+      expect(dictionary.pages).toHaveLength(1);
+
+      dictionary.answerChoice(0);
+      expect(dictionary.pages).toHaveLength(2);
+      expect(dictionary.pages[1]).toMatchObject({chapterId: 5, page: 2});
+      dictionary.answerPage(1, choiceTokens('しんもんしゃ'));
+
+      expect(controller.isPopupVisible()).toBe(true);
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {readings: {source: 'choice'}}});
+      expect(firsts()).toEqual(['しんもんしゃ', 'しんぶんしゃ']);
+      expect(presenter.view.openGroup).toBe('5:しんもんしゃ');
+      expect(dictionary.lookups).toHaveLength(0);
+
+      // A later tap reads the reloaded page
+      presenter.closeFromPopup();
+      controller.handleClick(click());
+      expect(firsts()).toEqual(['しんもんしゃ', 'しんぶんしゃ']);
+    });
+
+    it('clears a saved reading and reloads the page', () => {
+      openWith(choiceTokens('しんもんしゃ'));
+      expect(firsts()).toEqual(['しんもんしゃ', 'しんぶんしゃ']);
+      presenter.handlers?.clearReading();
+      expect(dictionary.choices[0].request).toEqual({seriesId: 9, wordId: 1, reading: null});
+
+      dictionary.answerChoice(0);
+      dictionary.answerPage(1, choiceTokens());
+      expect(controller.isPopupVisible()).toBe(true);
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {readings: {source: 'tokenizer'}}});
+      expect(firsts()).toEqual(['しんぶんしゃ', 'しんもんしゃ']);
+    });
+
+    it('reloads the page after a save even when the popup closed meanwhile', () => {
+      openWith(choiceTokens());
+      presenter.handlers?.chooseReading('しんもんしゃ');
+      presenter.closeFromPopup();
+      expect(dictionary.choices[0].reply.observed).toBe(true);
+
+      dictionary.answerChoice(0);
+      expect(dictionary.pages).toHaveLength(2);
+      dictionary.answerPage(1, choiceTokens('しんもんしゃ'));
+      expect(controller.isPopupVisible()).toBe(false);
+    });
+
+    it('does not reload a page the reader has left, nor after a failed save', () => {
+      openWith(choiceTokens());
+      presenter.handlers?.chooseReading('しんもんしゃ');
+      controller.setPage(5, 3);
+      dictionary.answerChoice(0);
+      expect(dictionary.pages).toHaveLength(2);
+      expect(dictionary.pages[1]).toMatchObject({page: 3});
+
+      dictionary.answerPage(1, choiceTokens());
+      controller.handleClick(click());
+      presenter.handlers?.chooseReading('しんもんしゃ');
+      dictionary.choices[1].reply.error(new Error('400'));
+      expect(dictionary.pages).toHaveLength(2);
+      expect(controller.isPopupVisible()).toBe(true);
+    });
+
+    it('offers no choice on a page without a series and sends nothing for one', () => {
+      openWith(choiceTokens(undefined, null));
+      expect(presenter.view.canChoose).toBe(false);
+      presenter.handlers?.chooseReading('しんもんしゃ');
+      expect(dictionary.choices).toHaveLength(0);
+    });
+
+    it('asks the server again after a save on a page from an older server', () => {
+      openOnPage();
+      dictionary.answerLookup(0, lookupResult('新聞社'));
+      expect(presenter.view.canChoose).toBe(false);
+
+      controller.setPage(5, 2);
+      dictionary.answerPage(1, {...TOKENS, seriesId: 9});
+      controller.handleClick(click());
+      dictionary.answerLookup(1, lookupResult('新聞社'));
+      expect(presenter.view.canChoose).toBe(true);
+      presenter.handlers?.chooseReading('よみ');
+      dictionary.answerChoice(0);
+      dictionary.answerPage(2, {...TOKENS, seriesId: 9});
+
+      expect(dictionary.lookups).toHaveLength(3);
+      expect(dictionary.lookups[2].request.sub).toBeNull();
+      dictionary.answerLookup(2, null);
+      expect(presenter.view.state).toMatchObject({kind: 'result'});
+    });
   });
 
   describe('with tokens that carry senses', () => {
