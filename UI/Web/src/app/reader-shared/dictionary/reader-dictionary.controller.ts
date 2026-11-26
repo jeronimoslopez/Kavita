@@ -1,11 +1,17 @@
 import {DestroyRef, DOCUMENT, inject, Injectable, InjectionToken, Provider} from '@angular/core';
 import {filter, Subscription} from 'rxjs';
-import {DictionaryLookupRequest, DictionaryPagesEvent, EpubPageTokens} from '../../_models/dictionary/dictionary';
+import {
+  DictionaryLookupRequest,
+  DictionaryLookupResult,
+  DictionaryPagesEvent,
+  EpubPageTokens,
+} from '../../_models/dictionary/dictionary';
 import {DictionaryService} from '../../_services/dictionary.service';
 import {EVENTS, MessageHubService} from '../../_services/message-hub.service';
 import {enclosingBlock, rangeForBlockOffsets, readBlockText} from './block-text';
 import {EpubHit, locateEpubWord} from './epub-locator';
 import {clearOpenWord, markOpenWord} from './highlight';
+import {carriesSenses, localLookup} from './local-lookup';
 import {DictionaryPopupPresenter, PopupCloseReason} from './popup/dictionary-popup.presenter';
 import {installOpenWordStyle} from './popup/open-word-style';
 import {DictionaryPopupState} from './popup/popup-state';
@@ -49,12 +55,14 @@ interface StackEntry {
 
 interface OpenWord {
   hit: EpubHit;
+  /** The tapped block's text without ruby readings, or null when the hit has no block */
+  blockText: string | null;
   /** The word's text without ruby readings */
   surface: string;
   chapterId: number;
   page: number;
   stack: StackEntry[];
-  /** DictionaryAnalysisReady arrived for this page while the first lookup was still running */
+  /** DictionaryAnalysisReady arrived for this page while the first lookup asked the server */
   analysisArrived: boolean;
 }
 
@@ -72,7 +80,8 @@ export function provideReaderDictionary(): Provider[] {
 
 /**
  * The dictionary popup for one reader. It loads the page's tokens, turns clicks on words into lookups, and keeps the
- * popup's stack of entries. The reader tells it which page is showing and passes its clicks on. Every click handler
+ * popup's stack of entries. A page whose words carry their senses answers its lookups itself, and a page from an
+ * older server sends each one to the server. The reader tells it which page is showing and passes its clicks on. Every click handler
  * in the reader asks consumesClick first, then isLookupClick or handleClick
  */
 @Injectable()
@@ -254,7 +263,10 @@ export class ReaderDictionaryController {
     this.pageLoad = this.dictionary.getEpubPage(chapterId, page).subscribe({
       next: tokens => {
         this.pageLoading = false;
-        if (tokens !== null) this.tokens = tokens;
+        if (tokens !== null) {
+          this.tokens = tokens;
+          this.showArrivedAnalysis();
+        }
         if (this.pageReadyWhileLoading) this.loadPage();
         else if (tokens === null) this.waitingForPage = true;
       },
@@ -272,9 +284,19 @@ export class ReaderDictionaryController {
     else this.loadPage();
   }
 
+  /**
+   * A page that answers its own lookups loads again, which brings the new answers to the open word and to later
+   * taps. On a page from an older server the open word asks the server again
+   */
   private onAnalysisReady(body: DictionaryPagesEvent) {
+    if (body.chapterId !== this.chapterId || this.page === null || !body.pages.includes(this.page)) return;
+    const local = this.tokens !== null && carriesSenses(this.tokens);
+    if (this.pageLoading) this.pageReadyWhileLoading = true;
+    else if (local) this.loadPage();
+    if (local) return;
+
     const open = this.open;
-    if (open === null || body.chapterId !== open.chapterId || !body.pages.includes(open.page)) return;
+    if (open === null) return;
     const entry = open.stack[0];
     if (entry.state.kind === 'loading') open.analysisArrived = true;
     else if (entry.state.kind === 'result' && entry.state.result.analysis === null) this.fetch(open, entry, true);
@@ -284,8 +306,9 @@ export class ReaderDictionaryController {
     this.lookups.unsubscribe();
     this.lookups = new Subscription();
     this.dismissal = null;
+    const blockText = blockTextOf(hit);
     const open: OpenWord = {
-      hit, surface: surfaceOf(hit), chapterId, page,
+      hit, blockText, surface: blockText?.slice(hit.s, hit.e) ?? '', chapterId, page,
       stack: [{sub: null, phrase: null, range: hit.range, state: {kind: 'loading'}}],
       analysisArrived: false,
     };
@@ -299,8 +322,7 @@ export class ReaderDictionaryController {
     });
     // The presenter closes straight away when the word is already off screen
     if (this.open !== open) return;
-    this.render();
-    this.fetch(open, open.stack[0], false);
+    this.lookUp(open, open.stack[0]);
   }
 
   private openPart(sub: number) {
@@ -325,8 +347,7 @@ export class ReaderDictionaryController {
     const below = open.stack[open.stack.length - 1];
     open.stack.push(entry);
     if (entry.range !== below.range) this.highlighter.mark(entry.range);
-    this.render();
-    this.fetch(open, entry, false);
+    this.lookUp(open, entry);
   }
 
   private back() {
@@ -337,15 +358,50 @@ export class ReaderDictionaryController {
     const entry = open.stack[open.stack.length - 1];
     if (entry.range !== popped.range) this.highlighter.mark(entry.range);
     this.render();
-    if (entry.state.kind === 'failed') {
-      entry.state = {kind: 'loading'};
-      this.render();
-      this.fetch(open, entry, false);
-    }
+    if (entry.state.kind === 'failed') this.lookUp(open, entry);
   }
 
   /**
-   * Looks up one stack entry and stores the answer on it. A silent fetch refreshes an entry already showing a result,
+   * Answers an entry from the page's tokens when they can, so it shows without a loading state, and asks the server
+   * otherwise
+   */
+  private lookUp(open: OpenWord, entry: StackEntry) {
+    const local = this.lookUpLocally(open, entry);
+    if (local === undefined) {
+      entry.state = {kind: 'loading'};
+      this.render();
+      this.fetch(open, entry, false);
+      return;
+    }
+    entry.state = local === null ? {kind: 'empty'} : {kind: 'result', result: local};
+    this.render();
+  }
+
+  /** @returns Undefined when the page's tokens can't answer, because they're from an older server */
+  private lookUpLocally(open: OpenWord, entry: StackEntry): DictionaryLookupResult | null | undefined {
+    const tokens = this.tokens;
+    if (tokens === null || open.blockText === null || !carriesSenses(tokens)) return undefined;
+    return localLookup(tokens, {block: open.hit.blockIndex, s: open.hit.s, sub: entry.sub, phrase: entry.phrase},
+      open.blockText);
+  }
+
+  /**
+   * Puts an analysis that came with reloaded tokens on the open word, the way a silent fetch does for an older
+   * server. A result that still has no analysis leaves the entry as it is
+   */
+  private showArrivedAnalysis() {
+    const open = this.open;
+    if (open === null) return;
+    const entry = open.stack[0];
+    if (entry.state.kind !== 'result' || entry.state.result.analysis !== null) return;
+    const result = this.lookUpLocally(open, entry);
+    if (result === undefined || result === null || result.analysis === null) return;
+    entry.state = {kind: 'result', result};
+    this.renderIfShowing(open, entry);
+  }
+
+  /**
+   * Asks the server about one stack entry and stores the answer on it. A silent fetch refreshes an entry already showing a result,
    * so a failure or an empty answer leaves that result in place
    */
   private fetch(open: OpenWord, entry: StackEntry, silent: boolean) {
@@ -402,10 +458,10 @@ export class ReaderDictionaryController {
   }
 }
 
-/** The word as it reads in the block, which leaves out ruby readings that the range's own text includes */
-function surfaceOf(hit: EpubHit): string {
+/** The block's text, which leaves out ruby readings that the hit range's own text includes */
+function blockTextOf(hit: EpubHit): string | null {
   const block = enclosingBlock(hit.range.startContainer);
-  return block === null ? '' : readBlockText(block).text.slice(hit.s, hit.e);
+  return block === null ? null : readBlockText(block).text;
 }
 
 /** A Range over block offsets `[s, e)` in the hit's block, or null when the block's text doesn't reach them */

@@ -18,7 +18,35 @@ import {
   ReaderDictionaryController,
 } from './reader-dictionary.controller';
 
-const TOKENS: EpubPageTokens = {version: 'v1', blocks: [], words: {}, analysis: []};
+/** A page from an older server, whose words carry no senses, so every lookup asks the server */
+const TOKENS: EpubPageTokens = {version: 'v1', blocks: [], words: {1: {lemma: '新聞社', reading: 'しんぶんしゃ', jlpt: null}}, analysis: []};
+
+const sense = (key: string, gloss: string) => ({key, pos: ['n'], gloss: [gloss]});
+
+/**
+ * Block 4 of the container, 今日の朝刊と、新聞社, from a server whose words carry their senses. 新聞社 at 7 to 10 has
+ * the parts 新聞 and 社, and the phrase と、新聞社 at 5 to 10 covers it
+ */
+function localTokens(analysis: EpubPageTokens['analysis'] = []): EpubPageTokens {
+  return {
+    version: 'v2',
+    blocks: [{
+      index: 4, length: 10,
+      tokens: [[0, 2, 10, 'きょう', null], [2, 3, null, null, null], [3, 5, 11, 'ちょうかん', null], [5, 6, null, null, null],
+        [6, 7, null, null, null], [7, 10, 1, 'しんぶんしゃ', [[7, 9, 2, 'しんぶん'], [9, 10, 3, 'しゃ']]]],
+      phrases: [[5, 10, 4]],
+    }],
+    words: {
+      1: {lemma: '新聞社', reading: 'しんぶんしゃ', jlpt: 2, pos: '名詞', readings: ['しんぶんしゃ'], senses: [sense('1:1', 'newspaper company')]},
+      2: {lemma: '新聞', reading: 'しんぶん', jlpt: 5, pos: '名詞', readings: ['しんぶん'], senses: [sense('2:1', 'newspaper')]},
+      3: {lemma: '社', reading: 'しゃ', jlpt: 3, pos: '名詞', readings: ['しゃ'], senses: [sense('3:1', 'company')]},
+      4: {lemma: 'と、新聞社', reading: 'と、しんぶんしゃ', jlpt: null, pos: '表現', readings: [], senses: [sense('4:1', 'and the paper')]},
+      10: {lemma: '今日', reading: 'きょう', jlpt: 5, pos: '名詞', readings: ['きょう'], senses: []},
+      11: {lemma: '朝刊', reading: 'ちょうかん', jlpt: 1, pos: '名詞', readings: ['ちょうかん'], senses: []},
+    },
+    analysis,
+  };
+}
 
 function lookupResult(lemma: string, analysis: DictionaryLookupResult['analysis'] = null): DictionaryLookupResult {
   return {
@@ -508,6 +536,125 @@ describe('ReaderDictionaryController', () => {
 
     controller.isLookupClick(click());
     expect(locates).toBe(before + 2);
+  });
+
+  describe('with tokens that carry senses', () => {
+    function openLocally(tokens = localTokens()) {
+      controller.setPage(5, 2);
+      dictionary.answerPage(0, tokens);
+      expect(controller.handleClick(click())).toBe(true);
+    }
+
+    it('answers a tap from the page tokens with no request and no loading state', () => {
+      openLocally();
+
+      expect(dictionary.lookups).toHaveLength(0);
+      expect(presenter.views.map(v => v.state.kind)).toEqual(['result']);
+      expect(presenter.view).toMatchObject({surface: '新聞社', canGoBack: false, openSub: null, openPhrase: null});
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {
+        word: {id: 1, surface: '新聞社', lemma: '新聞社', occurrenceReading: 'しんぶんしゃ'},
+        senses: [{key: '1:1'}],
+        analysis: null,
+        parts: [{sub: 0, surface: '新聞'}, {sub: 1, surface: '社'}],
+        partOf: [{index: 0, s: 5, e: 10, lemma: 'と、新聞社', gloss: 'and the paper'}],
+      }});
+    });
+
+    it('shows the empty state when the tokens have no word at the tap', () => {
+      const tokens = localTokens();
+      delete tokens.words[1];
+      openLocally(tokens);
+
+      expect(dictionary.lookups).toHaveLength(0);
+      expect(presenter.view.state).toEqual({kind: 'empty'});
+    });
+
+    it('opens a part and a phrase from the tokens and goes back', () => {
+      openLocally();
+
+      presenter.handlers?.part(1);
+      expect(presenter.view).toMatchObject({canGoBack: true, openSub: 1});
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: '社', surface: '社'}, parts: [{}, {}]}});
+      presenter.handlers?.back();
+
+      presenter.handlers?.phrase(0);
+      expect(presenter.view).toMatchObject({canGoBack: true, openSub: null, openPhrase: 0});
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {
+        word: {lemma: 'と、新聞社', surface: 'と、新聞社', occurrenceReading: null}, parts: [], partOf: [],
+      }});
+      expect((highlighter.mark.mock.lastCall?.[0] as Range).toString()).toBe('と、新聞社');
+
+      presenter.handlers?.back();
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: '新聞社'}}});
+      expect(presenter.views.some(v => v.state.kind === 'loading')).toBe(false);
+      expect(dictionary.lookups).toHaveLength(0);
+    });
+
+    it('shows the analysis stored with the tokens', () => {
+      openLocally(localTokens([{block: 4, s: 7, senseKey: '1:1', reading: null, generator: 'claude'}]));
+
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: {senseKey: '1:1', generator: 'claude'}}});
+    });
+
+    it('loads the page again when analysis arrives and shows it on the open word', () => {
+      openLocally();
+      ready(EVENTS.DictionaryAnalysisReady, 5, [3]);
+      ready(EVENTS.DictionaryAnalysisReady, 6, [2]);
+      expect(dictionary.pages).toHaveLength(1);
+
+      ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+      expect(dictionary.pages).toHaveLength(2);
+      const renders = presenter.views.length;
+      dictionary.answerPage(1, localTokens([{block: 4, s: 7, senseKey: '1:1', reading: null, generator: 'claude'}]));
+
+      expect(presenter.views.length).toBe(renders + 1);
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: {senseKey: '1:1'}}});
+      expect(dictionary.lookups).toHaveLength(0);
+    });
+
+    it('leaves the open entry alone when the reloaded tokens bring no analysis for it', () => {
+      openLocally();
+      ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+      const renders = presenter.views.length;
+      dictionary.answerPage(1, localTokens([{block: 4, s: 0, senseKey: null, reading: null, generator: 'claude'}]));
+
+      expect(presenter.views.length).toBe(renders);
+    });
+
+    it('updates the word, not an open part, when analysis arrives, and shows it on Back', () => {
+      openLocally();
+      presenter.handlers?.part(0);
+      ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+      const renders = presenter.views.length;
+      dictionary.answerPage(1, localTokens([{block: 4, s: 7, senseKey: '1:1', reading: null, generator: 'claude'}]));
+      expect(presenter.views.length).toBe(renders);
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: '新聞'}, analysis: null}});
+
+      presenter.handlers?.back();
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: {senseKey: '1:1'}}});
+    });
+
+    it('loads the page once more when analysis arrives while it is loading', () => {
+      controller.setPage(5, 2);
+      ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+      expect(dictionary.pages).toHaveLength(1);
+
+      dictionary.answerPage(0, localTokens());
+      expect(dictionary.pages).toHaveLength(2);
+      const newer = localTokens([{block: 4, s: 7, senseKey: '1:1', reading: null, generator: 'claude'}]);
+      dictionary.answerPage(1, newer);
+      expect(controller.handleClick(click())).toBe(true);
+      expect(presenter.view.state).toMatchObject({kind: 'result', result: {analysis: {senseKey: '1:1'}}});
+    });
+
+    it('asks the server for a page whose words carry no senses', () => {
+      openOnPage();
+      expect(dictionary.lookups).toHaveLength(1);
+      expect(presenter.view.state).toEqual({kind: 'loading'});
+
+      ready(EVENTS.DictionaryAnalysisReady, 5, [2]);
+      expect(dictionary.pages).toHaveLength(1);
+    });
   });
 
   it('prioritizes each chapter once', () => {

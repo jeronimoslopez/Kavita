@@ -9,6 +9,9 @@ export type SubToken = [s: number, e: number, w: number | null, r: string | null
 /** One token, `[s, e, w, r, sub]`, where `sub` holds a compound's parts or is null */
 export type Token = [s: number, e: number, w: number | null, r: string | null, sub: SubToken[] | null];
 
+/** A dictionary expression over two or more whole tokens, `[s, e, w]`, where `w` is always a word id */
+export type Phrase = [s: number, e: number, w: number];
+
 export interface Sense {
   /** `<seq>:<n>`, the JMdict entry and the sense's 1-based position in it */
   key: string;
@@ -22,13 +25,24 @@ export interface EpubPageBlock {
   /** UTF-16 length of the block's text. When the text rebuilt from the DOM has another length, skip the block */
   length: number;
   tokens: Token[];
+  /** In stored order, so a phrase's position is the `phrase` index that looks it up. Missing when the block has none */
+  phrases?: Phrase[];
 }
 
-export interface WordBrief {
+/**
+ * A word of the page. The fields after `jlpt` are what a lookup needs, and an older server leaves them out, so the
+ * reader asks the server for each tap instead
+ */
+export interface EpubPageWord {
   lemma: string;
   reading: string;
   /** 1 (N1) to 5 (N5), or null when the word isn't listed */
   jlpt: number | null;
+  pos?: string;
+  /** Missing when false */
+  isProper?: boolean;
+  readings?: string[];
+  senses?: Sense[];
 }
 
 export interface AnalysisEntry {
@@ -37,14 +51,16 @@ export interface AnalysisEntry {
   /** Null when none of the offered senses fit */
   senseKey: string | null;
   reading: string | null;
+  /** The model that answered. An older server leaves it out */
+  generator?: string;
 }
 
 export interface EpubPageTokens {
   /** Changes when the page is tokenized again */
   version: string;
   blocks: EpubPageBlock[];
-  /** Keyed by word id. JSON keys are strings */
-  words: Record<string, WordBrief>;
+  /** Every word a lookup on the page can return, keyed by word id. JSON keys are strings */
+  words: Record<string, EpubPageWord>;
   analysis: AnalysisEntry[];
 }
 
