@@ -129,6 +129,22 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
+    public async Task GetEpubPageAndLookup_ServeTheOldTokensWhileARefreshWaits()
+    {
+        var book = await Setup();
+        GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Refresh);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var lookup = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+
+        Assert.NotNull(page);
+        Assert.Equal("sidecar=1", page.Version);
+        Assert.Equal(2, page.Blocks.Count);
+        Assert.Equal(Karai.Id, lookup?.Word.Id);
+        await _store.DidNotReceiveWithAnyArgs().RaiseUnitPriorityAsync(default, default, default, default);
+    }
+
+    [Fact]
     public async Task GetEpubPage_IsNullAndRaisesAPendingUnit()
     {
         var book = await Setup();
@@ -244,6 +260,97 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         GivenTokenizedPage(book.FirstFile, 2);
 
         Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub)));
+    }
+
+    private static readonly StoredWord Ki = new(31, "気", "名詞", false, "き", 4, ["き"],
+        [new SenseDto("3001:1", ["n"], ["spirit", "mind"])], "lex1");
+    private static readonly StoredWord Suru = new(32, "する", "動詞", false, "する", 5, ["する"],
+        [new SenseDto("3002:1", ["vs-i"], ["to do"])], "lex1");
+    private static readonly StoredWord KiGaSuru = new(33, "気がする", "表現", false, "きがする", null, ["きがする"],
+        [new SenseDto("3003:1", ["exp"], ["to have a feeling that", "to feel like"]), new SenseDto("3003:2", ["exp"], ["to sense"])],
+        "lex1");
+    private static readonly StoredWord GaSuru = new(34, "がする", "表現", false, "がする", null, ["がする"], [], "lex1");
+
+    /// <summary>
+    /// 気がした。 as 気, が, the compound した with its parts し and た, and 。. Phrase 0 is 気がする over 気 to した, and
+    /// phrase 1 is がする over が and した
+    /// </summary>
+    private ReadingUnit GivenPageWithPhrases(MangaFile file, int page)
+    {
+        var block = new StoredBlock(0, "気がした。",
+        [
+            new TokenDto(0, 1, Ki.Id, "き", null), new TokenDto(1, 2, null, null, null),
+            new TokenDto(2, 4, Suru.Id, "した", [new SubTokenDto(2, 3, Suru.Id, "し"), new SubTokenDto(3, 4, null, null)]),
+            new TokenDto(4, 5, null, null, null),
+        ]) { Phrases = [new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id)] };
+        var unit = new ReadingUnit(6, ReadingUnitKind.Epub, file.Id, page, ReadingUnitState.Done, "stamp", "sidecar=2", [block]);
+        _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
+        GivenWords(Ki, Suru, KiGaSuru, GaSuru);
+        return unit;
+    }
+
+    [Theory]
+    [InlineData(0, null, new[] { 0 })]
+    [InlineData(2, null, new[] { 0, 1 })]
+    [InlineData(2, 0, new[] { 0, 1 })] // a part lists the phrases of its token
+    public async Task Lookup_ListsThePhrasesThatCoverTheToken(int s, int? sub, int[] expected)
+    {
+        var book = await Setup();
+        GivenPageWithPhrases(book.FirstFile, 2);
+
+        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, sub));
+
+        Assert.NotNull(result);
+        Assert.Equal(expected, result.PartOf.Select(p => p.Index));
+        Assert.Equal(new DictionaryPhraseDto(0, 0, 4, "気がする", "きがする", "to have a feeling that; to feel like"),
+            result.PartOf[0]);
+        if (expected.Length > 1) Assert.Equal(string.Empty, result.PartOf[1].Gloss);
+    }
+
+    [Fact]
+    public async Task Lookup_OfATokenInNoPhraseHasNoPartOf()
+    {
+        var book = await Setup();
+        GivenTokenizedPage(book.FirstFile, 2);
+
+        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+
+        Assert.NotNull(result);
+        Assert.Empty(result.PartOf);
+    }
+
+    [Fact]
+    public async Task Lookup_OfAPhraseReturnsItsWordWithNoAnalysisPartsOrPartOf()
+    {
+        var book = await Setup();
+        var unit = GivenPageWithPhrases(book.FirstFile, 2);
+        _store.GetUnitAnalysisAsync(unit.Id, Arg.Any<CancellationToken>()).Returns([
+            Row(1, unit.Id, 0, 2, 4, Suru.Id, AnalysisState.Done, sense: "3002:1", generator: "claude-sonnet"),
+        ]);
+
+        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 2, null, 0));
+
+        Assert.NotNull(result);
+        Assert.Equal(new DictionaryWordDto(KiGaSuru.Id, "気がした", "気がする", "表現", false, null, "きがする", ["きがする"], null)
+            with { Readings = result.Word.Readings }, result.Word);
+        Assert.Equal(KiGaSuru.Senses, result.Senses);
+        Assert.Null(result.Analysis);
+        Assert.Empty(result.Parts);
+        Assert.Empty(result.PartOf);
+        await _store.Received(1).RaiseAnalysisPriorityAsync(book.FirstFile.Id, 2, 0, ReadingPriority.Tapped, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(2, 2)] // past the block's phrases
+    [InlineData(-1, 2)]
+    [InlineData(1, 0)] // phrase 1 starts at 1
+    [InlineData(0, 4)] // phrase 0 ends at 4
+    public async Task Lookup_OfAPhraseIsNullForAnUnknownIndexOrAnOffsetOutsideIt(int phrase, int s)
+    {
+        var book = await Setup();
+        GivenPageWithPhrases(book.FirstFile, 2);
+
+        Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, null, phrase)));
     }
 
     [Fact]

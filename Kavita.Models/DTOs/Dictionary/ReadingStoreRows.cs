@@ -28,6 +28,13 @@ public enum ReadingUnitState
     /// Tokenizing failed as many times as the caller allows. It stays out of the queue until its file changes
     /// </summary>
     Failed = 2,
+    /// <summary>
+    /// Tokenized from the file as it is now by an older sidecar version, and queued to be tokenized again. Its blocks
+    /// are still served until the new ones are saved. If tokenizing fails as many times as the caller allows, it goes
+    /// back to done with its old blocks. Builds from before this state can't parse it, so rolling back needs every
+    /// refresh unit set to done first
+    /// </summary>
+    Refresh = 3,
 }
 
 /// <summary>
@@ -81,7 +88,14 @@ public sealed record ReadingUnit(long Id, ReadingUnitKind Kind, int MangaFileId,
 /// </summary>
 /// <param name="Index">The block's <c>data-kb</c> value</param>
 /// <param name="Tokens">Word ids in <see cref="TokenDto.W"/> are reading.db word ids</param>
-public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens);
+public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens)
+{
+    /// <summary>
+    /// Word ids in <see cref="PhraseDto.W"/> are reading.db word ids. Empty for a block tokenized by a sidecar that
+    /// sends no phrases. Phrases never get analysis rows
+    /// </summary>
+    public IReadOnlyList<PhraseDto> Phrases { get; init; } = [];
+}
 
 /// <summary>
 /// A row of reading.db's word table
@@ -126,7 +140,8 @@ public sealed record AnalysisStoreOutcome(int Stored, IReadOnlyList<AnalysisReje
 public sealed record AnalysisStoredPage(int MangaFileId, int Page);
 
 /// <summary>
-/// Row counts by state, for status displays
+/// Row counts by state, for status displays. <see cref="UnitsPending"/> includes units waiting for a refresh, since
+/// they're in the queue too
 /// </summary>
 public sealed record ReadingStoreCounts(int UnitsPending, int UnitsDone, int UnitsFailed, int AnalysisPending,
     int AnalysisDone);

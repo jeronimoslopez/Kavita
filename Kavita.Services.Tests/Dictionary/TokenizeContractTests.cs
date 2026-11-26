@@ -18,8 +18,8 @@ public class TokenizeContractTests
 
         Assert.NotNull(response);
         Assert.StartsWith("sudachipy=", response.Version);
-        Assert.EndsWith(";sidecar=1", response.Version);
-        Assert.Equal(["0", "1", "2"], response.Blocks.Select(b => b.Id));
+        Assert.EndsWith(";sidecar=2", response.Version);
+        Assert.Equal(["0", "1", "2", "3"], response.Blocks.Select(b => b.Id));
 
         var harsh = response.Words[8];
         Assert.Equal("辛い", harsh.Lemma);
@@ -41,6 +41,20 @@ public class TokenizeContractTests
         Assert.Equal((6, 10, 4L, "けいざいせいさく"), (compound.S, compound.E, compound.W, compound.R));
         Assert.NotNull(compound.Sub);
         Assert.Equal([new SubTokenDto(6, 8, 2, "けいざい"), new SubTokenDto(8, 10, 3, "せいさく")], compound.Sub);
+
+        // 神 and 様 come back joined as 神様, with the two as its parts
+        var joined = response.Blocks[3].Tokens[0];
+        Assert.Equal(new TokenDto(0, 2, 16, "かみさま", joined.Sub), joined);
+        Assert.Equal([new SubTokenDto(0, 1, 15, "かみ"), new SubTokenDto(1, 2, null, "さま")], joined.Sub);
+        Assert.Equal("神様", response.Words[16].Lemma);
+
+        // 気がする spans 気, が and し, and no token points at its word
+        Assert.Equal([new PhraseDto(10, 13, 22)], response.Blocks[3].Phrases);
+        Assert.Equal(("気がする", "表現"), (response.Words[22].Lemma, response.Words[22].Pos));
+        Assert.DoesNotContain(response.Blocks.SelectMany(b => b.Tokens), t => t.W == 22);
+        Assert.Equal([new PhraseDto(3, 7, 14)], response.Blocks[2].Phrases);
+        Assert.Equal("店を開く", response.Words[14].Lemma);
+        Assert.Empty(response.Blocks[0].Phrases);
     }
 
     [Fact]
@@ -63,5 +77,32 @@ public class TokenizeContractTests
     public void Token_RejectsTheWrongShape(string json)
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TokenDto>(json));
+    }
+
+    [Fact]
+    public void Phrase_RoundTripsAsAnArray()
+    {
+        var json = JsonSerializer.Serialize(new PhraseDto(3, 7, 12));
+
+        Assert.Equal("[3,7,12]", json);
+        Assert.Equal(new PhraseDto(3, 7, 12), JsonSerializer.Deserialize<PhraseDto>(json));
+    }
+
+    [Theory]
+    [InlineData("[0,2]")]
+    [InlineData("[0,2,1,null]")]
+    [InlineData("[0,2,null]")]
+    [InlineData("{\"s\":0}")]
+    public void Phrase_RejectsTheWrongShape(string json)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<PhraseDto>(json));
+    }
+
+    [Theory]
+    [InlineData("""{"id": "0", "tokens": []}""")]
+    [InlineData("""{"id": "0", "tokens": [], "phrases": []}""")]
+    public void Block_WithoutPhrases_HasAnEmptyList(string json)
+    {
+        Assert.Empty(JsonSerializer.Deserialize<TokenizedBlockDto>(json)!.Phrases);
     }
 }

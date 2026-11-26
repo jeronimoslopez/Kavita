@@ -35,8 +35,9 @@ public class TextSidecarClientTests : IDisposable
         using var body = JsonDocument.Parse(call.RequestBody!);
         Assert.Equal(["0", "1", "2"], body.RootElement.GetProperty("blocks").EnumerateArray().Select(b => b.GetProperty("id").GetString()));
         Assert.Equal("上手に店を開く。", body.RootElement.GetProperty("blocks")[2].GetProperty("text").GetString());
-        Assert.Equal(14, response.Words.Count);
+        Assert.Equal(23, response.Words.Count);
         Assert.Equal(new TokenDto(6, 8, 8, "つらい", null), response.Blocks[1].Tokens[4]);
+        Assert.Equal([new PhraseDto(3, 7, 14)], response.Blocks[2].Phrases);
     }
 
     [Fact]
@@ -145,5 +146,55 @@ public class TextSidecarClientTests : IDisposable
         _httpTest.RespondWith(Answer(0, 2));
 
         await Assert.ThrowsAsync<TextSidecarRejectedException>(() => _client.TokenizeAsync("http://text:8000", SampleBlocks()));
+    }
+
+    private sealed class ManualTime : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task GetVersion_ReadsHealthAndKeepsTheAnswerForTenMinutes()
+    {
+        var time = new ManualTime();
+        var client = new TextSidecarClient(time);
+        _httpTest.RespondWithJson(new { version = "a;sidecar=1" }).RespondWithJson(new { version = "a;sidecar=2" });
+
+        Assert.Equal("a;sidecar=1", await client.GetVersionAsync("http://text:8000/"));
+        time.Now += TextSidecarVersionTtl.Known - TimeSpan.FromSeconds(1);
+        Assert.Equal("a;sidecar=1", await client.GetVersionAsync("http://text:8000"));
+        time.Now += TimeSpan.FromSeconds(1);
+        Assert.Equal("a;sidecar=2", await client.GetVersionAsync("http://text:8000"));
+
+        Assert.Equal(2, _httpTest.CallLog.Count);
+        Assert.Equal("http://text:8000/health", _httpTest.CallLog[0].Request.Url.ToString());
+    }
+
+    [Theory]
+    [InlineData(503, "{\"version\": \"a\"}")]
+    [InlineData(200, "{}")]
+    [InlineData(200, "{\"version\": \"\"}")]
+    [InlineData(200, "not json")]
+    public async Task GetVersion_NoUsableAnswer_IsNullAndAskedAgainAfterAMinute(int status, string body)
+    {
+        var time = new ManualTime();
+        var client = new TextSidecarClient(time);
+        _httpTest.RespondWith(body, status).RespondWithJson(new { version = "a;sidecar=2" });
+
+        Assert.Null(await client.GetVersionAsync("http://text:8000"));
+        Assert.Null(await client.GetVersionAsync("http://text:8000"));
+        time.Now += TextSidecarVersionTtl.Unknown;
+        Assert.Equal("a;sidecar=2", await client.GetVersionAsync("http://text:8000"));
+        Assert.Equal(2, _httpTest.CallLog.Count);
+    }
+
+    [Fact]
+    public async Task GetVersion_Timeout_IsNull()
+    {
+        _httpTest.SimulateTimeout();
+
+        Assert.Null(await _client.GetVersionAsync("http://text:8000"));
     }
 }

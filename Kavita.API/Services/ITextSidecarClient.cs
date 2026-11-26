@@ -18,6 +18,25 @@ public interface ITextSidecarClient
     /// <exception cref="TextSidecarRejectedException">The sidecar answered with an error for these blocks</exception>
     /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled</exception>
     Task<TokenizeResponseDto> TokenizeAsync(string sidecarUrl, IReadOnlyList<TokenizeBlockDto> blocks, CancellationToken ct = default);
+
+    /// <summary>
+    /// The version the sidecar's <c>GET /health</c> reports, the same string a tokenize answer carries. An answer is
+    /// kept for <see cref="TextSidecarVersionTtl.Known"/> per URL, and a failed call for
+    /// <see cref="TextSidecarVersionTtl.Unknown"/>, so opening chapters doesn't call the sidecar each time
+    /// </summary>
+    /// <returns>Null when the sidecar didn't answer or answered without a version</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="ct"/> was cancelled</exception>
+    Task<string?> GetVersionAsync(string sidecarUrl, CancellationToken ct = default);
+}
+
+public static class TextSidecarVersionTtl
+{
+    public static readonly TimeSpan Known = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// Shorter, so a sidecar that comes back up is noticed soon, and long enough that a sidecar that's down costs one
+    /// timed-out call a minute
+    /// </summary>
+    public static readonly TimeSpan Unknown = TimeSpan.FromMinutes(1);
 }
 
 /// <summary>

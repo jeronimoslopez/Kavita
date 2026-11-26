@@ -498,6 +498,30 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTokenizedUnit_APhraseGetsNoRowEvenWhenItsWordIsAmbiguous()
+    {
+        var (hot, cold, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+
+        StoredBlock[] blocks =
+        [
+            Block(0, "abcd", Token(0, 1, plain), Token(1, 2, null), Token(2, 3, cold), Token(3, 4, null))
+                with { Phrases = [new PhraseDto(0, 3, hot)] },
+        ];
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        Assert.Equal([(0, 2, 3, cold)], (await _store.GetUnitAnalysisAsync(unit.Id)).Select(r => (r.Block, r.S, r.E, r.WordId)));
+        Assert.Equal([new PhraseDto(0, 3, hot)], (await _store.GetUnitAsync(1, 0))!.Blocks[0].Phrases);
+
+        // A request made after the save builds its rows from the stored blocks, and passes over the phrase the same way
+        await _store.ClearAnalysisAsync([1]);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+        Assert.Equal([cold], (await _store.GetUnitAnalysisAsync(unit.Id)).Select(r => r.WordId));
+    }
+
+    [Fact]
     public async Task AmbiguousWords_MatchSidecarWordDtoIsAmbiguous()
     {
         var sample = JsonSerializer.Deserialize<TokenizeResponseDto>(File.ReadAllText(
@@ -551,6 +575,147 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(2, await ScalarAsync($"SELECT attempts FROM unit WHERE id = {first.Id}"));
         Assert.Equal(ReadingUnitState.Failed, await _store.RecordFailedAttemptAsync(first.Id + 100, 3));
     }
+
+    #region Refresh
+
+    private const string NewTokenizer = "sidecar=2";
+
+    /// <summary>
+    /// Seeds the file's pages and saves each with one token, by <see cref="Tokenizer"/>
+    /// </summary>
+    private async Task TokenizeFileAsync(int file, int pageCount, long wordId)
+    {
+        await _store.SeedFileAsync(file, pageCount, Stamp, ReadingPriority.WholeBook);
+        for (var page = 0; page < pageCount; page++)
+        {
+            var unit = (await _store.GetUnitAsync(file, page))!;
+            Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer,
+                [Block(0, $"old-{page}", Token(0, 3, wordId))]));
+        }
+    }
+
+    [Fact]
+    public async Task RefreshUnits_TheSameVersionQueuesNothing()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 2, plain);
+
+        Assert.Equal(0, await _store.RefreshUnitsAsync(1, Tokenizer, ReadingPriority.OpenChapter));
+
+        Assert.Null(await _store.GetNextPendingUnitAsync());
+        Assert.Equal(ReadingUnitState.Done, (await _store.GetUnitAsync(1, 0))!.State);
+    }
+
+    [Fact]
+    public async Task RefreshUnits_AnotherVersionQueuesOnlyThatFilesTokenizedUnits()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 3, plain);
+        await TokenizeFileAsync(2, 1, plain);
+        // Page 2 of file 1 had no text, so it was saved with no blocks and no version
+        var empty = (await _store.GetUnitAsync(1, 2))!;
+        Assert.True(await _store.SaveTokenizedUnitAsync(empty.Id, Stamp, string.Empty, []));
+        await _store.SeedFileAsync(3, 1, Stamp, ReadingPriority.WholeBook);
+        _time.Advance();
+
+        Assert.Equal(2, await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter));
+        Assert.Equal(0, await _store.RefreshUnitsAsync(3, NewTokenizer, ReadingPriority.OpenChapter));
+
+        Assert.Equal([ReadingUnitState.Refresh, ReadingUnitState.Refresh, ReadingUnitState.Done],
+            await Task.WhenAll(Enumerable.Range(0, 3).Select(async p => (await _store.GetUnitAsync(1, p))!.State)));
+        Assert.Equal(ReadingUnitState.Done, (await _store.GetUnitAsync(2, 0))!.State);
+        Assert.Equal(ReadingUnitState.Pending, (await _store.GetUnitAsync(3, 0))!.State);
+        Assert.Equal(2, await ScalarAsync($"SELECT COUNT(*) FROM unit WHERE state = 'refresh' AND priority = {ReadingPriority.OpenChapter}"));
+        Assert.Equal(new ReadingStoreCounts(3, 2, 0, 0, 0), await _store.GetCountsAsync(null));
+    }
+
+    [Fact]
+    public async Task RefreshUnit_ServesItsOldBlocksUntilTheNewOnesReplaceThemWithPhrases()
+    {
+        var (hot, cold, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 1, plain);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.WholeBook);
+        await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter);
+
+        var waiting = (await _store.GetUnitAsync(1, 0))!;
+        Assert.Equal(ReadingUnitState.Refresh, waiting.State);
+        Assert.Equal(Tokenizer, waiting.TokenizerVersion);
+        Assert.Equal("old-0", Assert.Single(waiting.Blocks).Text);
+
+        var picked = await NextAsync();
+        Assert.Equal(waiting.Id, picked.Id);
+        StoredBlock[] fresh =
+        [
+            Block(0, "new", Token(0, 1, cold), Token(1, 3, plain)) with { Phrases = [new PhraseDto(0, 3, hot)] },
+        ];
+        Assert.True(await _store.SaveTokenizedUnitAsync(picked.Id, picked.SourceStamp, NewTokenizer, fresh));
+
+        var saved = (await _store.GetUnitAsync(1, 0))!;
+        Assert.Equal(ReadingUnitState.Done, saved.State);
+        Assert.Equal(NewTokenizer, saved.TokenizerVersion);
+        Assert.Equal("new", saved.Blocks[0].Text);
+        Assert.Equal([new PhraseDto(0, 3, hot)], saved.Blocks[0].Phrases);
+        // The ambiguous token gets its row, and the phrase over it doesn't
+        Assert.Equal([cold], (await _store.GetUnitAnalysisAsync(saved.Id)).Select(r => r.WordId));
+        Assert.Null(await _store.GetNextPendingUnitAsync());
+    }
+
+    [Fact]
+    public async Task GetNextPendingUnit_TakesRefreshAndPendingUnitsInOneQueueOrder()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 1, plain);
+        _time.Advance();
+        await _store.SeedFileAsync(2, 1, Stamp, ReadingPriority.OpenChapter);
+        _time.Advance();
+        await _store.SeedFileAsync(3, 1, Stamp, ReadingPriority.WholeBook);
+        _time.Advance();
+        await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter);
+
+        var order = new List<int>();
+        while (await _store.GetNextPendingUnitAsync() is { } next)
+        {
+            order.Add(next.MangaFileId);
+            Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, next.SourceStamp, NewTokenizer, []));
+        }
+
+        // File 2 was queued at the same priority before file 1's refresh, and file 3 is below both
+        Assert.Equal([2, 1, 3], order);
+    }
+
+    [Fact]
+    public async Task RefreshUnit_ThatKeepsFailingGoesBackToDoneWithItsBlocks()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 1, plain);
+        await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter);
+        var unit = await NextAsync();
+
+        Assert.Equal(ReadingUnitState.Refresh, await _store.RecordFailedAttemptAsync(unit.Id, 2));
+        Assert.Equal(ReadingUnitState.Done, await _store.RecordFailedAttemptAsync(unit.Id, 2));
+
+        var after = (await _store.GetUnitAsync(1, 0))!;
+        Assert.Equal(Tokenizer, after.TokenizerVersion);
+        Assert.Equal("old-0", Assert.Single(after.Blocks).Text);
+        Assert.Equal(0, await ScalarAsync($"SELECT attempts FROM unit WHERE id = {unit.Id}"));
+        Assert.Null(await _store.GetNextPendingUnitAsync());
+        // A later chapter open tries again
+        Assert.Equal(1, await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter));
+    }
+
+    [Fact]
+    public async Task RefreshUnit_WhoseFileChangesGoesBackToPending()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 1, plain);
+        await _store.RefreshUnitsAsync(1, NewTokenizer, ReadingPriority.OpenChapter);
+
+        await _store.SeedFileAsync(1, 1, NewStamp, ReadingPriority.WholeBook);
+
+        Assert.Equal(ReadingUnitState.Pending, (await _store.GetUnitAsync(1, 0))!.State);
+    }
+
+    #endregion
 
     [Fact]
     public async Task DeferUnit_GoesBehindItsPriorityWithoutAnAttempt()
@@ -1024,6 +1189,42 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(word.Senses.Select(s => s.Key), read.Senses.Select(s => s.Key));
     }
 
+    [Fact]
+    public async Task StoredForm_KeepsPhrasesAndLeavesTheKeyOutOfABlockWithout()
+    {
+        var (hot, _, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        StoredBlock[] blocks =
+        [
+            Block(0, "気がした", Token(0, 1, plain, "き"), Token(1, 2, null), Token(2, 3, plain, "し"), Token(3, 4, null))
+                with { Phrases = [new PhraseDto(0, 3, hot), new PhraseDto(1, 3, plain)] },
+            Block(1, "猫", Token(0, 1, plain)),
+        ];
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var stored = (await _store.GetUnitAsync(1, 0))!.Blocks;
+        Assert.Equal([new PhraseDto(0, 3, hot), new PhraseDto(1, 3, plain)], stored[0].Phrases);
+        Assert.Empty(stored[1].Phrases);
+        var json = await DecompressedBlocksAsync(unit.Id);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal($"[[0,3,{hot}],[1,3,{plain}]]", document.RootElement[0].GetProperty("phrases").GetRawText());
+        Assert.False(document.RootElement[1].TryGetProperty("phrases", out _));
+    }
+
+    private async Task<string> DecompressedBlocksAsync(long unitId)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT blocks FROM unit WHERE id = {unitId}";
+        var blob = (byte[]) (await command.ExecuteScalarAsync())!;
+        using var brotli = new System.IO.Compression.BrotliStream(new MemoryStream(blob, 1, blob.Length - 1),
+            System.IO.Compression.CompressionMode.Decompress);
+        using var reader = new StreamReader(brotli);
+        return await reader.ReadToEndAsync();
+    }
+
     private async Task SetRawBlocksAsync(long unitId, object value)
     {
         await using var connection = await OpenAsync();
@@ -1050,6 +1251,8 @@ public class ReadingStoreTests : IDisposable
         var block = (await _store.GetUnitAsync(1, 0))!.Blocks.Single();
         Assert.Equal("食べ物", block.Text);
         Assert.Equal(Token(0, 3, hot, "たべもの"), block.Tokens.Single());
+        // Blocks written before phrases existed have no phrases key
+        Assert.Empty(block.Phrases);
 
         // The other two reads of blocks take the same form
         await _store.RequestAnalysisAsync([1], 0);

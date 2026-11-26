@@ -1,5 +1,5 @@
 {
-  "version": "sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=jmdict=3.6.2/2026-11-16;kanjidic=2026-320;jmnedict=3.6.2/2026-11-16;jlpt=b062d4e38c4bdd0950ae1d4ec55f04b176182e03;freq=bccwj_yomitan_rank/Kuuuube/yomitan-dictionaries@654b0f71ae51d27e888cc621c069591846927100;sidecar=1",
+  "version": "sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=jmdict=3.6.2/2026-11-16;kanjidic=2026-320;jmnedict=3.6.2/2026-11-16;jlpt=b062d4e38c4bdd0950ae1d4ec55f04b176182e03;freq=bccwj_yomitan_rank/Kuuuube/yomitan-dictionaries@654b0f71ae51d27e888cc621c069591846927100;sidecar=2",
   "words": [
     {"lemma": "今日", "pos": "名詞", "isProper": false, "reading": "きょう", "jlpt": 5, "readings": ["きょう", "こんにち", "こんち", "こんじつ"], "senses": [{"key": "1579110:1", "pos": ["n", "adv"], "gloss": ["today", "this day"]}, {"key": "1579110:2", "pos": ["n", "adv"], "gloss": ["these days", "recently", "nowadays"]}]},
     {"lemma": "日本", "pos": "名詞", "isProper": true, "reading": "にほん", "jlpt": 3, "readings": ["にほん", "にっぽん"], "senses": [{"key": "1582710:1", "pos": ["n"], "gloss": ["Japan"]}]},
@@ -14,7 +14,16 @@
     {"lemma": "食べる", "pos": "動詞", "isProper": false, "reading": "たべる", "jlpt": 5, "readings": ["たべる"], "senses": [{"key": "1358280:1", "pos": ["v1", "vt"], "gloss": ["to eat"]}, {"key": "1358280:2", "pos": ["v1", "vt"], "gloss": ["to live on (e.g. a salary)", "to live off", "to subsist on"]}]},
     {"lemma": "上手", "pos": "形状詞", "isProper": false, "reading": "じょうず", "jlpt": 5, "readings": ["じょうず", "じょうて", "じょうしゅ", "うわて", "かみて"], "senses": [{"key": "1353320:1", "pos": ["adj-na", "n"], "gloss": ["skillful", "skilled", "proficient", "good (at)", "adept", "clever"]}, {"key": "1353320:2", "pos": ["n"], "gloss": ["flattery"]}, {"key": "1580400:1", "pos": ["adj-na", "n"], "gloss": ["upper part"]}, {"key": "1580400:2", "pos": ["n"], "gloss": ["upper stream", "upper course of a river"]}, {"key": "1580400:3", "pos": ["n"], "gloss": ["right side of the stage (audience's or camera's POV)", "stage left (actor's POV)"]}, {"key": "1580400:4", "pos": ["adj-na", "n"], "gloss": ["skillful (in comparisons)", "dexterity"]}, {"key": "1580400:5", "pos": ["n"], "gloss": ["over-arm grip on opponent's belt"]}]},
     {"lemma": "店", "pos": "名詞", "isProper": false, "reading": "みせ", "jlpt": 5, "readings": ["みせ", "てん", "たな"], "senses": [{"key": "1582120:1", "pos": ["n"], "gloss": ["store", "shop", "establishment", "restaurant"]}, {"key": "1582125:1", "pos": ["n-suf"], "gloss": ["store", "shop", "restaurant"]}, {"key": "2409230:1", "pos": ["n"], "gloss": ["merchant's home"]}, {"key": "2409230:2", "pos": ["n"], "gloss": ["rented home"]}, {"key": "2409230:3", "pos": ["n"], "gloss": ["store", "shop"]}]},
-    {"lemma": "開く", "pos": "動詞", "isProper": false, "reading": "ひらく", "jlpt": 4, "readings": ["ひらく", "あく"], "senses": [{"key": "1202440:1", "pos": ["v5k", "vi", "vt"], "gloss": ["to open", "to undo", "to unseal", "to unpack"]}, {"key": "1202440:2", "pos": ["v5k", "vi", "vt"], "gloss": ["to bloom", "to unfold", "to spread out"]}, {"key": "1202440:3", "pos": ["v5k", "vi", "vt"], "gloss": ["to open (for business, e.g. in the morning)"]}, {"key": "1202440:4", "pos": ["v5k", "vi", "vt"], "gloss": ["to be wide (gap, etc.)", "to widen"]}, {"key": "1202440:5", "pos": ["v5k", "vt"], "gloss": ["to hold (meeting, party, etc.)", "to give", "to open"]}, {"key": "1202440:6", "pos": ["v5k", "vt"], "gloss": ["to found (nation, dynasty, sect, etc.)", "to open (a new business)", "to set up", "to establish", "to start"]}, {"key": "1202440:7", "pos": ["v5k", "vt"], "gloss": ["to open (ports, borders, etc.)"]}, {"key": "1202440:8", "pos": ["v5k", "vt"], "gloss": ["to open (an account)"]}, {"key": "1202440:9", "pos": ["v5k", "vt"], "gloss": ["to open up (new land, path, etc.)", "to clear", "to develop"]}, {"key": "1202440:10", "pos": ["v5k", "vt"], "gloss": ["to open (a file, etc.)"]}, {"key": "1202440:11", "pos": ["v5k", "vt"], "gloss": ["to extract (root)", "to reduce (equation)"]}, {"key": "1202440:12", "pos": ["v5k", "vt"], "gloss": ["to cut open (fish)"]}, {"key": "1202440:13", "pos": ["v5k", "vt"], "gloss": ["to change (kanji into hiragana)"]}, {"key": "1202440:14", "pos": ["v5k", "vi"], "gloss": ["to flare (e.g. skirt)"]}, {"key": "1202440:15", "pos": ["v5k", "vi"], "gloss": ["to slacken (into a poor posture)"]}, {"key": "1202440:16", "pos": ["v5k", "vi"], "gloss": ["to extend"]}, {"key": "1586270:1", "pos": ["v5k", "vi"], "gloss": ["to open (e.g. doors)"]}, {"key": "1586270:2", "pos": ["v5k", "vi"], "gloss": ["to open (e.g. business, etc.)"]}, {"key": "1586270:3", "pos": ["v5k", "vi"], "gloss": ["to be empty"]}, {"key": "1586270:4", "pos": ["v5k", "vi"], "gloss": ["to be vacant", "to be available", "to be free"]}, {"key": "1586270:5", "pos": ["v5k", "vi"], "gloss": ["to be open (e.g. neckline, etc.)"]}, {"key": "1586270:6", "pos": ["v5k", "vi"], "gloss": ["to have been opened (of one's eyes, mouth, etc.)"]}, {"key": "1586270:7", "pos": ["v5k", "vi"], "gloss": ["to come to an end"]}, {"key": "1586270:8", "pos": ["v5k", "vt"], "gloss": ["to open (one's eyes, mouth, etc.)"]}, {"key": "1586270:9", "pos": ["v5k", "vi"], "gloss": ["to have a hole", "to form a gap", "to have an interval (between events)"]}]}
+    {"lemma": "開く", "pos": "動詞", "isProper": false, "reading": "ひらく", "jlpt": 4, "readings": ["ひらく", "あく"], "senses": [{"key": "1202440:1", "pos": ["v5k", "vi", "vt"], "gloss": ["to open", "to undo", "to unseal", "to unpack"]}, {"key": "1202440:2", "pos": ["v5k", "vi", "vt"], "gloss": ["to bloom", "to unfold", "to spread out"]}, {"key": "1202440:3", "pos": ["v5k", "vi", "vt"], "gloss": ["to open (for business, e.g. in the morning)"]}, {"key": "1202440:4", "pos": ["v5k", "vi", "vt"], "gloss": ["to be wide (gap, etc.)", "to widen"]}, {"key": "1202440:5", "pos": ["v5k", "vt"], "gloss": ["to hold (meeting, party, etc.)", "to give", "to open"]}, {"key": "1202440:6", "pos": ["v5k", "vt"], "gloss": ["to found (nation, dynasty, sect, etc.)", "to open (a new business)", "to set up", "to establish", "to start"]}, {"key": "1202440:7", "pos": ["v5k", "vt"], "gloss": ["to open (ports, borders, etc.)"]}, {"key": "1202440:8", "pos": ["v5k", "vt"], "gloss": ["to open (an account)"]}, {"key": "1202440:9", "pos": ["v5k", "vt"], "gloss": ["to open up (new land, path, etc.)", "to clear", "to develop"]}, {"key": "1202440:10", "pos": ["v5k", "vt"], "gloss": ["to open (a file, etc.)"]}, {"key": "1202440:11", "pos": ["v5k", "vt"], "gloss": ["to extract (root)", "to reduce (equation)"]}, {"key": "1202440:12", "pos": ["v5k", "vt"], "gloss": ["to cut open (fish)"]}, {"key": "1202440:13", "pos": ["v5k", "vt"], "gloss": ["to change (kanji into hiragana)"]}, {"key": "1202440:14", "pos": ["v5k", "vi"], "gloss": ["to flare (e.g. skirt)"]}, {"key": "1202440:15", "pos": ["v5k", "vi"], "gloss": ["to slacken (into a poor posture)"]}, {"key": "1202440:16", "pos": ["v5k", "vi"], "gloss": ["to extend"]}, {"key": "1586270:1", "pos": ["v5k", "vi"], "gloss": ["to open (e.g. doors)"]}, {"key": "1586270:2", "pos": ["v5k", "vi"], "gloss": ["to open (e.g. business, etc.)"]}, {"key": "1586270:3", "pos": ["v5k", "vi"], "gloss": ["to be empty"]}, {"key": "1586270:4", "pos": ["v5k", "vi"], "gloss": ["to be vacant", "to be available", "to be free"]}, {"key": "1586270:5", "pos": ["v5k", "vi"], "gloss": ["to be open (e.g. neckline, etc.)"]}, {"key": "1586270:6", "pos": ["v5k", "vi"], "gloss": ["to have been opened (of one's eyes, mouth, etc.)"]}, {"key": "1586270:7", "pos": ["v5k", "vi"], "gloss": ["to come to an end"]}, {"key": "1586270:8", "pos": ["v5k", "vt"], "gloss": ["to open (one's eyes, mouth, etc.)"]}, {"key": "1586270:9", "pos": ["v5k", "vi"], "gloss": ["to have a hole", "to form a gap", "to have an interval (between events)"]}]},
+    {"lemma": "店を開く", "pos": "表現", "isProper": false, "reading": "みせをひらく", "jlpt": null, "readings": ["みせをひらく"], "senses": [{"key": "1910280:1", "pos": ["exp", "v5k"], "gloss": ["to open a business"]}]},
+    {"lemma": "神", "pos": "名詞", "isProper": false, "reading": "かみ", "jlpt": 3, "readings": ["かみ", "しん", "じん", "み", "かむ", "かん"], "senses": [{"key": "1364440:1", "pos": ["n"], "gloss": ["god", "deity", "divinity", "spirit", "kami"]}, {"key": "1364440:2", "pos": ["n-pref", "adj-na"], "gloss": ["god-tier", "incredible", "fantastic", "amazing"]}, {"key": "1364440:3", "pos": ["n"], "gloss": ["Emperor (of Japan)"]}, {"key": "1364440:4", "pos": ["n"], "gloss": ["thunder"]}, {"key": "2433050:1", "pos": ["n"], "gloss": ["spirit", "psyche"]}, {"key": "2433050:2", "pos": ["n"], "gloss": ["god", "deity", "divinity", "kami"]}, {"key": "2736430:1", "pos": ["n"], "gloss": ["soul", "spirit", "divine spirit"]}, {"key": "2836999:1", "pos": ["n-pref"], "gloss": ["divine", "godly"]}]},
+    {"lemma": "神様", "pos": "名詞", "isProper": false, "reading": "かみさま", "jlpt": 2, "readings": ["かみさま"], "senses": [{"key": "1364920:1", "pos": ["n"], "gloss": ["God", "god", "deity", "divinity", "spirit", "kami"]}, {"key": "1364920:2", "pos": ["n"], "gloss": ["ace", "king", "superior person", "god (amongst men)"]}]},
+    {"lemma": "菓子", "pos": "名詞", "isProper": false, "reading": "かし", "jlpt": 3, "readings": ["かし"], "senses": [{"key": "1195670:1", "pos": ["n"], "gloss": ["confectionery", "sweets", "candy", "cake"]}]},
+    {"lemma": "お菓子", "pos": "名詞", "isProper": false, "reading": "おかし", "jlpt": 5, "readings": ["おかし"], "senses": [{"key": "1001710:1", "pos": ["n"], "gloss": ["confections", "sweets", "candy", "cake"]}]},
+    {"lemma": "供える", "pos": "動詞", "isProper": false, "reading": "そなえる", "jlpt": null, "readings": ["そなえる"], "senses": [{"key": "1233580:1", "pos": ["v1", "vt"], "gloss": ["to offer", "to sacrifice", "to dedicate"]}]},
+    {"lemma": "気", "pos": "名詞", "isProper": false, "reading": "き", "jlpt": 4, "readings": ["き", "げ", "ぎ", "け"], "senses": [{"key": "1221520:1", "pos": ["n"], "gloss": ["spirit", "mind", "heart"]}, {"key": "1221520:2", "pos": ["n"], "gloss": ["nature", "disposition"]}, {"key": "1221520:3", "pos": ["n"], "gloss": ["intention", "mind", "will", "motivation"]}, {"key": "1221520:4", "pos": ["n"], "gloss": ["mood", "feelings"]}, {"key": "1221520:5", "pos": ["n"], "gloss": ["consciousness"]}, {"key": "1221520:6", "pos": ["n"], "gloss": ["care", "attention", "consideration", "worry"]}, {"key": "1221520:7", "pos": ["n"], "gloss": ["interest"]}, {"key": "1221520:8", "pos": ["n"], "gloss": ["(the) air", "atmosphere"]}, {"key": "1221520:9", "pos": ["n"], "gloss": ["ambience", "atmosphere (of)", "air (of)", "mood"]}, {"key": "1221520:10", "pos": ["n"], "gloss": ["fragrance", "aroma", "flavour", "taste"]}, {"key": "1221520:11", "pos": ["n"], "gloss": ["qi (in traditional Chinese philosophy and medicine)", "chi", "ki"]}, {"key": "2006580:1", "pos": ["suf"], "gloss": ["seeming", "giving the appearance of", "giving one the feeling of"]}, {"key": "2233680:1", "pos": ["suf"], "gloss": ["-like nature", "-like disposition", "-ish temperament"]}, {"key": "2233690:1", "pos": ["n", "n-suf"], "gloss": ["sign", "indication", "trace", "touch", "feeling"]}, {"key": "2233690:2", "pos": ["n-pref"], "gloss": ["somehow", "for some reason", "seeming to be"]}]},
+    {"lemma": "する", "pos": "動詞", "isProper": false, "reading": "する", "jlpt": 5, "readings": ["する"], "senses": [{"key": "1157170:1", "pos": ["vs-i"], "gloss": ["to do", "to carry out", "to perform"]}, {"key": "1157170:2", "pos": ["vs-i"], "gloss": ["to cause to become", "to make (into)", "to turn (into)"]}, {"key": "1157170:3", "pos": ["vs-i"], "gloss": ["to serve as", "to act as", "to work as"]}, {"key": "1157170:4", "pos": ["vs-i"], "gloss": ["to wear (clothes, a facial expression, etc.)"]}, {"key": "1157170:5", "pos": ["vs-i"], "gloss": ["to judge as being", "to view as being", "to think of as", "to treat as", "to use as"]}, {"key": "1157170:6", "pos": ["vs-i"], "gloss": ["to decide on", "to choose"]}, {"key": "1157170:7", "pos": ["vs-i", "vi"], "gloss": ["to be sensed (of a smell, noise, etc.)"]}, {"key": "1157170:8", "pos": ["vs-i", "vi"], "gloss": ["to be (in a state, condition, etc.)"]}, {"key": "1157170:9", "pos": ["vs-i", "vi"], "gloss": ["to be worth", "to cost"]}, {"key": "1157170:10", "pos": ["vs-i", "vi"], "gloss": ["to pass (of time)", "to elapse"]}, {"key": "1157170:11", "pos": ["vs-i", "vt"], "gloss": ["to place, or raise, person A to a post or status B"]}, {"key": "1157170:12", "pos": ["vs-i", "vt"], "gloss": ["to transform A to B", "to make A into B", "to exchange A for B"]}, {"key": "1157170:13", "pos": ["vs-i", "vt"], "gloss": ["to make use of A for B", "to view A as B", "to handle A as if it were B"]}, {"key": "1157170:14", "pos": ["vs-i", "vt"], "gloss": ["to feel A about B"]}, {"key": "1157170:15", "pos": ["suf", "vs-i"], "gloss": ["verbalizing suffix (applies to nouns noted in this dictionary with the part of speech \"vs\")"]}, {"key": "1157170:16", "pos": ["aux-v", "vs-i"], "gloss": ["creates a humble verb (after a noun prefixed with \"o\" or \"go\")"]}, {"key": "1157170:17", "pos": ["aux-v", "vs-i"], "gloss": ["to be just about to", "to be just starting to", "to try to", "to attempt to"]}]},
+    {"lemma": "気がする", "pos": "表現", "isProper": false, "reading": "きがする", "jlpt": null, "readings": ["きがする"], "senses": [{"key": "1221540:1", "pos": ["exp", "vs-i"], "gloss": ["to feel (as if)", "to have a feeling (that)", "to have a hunch (that)", "to get a sense (that)"]}, {"key": "1221540:2", "pos": ["exp", "vs-i"], "gloss": ["to feel like doing", "to want to do"]}]}
   ],
   "blocks": [
     {
@@ -31,7 +40,8 @@
         [14, 16, 6, "はなし", null],
         [16, 17, null, null, null],
         [17, 18, null, null, null]
-      ]
+      ],
+      "phrases": []
     },
     {
       "id": "1",
@@ -46,7 +56,8 @@
         [12, 14, 10, "たべ", null],
         [14, 15, null, null, null],
         [15, 17, null, null, null]
-      ]
+      ],
+      "phrases": []
     },
     {
       "id": "2",
@@ -57,6 +68,28 @@
         [4, 5, null, null, null],
         [5, 7, 13, "ひらく", null],
         [7, 8, null, null, null]
+      ],
+      "phrases": [
+        [3, 7, 14]
+      ]
+    },
+    {
+      "id": "3",
+      "tokens": [
+        [0, 2, 16, "かみさま", [[0, 1, 15, "かみ"], [1, 2, null, "さま"]]],
+        [2, 3, null, null, null],
+        [3, 6, 18, "おかし", [[3, 4, null, null], [4, 6, 17, "かし"]]],
+        [6, 7, null, null, null],
+        [7, 9, 19, "そなえ", null],
+        [9, 10, null, null, null],
+        [10, 11, 20, "き", null],
+        [11, 12, null, null, null],
+        [12, 13, 21, null, null],
+        [13, 14, null, null, null],
+        [14, 15, null, null, null]
+      ],
+      "phrases": [
+        [10, 13, 22]
       ]
     }
   ]

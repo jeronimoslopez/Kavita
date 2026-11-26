@@ -231,9 +231,36 @@ public class TokenizeService : ITokenizeService
 
         foreach (var file in openFiles) await _readingStore.RaiseUnitPriorityAsync(file.Id, null, ReadingPriority.OpenChapter, ct);
         foreach (var file in nextFiles) await _readingStore.RaiseUnitPriorityAsync(file.Id, null, ReadingPriority.NextChapter, ct);
+        await RefreshOpenFilesAsync(openFiles, ct);
 
         if (openFiles.Count > 0 || nextFiles.Count > 0) _workerSignal.Wake();
         return new PrioritizedFiles(openFiles.Select(f => f.Id).ToList(), nextFiles.Select(f => f.Id).ToList());
+    }
+
+    /// <summary>
+    /// Queues the open chapter's pages that an older sidecar tokenized, so a book is brought up to date when someone
+    /// reads it and never all at once. The next chapter waits until it's opened itself
+    /// </summary>
+    private async Task RefreshOpenFilesAsync(IReadOnlyList<EpubFile> openFiles, CancellationToken ct)
+    {
+        if (openFiles.Count == 0) return;
+
+        var settings = await _unitOfWork.SettingsRepository.GetSettingsDtoAsync(ct);
+        if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return;
+
+        // An unknown version can't tell old pages from current ones, so they're left as they are
+        var version = await _sidecarClient.GetVersionAsync(settings.TextSidecarUrl, ct);
+        if (version == null) return;
+
+        foreach (var file in openFiles)
+        {
+            var queued = await _readingStore.RefreshUnitsAsync(file.Id, version, ReadingPriority.OpenChapter, ct);
+            if (queued > 0)
+            {
+                _logger.LogInformation("[TokenizeService] Queued {Pages} pages of {FilePath} to tokenize again with {Version}",
+                    queued, file.FilePath, version);
+            }
+        }
     }
 
     /// <summary>
@@ -426,7 +453,28 @@ public class TokenizeService : ITokenizeService
                     partEnd = part.E;
                 }
             }
+
+            foreach (var phrase in answer.Phrases ?? []) CheckPhrase(block, answer.Tokens, phrase, wordCount);
         }
+    }
+
+    /// <summary>
+    /// A phrase starts where one token starts, ends where a later token ends, and names a word
+    /// </summary>
+    private static void CheckPhrase(EpubTextBlock block, IList<TokenDto> tokens, PhraseDto phrase, int wordCount)
+    {
+        var first = -1;
+        var last = -1;
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].S == phrase.S) first = i;
+            if (tokens[i].E == phrase.E) last = i;
+        }
+
+        if (first < 0 || last <= first)
+            throw new InvalidDataException($"Phrase [{phrase.S}, {phrase.E}] in block {block.Index} doesn't cover two or more whole tokens");
+        if (phrase.W < 0 || phrase.W >= wordCount)
+            throw new InvalidDataException($"Phrase [{phrase.S}, {phrase.E}] in block {block.Index} points at word {phrase.W} of {wordCount}");
     }
 
     /// <param name="min">The earliest the span may start, which is where the one before it ended</param>
@@ -458,7 +506,8 @@ public class TokenizeService : ITokenizeService
                 });
             }
 
-            stored.Add(new StoredBlock(block.Index, block.Text, tokens));
+            var phrases = (response.Blocks[i].Phrases ?? []).Select(p => p with { W = wordIds[(int) p.W] }).ToList();
+            stored.Add(new StoredBlock(block.Index, block.Text, tokens) { Phrases = phrases });
         }
 
         return stored;

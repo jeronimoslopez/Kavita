@@ -26,6 +26,39 @@ public sealed record TokenDto(int S, int E, long? W, string? R, IList<SubTokenDt
 [JsonConverter(typeof(SubTokenJsonConverter))]
 public sealed record SubTokenDto(int S, int E, long? W, string? R);
 
+/// <summary>
+/// A dictionary expression made of two or more whole top-level tokens, such as 気がする over 気, が and し. On the wire
+/// it's the array <c>[s, e, w]</c>, with offsets into the same block text as its tokens
+/// </summary>
+/// <param name="S">The start of its first token</param>
+/// <param name="E">The end of its last token</param>
+/// <param name="W">In a sidecar response, an index into its <c>words</c>. Everywhere after that, a reading.db word id.
+/// Never null, because a phrase is always a dictionary word</param>
+[JsonConverter(typeof(PhraseJsonConverter))]
+public sealed record PhraseDto(int S, int E, long W);
+
+public sealed class PhraseJsonConverter : JsonConverter<PhraseDto>
+{
+    public override PhraseDto Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        TokenArray.Start(ref reader, "phrase");
+        var s = TokenArray.ReadInt(ref reader);
+        var e = TokenArray.ReadInt(ref reader);
+        var w = TokenArray.ReadNullableLong(ref reader) ?? throw new JsonException("A phrase's w can't be null");
+        TokenArray.End(ref reader, "phrase", 3);
+        return new PhraseDto(s, e, w);
+    }
+
+    public override void Write(Utf8JsonWriter writer, PhraseDto value, JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        writer.WriteNumberValue(value.S);
+        writer.WriteNumberValue(value.E);
+        writer.WriteNumberValue(value.W);
+        writer.WriteEndArray();
+    }
+}
+
 public sealed class TokenJsonConverter : JsonConverter<TokenDto>
 {
     public override TokenDto Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

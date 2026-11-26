@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -50,7 +51,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (fileId == null) return null;
 
         var unit = await readingStore.GetUnitAsync(fileId.Value, page, ct);
-        if (unit is not { State: ReadingUnitState.Done })
+        if (!IsServed(unit))
         {
             // A missing or failed unit won't be tokenized however high it's raised, so only a pending one is worth a write
             if (unit is { State: ReadingUnitState.Pending })
@@ -87,12 +88,14 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (fileId == null) return null;
 
         var unit = await readingStore.GetUnitAsync(fileId.Value, request.Page, ct);
-        if (unit is not { State: ReadingUnitState.Done }) return null;
+        if (!IsServed(unit)) return null;
 
         var block = unit.Blocks.FirstOrDefault(b => b.Index == request.Block);
         if (block == null) return null;
 
         await readingStore.RaiseAnalysisPriorityAsync(fileId.Value, request.Page, request.Block, ReadingPriority.Tapped, ct);
+
+        if (request.Phrase is { } phraseIndex) return await LookupPhraseAsync(block, phraseIndex, request.S, ct);
 
         var token = block.Tokens.FirstOrDefault(t => t.S == request.S);
         if (token == null) return null;
@@ -111,7 +114,13 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
 
         if (target.W == null) return null;
 
-        var wordIds = parts.Select(p => p.W).Append(target.W).OfType<long>().ToHashSet();
+        var phrases = block.Phrases
+            .Select((phrase, index) => (Phrase: phrase, Index: index))
+            .Where(p => p.Phrase.S <= token.S && token.E <= p.Phrase.E)
+            .ToList();
+        var wordIds = parts.Select(p => p.W).Append(target.W).OfType<long>()
+            .Concat(phrases.Select(p => p.Phrase.W))
+            .ToHashSet();
         var words = await readingStore.GetWordsAsync(wordIds, ct);
         if (!words.TryGetValue(target.W.Value, out var word)) return null;
 
@@ -139,8 +148,42 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
                         partWord.Lemma, partWord.Reading, partWord.Senses.ToList());
                 })
                 .ToList(),
+            PartOf = phrases
+                .Where(p => words.ContainsKey(p.Phrase.W))
+                .Select(p =>
+                {
+                    var phraseWord = words[p.Phrase.W];
+                    return new DictionaryPhraseDto(p.Index, p.Phrase.S, p.Phrase.E, phraseWord.Lemma, phraseWord.Reading,
+                        FirstGloss(phraseWord));
+                })
+                .ToList(),
         };
     }
+
+    /// <param name="s">The tapped offset, which has to fall inside the phrase</param>
+    private async Task<DictionaryLookupResultDto?> LookupPhraseAsync(StoredBlock block, int phraseIndex, int s,
+        CancellationToken ct)
+    {
+        if (phraseIndex < 0 || phraseIndex >= block.Phrases.Count) return null;
+        var phrase = block.Phrases[phraseIndex];
+        if (s < phrase.S || s >= phrase.E) return null;
+
+        var words = await readingStore.GetWordsAsync([phrase.W], ct);
+        if (!words.TryGetValue(phrase.W, out var word)) return null;
+
+        return new DictionaryLookupResultDto
+        {
+            Word = new DictionaryWordDto(word.Id, Slice(block.Text, phrase.S, phrase.E), word.Lemma, word.Pos,
+                word.IsProper, null, word.Reading, word.Readings.ToList(), word.Jlpt),
+            Senses = word.Senses.ToList(),
+        };
+    }
+
+    /// <summary>
+    /// Joins the glosses with "; ", the way the popup shows a sense
+    /// </summary>
+    private static string FirstGloss(StoredWord word) =>
+        word.Senses.Count == 0 ? string.Empty : string.Join("; ", word.Senses[0].Gloss);
 
     public async Task PrioritizeChapterAsync(int chapterId, CancellationToken ct = default)
     {
@@ -488,6 +531,13 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             .Select(f => f.Id)
             .ToList();
     }
+
+    /// <summary>
+    /// A refresh unit's blocks still match its file, so the reader keeps them until the new ones are saved and
+    /// DictionaryPagesReady tells it to fetch the page again
+    /// </summary>
+    private static bool IsServed([NotNullWhen(true)] ReadingUnit? unit) =>
+        unit is { State: ReadingUnitState.Done or ReadingUnitState.Refresh };
 
     private static string Slice(string text, int s, int e)
     {

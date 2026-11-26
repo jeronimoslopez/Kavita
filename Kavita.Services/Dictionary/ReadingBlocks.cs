@@ -28,7 +28,8 @@ internal static class ReadingBlocks
     public static byte[] Encode(IReadOnlyList<StoredBlock> blocks)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(
-            blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens)).ToList(), ReadingJson.Options);
+            blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens, b.Phrases.Count == 0 ? null : b.Phrases)).ToList(),
+            ReadingJson.Options);
         using var output = new MemoryStream(json.Length / 3 + 16);
         output.WriteByte(BrotliJson);
         using (var brotli = new BrotliStream(output,
@@ -55,8 +56,10 @@ internal static class ReadingBlocks
                 byte[] { Length: > 0 } blob => throw new InvalidDataException($"format byte 0x{blob[0]:X2} is unknown"),
                 _ => throw new InvalidDataException($"a {value.GetType().Name} isn't a stored form"),
             };
-            // A block written without tokens has none, so callers never meet a null list
-            return (json ?? []).Select(b => new StoredBlock(b.Index, b.Text, b.Tokens ?? [])).ToList();
+            // A block written without tokens or phrases has none, so callers never meet a null list
+            return (json ?? [])
+                .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens ?? []) { Phrases = b.Phrases ?? [] })
+                .ToList();
         }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException)
         {
@@ -74,10 +77,13 @@ internal static class ReadingBlocks
     }
 
     /// <summary>
-    /// A block in unit.blocks. Tokens use TokenDto's array converters, the same form the sidecar and the reader use
+    /// A block in unit.blocks. Tokens and phrases use their DTOs' array converters, the same form the sidecar uses.
+    /// A block with no phrases is written without the key, the form every block had before phrases existed
     /// </summary>
     private sealed record BlockJson(
         [property: JsonPropertyName("i")] int Index,
         [property: JsonPropertyName("text")] string Text,
-        [property: JsonPropertyName("tokens")] IReadOnlyList<TokenDto>? Tokens);
+        [property: JsonPropertyName("tokens")] IReadOnlyList<TokenDto>? Tokens,
+        [property: JsonPropertyName("phrases"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<PhraseDto>? Phrases = null);
 }

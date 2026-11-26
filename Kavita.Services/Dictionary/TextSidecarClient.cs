@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Flurl.Http;
@@ -17,6 +19,22 @@ public class TextSidecarClient : ITextSidecarClient
     /// The sidecar answers in well under a second, so a minute only ever runs out when it's stuck
     /// </summary>
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
+    /// <summary>
+    /// A reader opening a chapter waits on the health call, so it gives up long before a tokenize would
+    /// </summary>
+    private static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(5);
+
+    private readonly TimeProvider _time;
+    private readonly ConcurrentDictionary<string, CachedVersion> _versions = new();
+
+    public TextSidecarClient() : this(TimeProvider.System)
+    {
+    }
+
+    internal TextSidecarClient(TimeProvider time)
+    {
+        _time = time;
+    }
 
     // The sidecar's limits, from text-sidecar-contract/tokenize-request.schema.json. Text lengths count code points
     public const int MaxBlocksPerRequest = 5_000;
@@ -36,6 +54,7 @@ public class TextSidecarClient : ITextSidecarClient
         CancellationToken ct = default)
     {
         var tokens = new IList<TokenDto>?[blocks.Count];
+        var phrases = new IList<PhraseDto>?[blocks.Count];
         var words = new List<SidecarWordDto>();
         string? version = null;
 
@@ -55,6 +74,9 @@ public class TextSidecarClient : ITextSidecarClient
                 if (!byId.TryGetValue(blocks[index].Id, out var answer))
                     throw new TextSidecarRejectedException(200, $"The text sidecar at {sidecarUrl} left out block {blocks[index].Id}");
                 tokens[index] = offset == 0 ? answer.Tokens : answer.Tokens.Select(t => Shift(t, offset)).ToList();
+                // A version 1 sidecar leaves phrases out, and a null in the JSON reads as none too
+                var blockPhrases = answer.Phrases ?? [];
+                phrases[index] = offset == 0 ? blockPhrases : blockPhrases.Select(p => p with { W = p.W + offset }).ToList();
             }
         }
 
@@ -62,9 +84,41 @@ public class TextSidecarClient : ITextSidecarClient
         {
             Version = version ?? string.Empty,
             Words = words,
-            Blocks = blocks.Select((b, i) => new TokenizedBlockDto { Id = b.Id, Tokens = tokens[i] ?? [] }).ToList(),
+            Blocks = blocks
+                .Select((b, i) => new TokenizedBlockDto { Id = b.Id, Tokens = tokens[i] ?? [], Phrases = phrases[i] ?? [] })
+                .ToList(),
         };
     }
+
+    public async Task<string?> GetVersionAsync(string sidecarUrl, CancellationToken ct = default)
+    {
+        var url = sidecarUrl.TrimEnd('/');
+        var now = _time.GetUtcNow();
+        if (_versions.TryGetValue(url, out var cached) && now < cached.Until) return cached.Version;
+
+        string? version;
+        try
+        {
+            var health = await $"{url}/health".WithTimeout(HealthTimeout).GetJsonAsync<HealthDto>(cancellationToken: ct);
+            version = string.IsNullOrWhiteSpace(health?.Version) ? null : health.Version;
+        }
+        catch (Exception) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ct);
+        }
+        catch (Exception ex) when (ex is FlurlHttpException or JsonException)
+        {
+            version = null;
+        }
+
+        _versions[url] = new CachedVersion(version,
+            now + (version == null ? TextSidecarVersionTtl.Unknown : TextSidecarVersionTtl.Known));
+        return version;
+    }
+
+    private sealed record CachedVersion(string? Version, DateTimeOffset Until);
+
+    private sealed record HealthDto([property: JsonPropertyName("version")] string? Version);
 
     /// <returns>The indices of the blocks to send, grouped into requests that each fit the sidecar's limits</returns>
     private static IEnumerable<List<int>> Batch(IReadOnlyList<TokenizeBlockDto> blocks)

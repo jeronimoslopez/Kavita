@@ -11,24 +11,35 @@ namespace Kavita.Models.DTOs.Dictionary;
 /// <param name="S">Start offset of the tapped top-level token in the block's text</param>
 /// <param name="Sub">Index into that token's <see cref="TokenDto.Sub"/> to look up one part of a compound, or null for
 /// the whole token</param>
-public sealed record DictionaryLookupRequestDto(int ChapterId, int Page, int Block, int S, int? Sub);
+/// <param name="Phrase">A <see cref="DictionaryPhraseDto.Index"/> from an earlier answer's
+/// <see cref="DictionaryLookupResultDto.PartOf"/>, to look up that phrase instead of the token. <paramref name="S"/> must
+/// still fall inside the phrase, so an index from before the page was tokenized again misses. Null, or left out, for a
+/// token lookup</param>
+public sealed record DictionaryLookupRequestDto(int ChapterId, int Page, int Block, int S, int? Sub, int? Phrase = null);
 
 public sealed record DictionaryLookupResultDto
 {
     /// <summary>
-    /// The looked-up word. With <see cref="DictionaryLookupRequestDto.Sub"/> set, the part's word
+    /// The looked-up word. With <see cref="DictionaryLookupRequestDto.Sub"/> set, the part's word, and with
+    /// <see cref="DictionaryLookupRequestDto.Phrase"/> set, the phrase's word with no occurrence reading
     /// </summary>
     public DictionaryWordDto Word { get; init; } = null!;
     public IList<SenseDto> Senses { get; init; } = [];
     /// <summary>
-    /// The AI answer for this occurrence, or null when there isn't one. Always null for a part of a compound
+    /// The AI answer for this occurrence, or null when there isn't one. Always null for a part of a compound and for a
+    /// phrase
     /// </summary>
     public DictionaryAnalysisDto? Analysis { get; init; }
     /// <summary>
     /// The parts of the top-level token at <see cref="DictionaryLookupRequestDto.S"/>, also when a part is the one looked
-    /// up, so the popup keeps its part chips. Empty when the token isn't a compound
+    /// up, so the popup keeps its part chips. Empty when the token isn't a compound, and for a phrase lookup
     /// </summary>
     public IList<DictionaryPartDto> Parts { get; init; } = [];
+    /// <summary>
+    /// The block's phrases whose span covers the top-level token at <see cref="DictionaryLookupRequestDto.S"/>, in the
+    /// order the block stores them. Empty for a phrase lookup
+    /// </summary>
+    public IList<DictionaryPhraseDto> PartOf { get; init; } = [];
 }
 
 /// <param name="Surface">The text of this occurrence as it appears in the block</param>
@@ -48,3 +59,13 @@ public sealed record DictionaryAnalysisDto(string? SenseKey, string? Reading, st
 /// <see cref="DictionaryLookupRequestDto.Sub"/></param>
 public sealed record DictionaryPartDto(int Sub, long WordId, string Surface, string Lemma, string Reading,
     IList<SenseDto> Senses);
+
+/// <summary>
+/// A dictionary expression the looked-up token is part of, such as 気がする for 気
+/// </summary>
+/// <param name="Index">The phrase's place in its block, to send back as <see cref="DictionaryLookupRequestDto.Phrase"/></param>
+/// <param name="S">UTF-16 offset of the phrase's first character in the block's text</param>
+/// <param name="E">UTF-16 offset just past its last character</param>
+/// <param name="Reading">The dictionary's usual reading</param>
+/// <param name="Gloss">The glosses of the word's first sense joined with "; ", or empty when it has no senses</param>
+public sealed record DictionaryPhraseDto(int Index, int S, int E, string Lemma, string Reading, string Gloss);

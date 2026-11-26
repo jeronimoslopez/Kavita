@@ -48,10 +48,18 @@ public interface IReadingStore
     /// </summary>
     Task DeleteFilesAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default);
 
-    /// <returns>The pending unit to tokenize next in queue order, or null when nothing is pending</returns>
+    /// <returns>The pending or refresh unit to tokenize next in queue order, or null when there's none</returns>
     Task<ReadingUnitRef?> GetNextPendingUnitAsync(CancellationToken ct = default);
     /// <summary>
-    /// Stores a tokenized unit and marks it done, and replaces its analysis rows, in one transaction. When the file
+    /// Sends the file's done units whose blocks came from a sidecar version other than
+    /// <paramref name="tokenizerVersion"/> to <see cref="ReadingUnitState.Refresh"/>, at least at
+    /// <paramref name="priority"/>. They keep serving their blocks and analysis until the new blocks are saved. Units
+    /// saved with no blocks and an empty version are left alone, and so are pending and failed units
+    /// </summary>
+    /// <returns>How many units were queued</returns>
+    Task<int> RefreshUnitsAsync(int mangaFileId, string tokenizerVersion, int priority, CancellationToken ct = default);
+    /// <summary>
+    /// Stores a tokenized unit and marks it done, whether it was pending or waiting for a refresh, and replaces its analysis rows, in one transaction. When the file
     /// has no analysis request the unit is left with no rows. When it has one, the unit's spans are its top-level
     /// tokens whose word is ambiguous, which is the rule <see cref="SidecarWordDto.IsAmbiguous"/> applies to the
     /// stored word. A row whose (block, s, e, word id) is still a span keeps its state, priority and answer, other
@@ -64,22 +72,23 @@ public interface IReadingStore
     Task<bool> SaveTokenizedUnitAsync(long unitId, string sourceStamp, string tokenizerVersion,
         IReadOnlyList<StoredBlock> blocks, CancellationToken ct = default);
     /// <summary>
-    /// Counts a failed attempt on a pending unit. When the count reaches <paramref name="maxAttempts"/> the unit becomes
-    /// failed. Below that it stays pending, and its queue time moves to now so other units go first
+    /// Counts a failed attempt on a pending or refresh unit. When the count reaches <paramref name="maxAttempts"/> a
+    /// pending unit becomes failed, and a refresh unit goes back to done with its old blocks and its attempts at 0. Below
+    /// that it keeps its state, and its queue time moves to now so other units go first
     /// </summary>
     /// <returns>The unit's state afterwards</returns>
     Task<ReadingUnitState> RecordFailedAttemptAsync(long unitId, int maxAttempts, CancellationToken ct = default);
     /// <summary>
-    /// Moves a pending unit's queue time to now, so other units at its priority go first. Its attempts and priority
-    /// stay as they are, and a unit that isn't pending is left alone
+    /// Moves a pending or refresh unit's queue time to now, so other units at its priority go first. Its attempts and
+    /// priority stay as they are, and a unit in another state is left alone
     /// </summary>
     Task DeferUnitAsync(long unitId, CancellationToken ct = default);
     /// <returns>The unit with its blocks, in any state, or null when the page has no unit or reading.db is being
     /// upgraded</returns>
     Task<ReadingUnit?> GetUnitAsync(int mangaFileId, int page, CancellationToken ct = default);
     /// <summary>
-    /// Raises the priority of the file's pending units to at least <paramref name="priority"/>. Units already at or
-    /// above it, and units that aren't pending, are left alone
+    /// Raises the priority of the file's pending and refresh units to at least <paramref name="priority"/>. Units
+    /// already at or above it, and units in other states, are left alone
     /// </summary>
     /// <param name="page">One page, or null for every page of the file</param>
     Task RaiseUnitPriorityAsync(int mangaFileId, int? page, int priority, CancellationToken ct = default);
