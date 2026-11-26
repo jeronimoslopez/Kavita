@@ -101,6 +101,8 @@ export interface DictionaryPhrase {
   e: number;
   lemma: string;
   reading: string;
+  /** The phrase's first sense as short text, or empty */
+  gloss: string;
 }
 
 export interface DictionaryLookupResult {

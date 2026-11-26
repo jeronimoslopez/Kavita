@@ -97,7 +97,7 @@ describe('DictionaryPopupPresenter', () => {
     presenter.render({...VIEW, state: {kind: 'result', result: {
       word: {id: 1, surface: '気', lemma: '気', pos: '名詞', isProper: false, occurrenceReading: null, reading: 'き', readings: [], jlpt: null},
       senses: [], analysis: null, parts: [],
-      partOf: [{index: 2, s: 0, e: 4, lemma: '気がする', reading: 'きがする'}],
+      partOf: [{index: 2, s: 0, e: 4, lemma: '気がする', reading: 'きがする', gloss: 'to have a feeling that'}],
     }}});
     TestBed.tick();
     popup()?.querySelector<HTMLElement>('[data-testid="popup-phrase"]')?.click();

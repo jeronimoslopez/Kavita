@@ -87,13 +87,18 @@
         @if (partOf().length > 0) {
           <div class="dp-parts" data-testid="popup-part-of">
             <p class="dp-label">{{ t('part-of') }}</p>
-            <ul class="dp-chips">
+            <ul class="dp-rows">
               @for (p of partOf(); track p.index) {
                 <li>
-                  <button type="button" class="dp-chip" data-testid="popup-phrase"
+                  <button type="button" class="dp-link-row" data-testid="popup-phrase"
                           [attr.aria-pressed]="view().openPhrase === p.index" (click)="phrase.emit(p.index)">
-                    <span lang="ja">{{ p.lemma }}</span>&ngsp;
-                    <span class="dp-chip-reading" lang="ja">{{ p.reading }}</span>
+                    <span class="dp-row-word">
+                      <span lang="ja">{{ p.lemma }}</span>&ngsp;
+                      <span class="dp-row-reading" lang="ja">{{ p.reading }}</span>
+                    </span>
+                    @if (p.gloss) {
+                      <span class="dp-meta" data-testid="popup-phrase-gloss">{{ p.gloss }}</span>
+                    }
                   </button>
                 </li>
               }

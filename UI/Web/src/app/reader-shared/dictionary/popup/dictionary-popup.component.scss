@@ -326,7 +326,56 @@
   color: var(--dp-link);
 }
 
-.dp-text-btn, .dp-chip {
+// The Part of rows. They bleed into the panel's padding by their own, so their text lines up with the senses
+.dp-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0 -12px;
+  padding: 0;
+  list-style: none;
+}
+
+.dp-link-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--dp-radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  transition: background-color 150ms, box-shadow 150ms;
+
+  &:hover, &:active {
+    background: var(--dp-tile);
+  }
+
+  &[aria-pressed="true"] {
+    background: var(--dp-tint);
+    box-shadow: var(--dp-ring-selected);
+  }
+}
+
+.dp-row-word {
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.dp-row-reading {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dp-link);
+}
+
+.dp-text-btn, .dp-chip, .dp-link-row {
   &:focus-visible {
     outline: 3px solid var(--dp-focus);
     outline-offset: 1px;

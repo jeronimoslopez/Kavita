@@ -284,7 +284,7 @@ describe('ReaderDictionaryController', () => {
 
   it('opens a phrase from Part of, highlights its span, and goes back to the word', () => {
     openOnPage();
-    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 0, s: 5, e: 10, lemma: 'と、新聞社', reading: 'と、しんぶんしゃ'}]});
+    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 0, s: 5, e: 10, lemma: 'と、新聞社', reading: 'と、しんぶんしゃ', gloss: ''}]});
     expect(highlighter.mark).toHaveBeenCalledTimes(1);
 
     presenter.handlers?.phrase(0);
@@ -312,7 +312,7 @@ describe('ReaderDictionaryController', () => {
     const base = container.querySelector('ruby')!.firstChild as Text;
     hit = hitOn(base, 0, 1);
     openOnPage();
-    dictionary.answerLookup(0, {...lookupResult('気'), partOf: [{index: 0, s: 0, e: 4, lemma: '気がする', reading: 'きがする'}]});
+    dictionary.answerLookup(0, {...lookupResult('気'), partOf: [{index: 0, s: 0, e: 4, lemma: '気がする', reading: 'きがする', gloss: 'to have a feeling that'}]});
 
     presenter.handlers?.phrase(0);
     const range = highlighter.mark.mock.lastCall?.[0] as Range;
@@ -326,7 +326,7 @@ describe('ReaderDictionaryController', () => {
     presenter.handlers?.phrase(0);
     expect(dictionary.lookups).toHaveLength(1);
 
-    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 3, s: 7, e: 10, lemma: 'x', reading: 'x'}]});
+    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 3, s: 7, e: 10, lemma: 'x', reading: 'x', gloss: ''}]});
     presenter.handlers?.phrase(0);
     expect(dictionary.lookups).toHaveLength(1);
 
