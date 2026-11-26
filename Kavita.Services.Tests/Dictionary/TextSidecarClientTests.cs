@@ -35,9 +35,9 @@ public class TextSidecarClientTests : IDisposable
         using var body = JsonDocument.Parse(call.RequestBody!);
         Assert.Equal(["0", "1", "2"], body.RootElement.GetProperty("blocks").EnumerateArray().Select(b => b.GetProperty("id").GetString()));
         Assert.Equal("上手に店を開く。", body.RootElement.GetProperty("blocks")[2].GetProperty("text").GetString());
-        Assert.Equal(15, response.Words.Count);
+        Assert.Equal(23, response.Words.Count);
         Assert.Equal(new TokenDto(6, 8, 8, "つらい", null), response.Blocks[1].Tokens[4]);
-        Assert.Equal([new PhraseDto(10, 14, 14)], response.Blocks[0].Phrases);
+        Assert.Equal([new PhraseDto(3, 7, 14)], response.Blocks[2].Phrases);
     }
 
     [Fact]

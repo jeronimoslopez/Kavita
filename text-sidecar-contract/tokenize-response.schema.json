@@ -14,7 +14,7 @@
     },
     "words": {
       "type": "array",
-      "description": "The words the blocks use, each once across the whole response, keyed by lemma, pos and isProper. A token's w and a phrase's w are indices into this list, and a word may be one only a phrase points at.",
+      "description": "The words the blocks use, each once across the whole response, keyed by lemma, pos and isProper. A token's w is an index into this list.",
       "items": { "$ref": "#/$defs/word" }
     },
     "blocks": {
@@ -32,7 +32,7 @@
           },
           "phrases": {
             "type": "array",
-            "description": "The block's dictionary expressions, in no set order. Present from sidecar=2, and empty when the block has none. A sidecar=1 response leaves it out, which reads as empty.",
+            "description": "The block's phrases in text order, never overlapping, possibly none. A phrase lies over the tokens and changes none of them.",
             "items": { "$ref": "#/$defs/phrase" }
           }
         }
@@ -65,7 +65,7 @@
       "items": false
     },
     "phrase": {
-      "description": "[s, e, w] for a dictionary expression over two or more whole tokens, such as 気がする over 気, が and し. s is the start of its first token and e the end of its last. w is never null, and its word's pos is 表現. Phrases can overlap each other, and they never get analysis.",
+      "description": "[s, e, w] for a JMdict expression that spans 2 to 6 tokens with a particle or a verb inside, such as 気がする over 気+が+し. s and e fall on token boundaries, and w is an index into words, a word with pos 表現.",
       "type": "array",
       "minItems": 3,
       "prefixItems": [
@@ -76,7 +76,7 @@
       "items": false
     },
     "token": {
-      "description": "[s, e, w, r, sub]. sub is null, or the short-unit parts when the long unit splits and the unit or one of its parts has a word. When w is null and sub isn't, the words are in the parts. From sidecar=2, neighbouring tokens whose joined text is a dictionary headword come back as one token with the originals as its sub, so 神 and 様 are one token 神様 with the parts 神 and 様.",
+      "description": "[s, e, w, r, sub]. sub is null, or the short-unit parts when the long unit splits and the unit or one of its parts has a word. When w is null and sub isn't, the words are in the parts. Neighbouring Sudachi tokens that spell a JMdict headword come back joined as one such long unit, 神様 with the parts 神 and 様, and a joined unit's parts are the tokens it joined, never their own parts.",
       "type": "array",
       "minItems": 5,
       "prefixItems": [
@@ -106,7 +106,7 @@
         "pos": {
           "type": "string",
           "minLength": 1,
-          "description": "The first level of Sudachi's part of speech, such as 名詞 or 動詞."
+          "description": "The first level of Sudachi's part of speech, such as 名詞 or 動詞, or 表現 for a phrase's word."
         },
         "isProper": {
           "type": "boolean",

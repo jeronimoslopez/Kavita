@@ -370,7 +370,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     {
         var (_, service, files) = await Setup();
         var blocks = SampleBlocks();
-        blocks.Add(Block(3, string.Empty));
+        blocks.Add(Block(4, string.Empty));
         _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 2, Arg.Any<CancellationToken>()).Returns(blocks);
         _httpTest.RespondWith(SampleResponse);
         ReturnWordIds();
@@ -385,9 +385,9 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         var (stored, version) = SavedUnit();
         Assert.Equal(sample.Version, version);
-        Assert.Equal([0, 1, 2, 3], stored.Select(b => b.Index));
+        Assert.Equal([0, 1, 2, 3, 4], stored.Select(b => b.Index));
         Assert.Equal(blocks.Select(b => b.Text), stored.Select(b => b.Text));
-        Assert.Empty(stored[3].Tokens);
+        Assert.Empty(stored[4].Tokens);
 
         // 経済政策 is word 4 with the parts 経済 (word 2) and 政策 (word 3)
         var compound = stored[0].Tokens[4];
@@ -395,7 +395,12 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal([new SubTokenDto(6, 8, 102, "けいざい"), new SubTokenDto(8, 10, 103, "せいさく")], compound.Sub);
         Assert.Null(stored[0].Tokens[1].W);
         Assert.Equal(108, stored[1].Tokens[4].W);
-        Assert.Equal([new PhraseDto(10, 14, 114)], stored[0].Phrases);
+        // 神様 is word 16, joined from 神 (word 15) and 様, and 気がする is word 22
+        Assert.Equal(116, stored[3].Tokens[0].W);
+        Assert.Equal([new SubTokenDto(0, 1, 115, "かみ"), new SubTokenDto(1, 2, null, "さま")], stored[3].Tokens[0].Sub);
+        Assert.Equal([new PhraseDto(10, 13, 122)], stored[3].Phrases);
+        Assert.Equal([new PhraseDto(3, 7, 114)], stored[2].Phrases);
+        Assert.Empty(stored[0].Phrases);
     }
 
     [Fact]
