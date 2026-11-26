@@ -55,7 +55,7 @@ public class ReadingDatabaseTests : IDisposable
     }
 
     private static readonly string[] AllTables =
-        ["analysis", "analysis_request", "reading_choice", "reading_mark", "unit", "word", "word_use"];
+        ["analysis", "analysis_request", "book_word", "reading_choice", "reading_mark", "unit", "word", "word_use"];
 
     private async Task CreateRawFileAsync(int userVersion)
     {
@@ -498,8 +498,7 @@ public class ReadingDatabaseTests : IDisposable
         await database.InitializeAsync();
 
         await using var connection = await database.OpenConnectionAsync();
-        Assert.Equal(4L, await ScalarAsync(connection, "PRAGMA user_version"));
-        Assert.Equal(4, ReadingDatabase.SchemaVersion);
+        Assert.Equal((long) ReadingDatabase.SchemaVersion, await ScalarAsync(connection, "PRAGMA user_version"));
         Assert.Equal(AllTables, await TablesAsync(connection));
         Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM reading_choice"));
         Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM word WHERE entries IS NULL"));
@@ -524,7 +523,58 @@ public class ReadingDatabaseTests : IDisposable
         await Task.WhenAll(new ReadingDatabase(_path).InitializeAsync(), new ReadingDatabase(_path).InitializeAsync());
 
         await using var connection = await new ReadingDatabase(_path).OpenConnectionAsync();
-        Assert.Equal(4L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal((long) ReadingDatabase.SchemaVersion, await ScalarAsync(connection, "PRAGMA user_version"));
+    }
+
+    #endregion
+
+    #region Version 5 upgrade
+
+    [Fact]
+    public async Task Upgrade_FromVersion4_AddsAnEmptyBookWordTableAndKeepsEveryRow()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        await using (var raw = new SqliteConnection($"Data Source={_path};Pooling=False"))
+        {
+            await raw.OpenAsync();
+            await NonQueryAsync(raw, ReadingDatabase.Version1Schema + ReadingDatabase.Version3Schema +
+                                     ReadingDatabase.Version4Schema + """
+
+                PRAGMA user_version = 4;
+                INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries)
+                VALUES ('高順', '名詞', 1, 'たかじゅん', NULL, '[]', '[]', 'lex-1', '[]');
+                INSERT INTO reading_choice (user_id, series_id, word_id, reading, updated_utc) VALUES (1, 2, 1, 'こうじゅん', 0);
+                """);
+        }
+
+        var database = new ReadingDatabase(_path);
+        await database.InitializeAsync();
+
+        await using var connection = await database.OpenConnectionAsync();
+        Assert.Equal(5L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal(5, ReadingDatabase.SchemaVersion);
+        Assert.Equal(AllTables, await TablesAsync(connection));
+        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM book_word"));
+        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM word"));
+        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM reading_choice"));
+    }
+
+    [Fact]
+    public async Task Upgrade_FromVersion4_RunsOnceWhenTwoDatabasesOpenTheSameFile()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        await using (var raw = new SqliteConnection($"Data Source={_path};Pooling=False"))
+        {
+            await raw.OpenAsync();
+            await NonQueryAsync(raw, ReadingDatabase.Version1Schema + ReadingDatabase.Version3Schema +
+                                     ReadingDatabase.Version4Schema + "\nPRAGMA user_version = 4;");
+        }
+
+        await Task.WhenAll(new ReadingDatabase(_path).InitializeAsync(), new ReadingDatabase(_path).InitializeAsync());
+
+        await using var connection = await new ReadingDatabase(_path).OpenConnectionAsync();
+        Assert.Equal(5L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal(AllTables, await TablesAsync(connection));
     }
 
     #endregion
@@ -600,8 +650,29 @@ public class ReadingDatabaseTests : IDisposable
     {
         var plan = await PlanAsync("DELETE FROM reading_mark WHERE unit_id = $unit");
         plan.AddRange(await PlanAsync("DELETE FROM word_use WHERE unit_id = $unit"));
+        plan.AddRange(await PlanAsync("DELETE FROM book_word WHERE unit_id = $unit"));
 
-        Assert.Equal(["SEARCH reading_mark USING PRIMARY KEY (unit_id=?)", "SEARCH word_use USING PRIMARY KEY (unit_id=?)"], plan);
+        Assert.Equal(["SEARCH reading_mark USING PRIMARY KEY (unit_id=?)", "SEARCH word_use USING PRIMARY KEY (unit_id=?)",
+            "SEARCH book_word USING PRIMARY KEY (unit_id=?)"], plan);
+    }
+
+    public static TheoryData<string> BookWordTotals => new()
+    {
+        ReadingStore.BookWordTotalsSql("$f0"),
+        ReadingStore.BookWordTotalsSql("$f0, $f1"),
+    };
+
+    [Theory]
+    [MemberData(nameof(BookWordTotals))]
+    public async Task BookWordTotals_ReadTheFilesUnitsThenEachUnitsRowsThenEachTextsWord(string sql)
+    {
+        var plan = await PlanAsync(sql);
+
+        Assert.Contains(plan, step => step.StartsWith("SEARCH u USING") &&
+                                      step.EndsWith("INDEX sqlite_autoindex_unit_1 (kind=? AND manga_file_id=?)"));
+        Assert.Contains("SEARCH b USING PRIMARY KEY (unit_id=?)", plan);
+        Assert.Contains("SEARCH w USING COVERING INDEX sqlite_autoindex_word_1 (lemma=? AND pos=? AND is_proper=?)", plan);
+        Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
     }
 
     private async Task<List<string>> PlanAsync(string sql)

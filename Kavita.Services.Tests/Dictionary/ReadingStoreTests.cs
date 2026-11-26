@@ -1716,6 +1716,128 @@ public class ReadingStoreTests : IDisposable
 
     #endregion
 
+    #region Book words
+
+    /// <summary>
+    /// 翠苓 under スイレイ twice and once under すいれい, 馬閃 under バセン, and 脱出方法 under its pieces' reading,
+    /// which defines nothing
+    /// </summary>
+    private static StoredBlock[] BookWordPage(long piece) =>
+    [
+        Block(0, "翠苓と翠苓", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, null), Token(3, 4, piece), Token(4, 5, piece))
+            with { Ruby = [new RubyDto(0, 2, "スイレイ"), new RubyDto(3, 5, "スイレイ")] },
+        Block(1, "翠苓、馬閃", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, null), Token(3, 4, piece, "うま"),
+                Token(4, 5, piece, "せん"))
+            with { Ruby = [new RubyDto(0, 2, "すいれい"), new RubyDto(3, 5, "バセン")] },
+        Block(2, "脱出方法", Token(0, 2, piece, "だっしゅつ"), Token(2, 4, piece, "ほうほう"))
+            with { Ruby = [new RubyDto(0, 4, "だっしゅつほうほう")] },
+    ];
+
+    private async Task<List<(long Unit, string Text, string Reading, string Printed, long Count)>> BookWordRowsAsync()
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT unit_id, text, reading, printed, count FROM book_word ORDER BY unit_id, text, reading";
+        var rows = new List<(long, string, string, string, long)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4)));
+        }
+        return rows;
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_StoresThePagesBookWordsAndAWordRowForEach()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+
+        var unit = await SaveMarkedPageAsync(1, 0, BookWordPage(piece));
+
+        Assert.Equal([(unit, "翠苓", "すいれい", "スイレイ", 3L), (unit, "馬閃", "ばせん", "バセン", 1L)], await BookWordRowsAsync());
+        var totals = await _store.GetBookWordsAsync([1]);
+        var words = await _store.GetWordsAsync(totals.Select(t => t.WordId).ToList());
+        var suirei = words[totals.Single(t => t.Text == "翠苓").WordId];
+        Assert.Equal(("翠苓", BookWords.Pos, true, "すいれい", BookWords.LexiconVersion), (suirei.Lemma, suirei.Pos,
+            suirei.IsProper, suirei.Reading, suirei.LexiconVersion));
+        Assert.Empty(suirei.Senses);
+        // Empty and not null, so the resolver tells it from a word stored before entries
+        Assert.NotNull(suirei.Entries);
+        Assert.Empty(suirei.Entries);
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_KeepsAWordRowTheSidecarAlreadyWrote()
+    {
+        var known = new SidecarWordDto
+        {
+            Lemma = "馬閃", Pos = BookWords.Pos, IsProper = true, Reading = "ばせん", Readings = ["ばせん"],
+            Senses = [new SenseDto("5000:1", ["n-pr"], ["Basen"])], Entries = [new WordEntryDto(5000, false, ["ばせん"])],
+        };
+        var ids = await _store.UpsertWordsAsync([known, Word("翠")], Lexicon);
+        var id = ids[0];
+
+        await SaveMarkedPageAsync(1, 0, BookWordPage(ids[1]));
+
+        var word = (await _store.GetWordsAsync([id]))[id];
+        Assert.Equal(Lexicon, word.LexiconVersion);
+        Assert.Equal("5000:1", Assert.Single(word.Senses).Key);
+        Assert.Equal(id, (await _store.GetBookWordsAsync([1])).Single(t => t.Text == "馬閃").WordId);
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_AgainReplacesThePagesBookWords_AndDeletingUnitsRemovesThem()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+        var first = await SaveMarkedPageAsync(1, 0, BookWordPage(piece), pageCount: 3);
+        var second = await SaveMarkedPageAsync(1, 1, BookWordPage(piece));
+        var last = await SaveMarkedPageAsync(1, 2, BookWordPage(piece));
+        var other = await SaveMarkedPageAsync(2, 0, BookWordPage(piece));
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(first, Stamp, Tokenizer, [Block(0, "翠苓", Token(0, 1, piece), Token(1, 2, piece))]));
+        Assert.DoesNotContain(await BookWordRowsAsync(), r => r.Unit == first);
+        Assert.Equal(2, (await BookWordRowsAsync()).Count(r => r.Unit == second));
+
+        await _store.SeedFileAsync(1, 2, NewStamp, 0);
+        Assert.DoesNotContain(await BookWordRowsAsync(), r => r.Unit == last);
+        Assert.Contains(await BookWordRowsAsync(), r => r.Unit == second);
+
+        await _store.DeleteFilesAsync([1]);
+        Assert.Equal([other], (await BookWordRowsAsync()).Select(r => r.Unit).Distinct());
+    }
+
+    [Fact]
+    public async Task GetBookWords_SumsEachFilesPagesAndKeepsFilesApart()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+        await SaveMarkedPageAsync(1, 0, BookWordPage(piece));
+        // Page 1 prints すいれい three times, so the file's printed form for it is a tie at three that ordinal order settles
+        await SaveMarkedPageAsync(1, 1, [
+            Block(0, "翠苓翠苓翠苓", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, piece), Token(3, 4, piece),
+                    Token(4, 5, piece), Token(5, 6, piece))
+                with { Ruby = [new RubyDto(0, 2, "すいれい"), new RubyDto(2, 4, "すいれい"), new RubyDto(4, 6, "すいれい")] },
+        ]);
+        await SaveMarkedPageAsync(2, 0, [
+            Block(0, "翠苓", Token(0, 1, piece), Token(1, 2, piece)) with { Ruby = [new RubyDto(0, 2, "ミドリ")] },
+        ]);
+        await SaveMarkedPageAsync(3, 0, BookWordPage(piece));
+
+        var totals = await _store.GetBookWordsAsync([1, 2, 2]);
+
+        var id = totals[0].WordId;
+        Assert.Equal(
+        [
+            new BookWordTotal(1, "翠苓", id, "すいれい", "すいれい", 6),
+            new BookWordTotal(1, "馬閃", totals[1].WordId, "ばせん", "バセン", 1),
+            new BookWordTotal(2, "翠苓", id, "みどり", "ミドリ", 1),
+        ], totals);
+        Assert.Empty(await _store.GetBookWordsAsync([]));
+        Assert.Empty(await _store.GetBookWordsAsync([9]));
+        Assert.Equal(5, (await _store.GetBookWordsAsync(Enumerable.Range(10, 1200).Append(1).Append(2).Append(3).ToList())).Count);
+    }
+
+    #endregion
+
     #region Reading choices
 
     [Fact]

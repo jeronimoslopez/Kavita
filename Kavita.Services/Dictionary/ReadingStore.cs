@@ -115,6 +115,22 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         """;
 
     /// <summary>
+    /// The book words of some files, summed per file, text, reading and printed form, with the id of the word row each
+    /// is looked up by. It reads the files' units through unit's (kind, manga_file_id, page) key, each unit's rows
+    /// through book_word's key, and each text's word row through word's (lemma, pos, is_proper) key. Public so the
+    /// tests can check the plan
+    /// </summary>
+    /// <param name="files">The IN list of file id parameters</param>
+    public static string BookWordTotalsSql(string files) => $"""
+        SELECT u.manga_file_id, b.text, w.id, b.reading, b.printed, SUM(b.count)
+        FROM unit u
+        JOIN book_word b ON b.unit_id = u.id
+        JOIN word w ON w.lemma = b.text AND w.pos = '{BookWords.Pos}' AND w.is_proper = 1
+        WHERE u.kind = $kind AND u.manga_file_id IN ({files})
+        GROUP BY u.manga_file_id, b.text, w.id, b.reading, b.printed
+        """;
+
+    /// <summary>
     /// Ids per IN list. Older SQLite builds cap a statement at 999 parameters
     /// </summary>
     private const int BatchSize = 500;
@@ -142,20 +158,41 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var transaction = BeginWrite(connection);
+        var ids = await WriteWordsAsync(connection, transaction, words, lexiconVersion, keepExisting: false, ct);
+        await transaction.CommitAsync(ct);
+        return ids;
+    }
+
+    /// <summary>
+    /// The word upsert, keyed on (lemma, pos, is_proper)
+    /// </summary>
+    /// <param name="keepExisting">Leaves a word that's already stored as it is, so a book word never overwrites the
+    /// senses the sidecar gave the same lemma. Its ids aren't returned then</param>
+    /// <returns>The word id of each input word, in input order, or nothing when <paramref name="keepExisting"/></returns>
+    private static async Task<IReadOnlyList<long>> WriteWordsAsync(SqliteConnection connection,
+        SqliteTransaction transaction, IReadOnlyList<SidecarWordDto> words, string lexiconVersion, bool keepExisting,
+        CancellationToken ct)
+    {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries)
-            VALUES ($lemma, $pos, $isProper, $reading, $jlpt, $readings, $senses, $lexiconVersion, $entries)
-            ON CONFLICT (lemma, pos, is_proper) DO UPDATE SET
-                reading = excluded.reading,
-                jlpt = excluded.jlpt,
-                readings = excluded.readings,
-                senses = excluded.senses,
-                lexicon_version = excluded.lexicon_version,
-                entries = excluded.entries
-            RETURNING id
-            """;
+        command.CommandText = keepExisting
+            ? """
+              INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries)
+              VALUES ($lemma, $pos, $isProper, $reading, $jlpt, $readings, $senses, $lexiconVersion, $entries)
+              ON CONFLICT (lemma, pos, is_proper) DO NOTHING
+              """
+            : """
+              INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries)
+              VALUES ($lemma, $pos, $isProper, $reading, $jlpt, $readings, $senses, $lexiconVersion, $entries)
+              ON CONFLICT (lemma, pos, is_proper) DO UPDATE SET
+                  reading = excluded.reading,
+                  jlpt = excluded.jlpt,
+                  readings = excluded.readings,
+                  senses = excluded.senses,
+                  lexicon_version = excluded.lexicon_version,
+                  entries = excluded.entries
+              RETURNING id
+              """;
         var lemma = command.Parameters.Add("$lemma", SqliteType.Text);
         var pos = command.Parameters.Add("$pos", SqliteType.Text);
         var isProper = command.Parameters.Add("$isProper", SqliteType.Integer);
@@ -181,10 +218,9 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             entries.Value = word.Entries == null
                 ? DBNull.Value
                 : JsonSerializer.Serialize(word.Entries, ReadingJson.Options);
-            ids.Add(Convert.ToInt64(await command.ExecuteScalarAsync(ct)));
+            if (keepExisting) await command.ExecuteNonQueryAsync(ct);
+            else ids.Add(Convert.ToInt64(await command.ExecuteScalarAsync(ct)));
         }
-
-        await transaction.CommitAsync(ct);
         return ids;
     }
 
@@ -241,6 +277,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
                 SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
             DELETE FROM word_use WHERE unit_id IN (
                 SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
+            DELETE FROM book_word WHERE unit_id IN (
+                SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
             DELETE FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount;
 
             UPDATE unit
@@ -277,6 +315,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
                 DELETE FROM reading_mark WHERE unit_id IN (
                     SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
                 DELETE FROM word_use WHERE unit_id IN (
+                    SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
+                DELETE FROM book_word WHERE unit_id IN (
                     SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
                 DELETE FROM unit WHERE kind = $kind AND manga_file_id IN ({files});
                 DELETE FROM analysis_request WHERE manga_file_id IN ({files});
@@ -359,6 +399,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         await command.ExecuteNonQueryAsync(ct);
 
         await ReplaceMarksAsync(connection, transaction, unitId, blocks, ct);
+        await ReplaceBookWordsAsync(connection, transaction, unitId, blocks, ct);
 
         command.CommandText = "SELECT priority FROM analysis_request WHERE manga_file_id = $file";
         command.Parameters.AddWithValue("$file", mangaFileId);
@@ -502,6 +543,56 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         }
     }
 
+    /// <summary>
+    /// Replaces the unit's book_word rows with the ones its blocks' furigana defines by <see cref="BookWords"/>, and
+    /// gives each book word a word row to be looked up by: the text as lemma, <see cref="BookWords.Pos"/>, proper, the
+    /// reading, no senses and empty entries. A word row that's already there is left as it is
+    /// </summary>
+    private static async Task ReplaceBookWordsAsync(SqliteConnection connection, SqliteTransaction transaction,
+        long unitId, IReadOnlyList<StoredBlock> blocks, CancellationToken ct)
+    {
+        var words = BookWords.ForPage(blocks);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM book_word WHERE unit_id = $unit";
+        command.Parameters.AddWithValue("$unit", unitId);
+        await command.ExecuteNonQueryAsync(ct);
+        if (words.Count == 0) return;
+
+        var rows = words
+            .GroupBy(w => w.Text, StringComparer.Ordinal)
+            .Select(g => g.OrderByDescending(w => w.Count).ThenBy(w => w.Reading, StringComparer.Ordinal).First())
+            .Select(w => new SidecarWordDto
+            {
+                Lemma = w.Text,
+                Pos = BookWords.Pos,
+                IsProper = true,
+                Reading = w.Reading,
+                Readings = [],
+                Senses = [],
+                Entries = [],
+            })
+            .ToList();
+        await WriteWordsAsync(connection, transaction, rows, BookWords.LexiconVersion, keepExisting: true, ct);
+
+        command.CommandText = """
+            INSERT INTO book_word (unit_id, text, reading, printed, count) VALUES ($unit, $text, $reading, $printed, $count)
+            """;
+        var text = command.Parameters.Add("$text", SqliteType.Text);
+        var reading = command.Parameters.Add("$reading", SqliteType.Text);
+        var printed = command.Parameters.Add("$printed", SqliteType.Text);
+        var count = command.Parameters.Add("$count", SqliteType.Integer);
+        foreach (var word in words)
+        {
+            text.Value = word.Text;
+            reading.Value = word.Reading;
+            printed.Value = word.Printed;
+            count.Value = word.Count;
+            await command.ExecuteNonQueryAsync(ct);
+        }
+    }
+
     private static async Task<Dictionary<long, string>> LemmasAsync(SqliteConnection connection,
         SqliteTransaction transaction, IEnumerable<long> wordIds, CancellationToken ct)
     {
@@ -576,6 +667,42 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         return uses.Keys.Concat(readings.Select(r => r.Key)).Distinct().ToDictionary(id => id, id =>
             new WordMarkTotals(id, uses.GetValueOrDefault(id), readings[id]
                 .OrderByDescending(r => r.Count).ThenBy(r => r.Reading, StringComparer.Ordinal).ToList()));
+    }
+
+    public async Task<IReadOnlyList<BookWordTotal>> GetBookWordsAsync(IReadOnlyCollection<int> mangaFileIds,
+        CancellationToken ct = default)
+    {
+        if (mangaFileIds.Count == 0) return [];
+
+        var rows = new Dictionary<(int File, string Text, long WordId, string Reading), Dictionary<string, int>>();
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var snapshot = connection.BeginTransaction(deferred: true);
+        foreach (var files in mangaFileIds.Distinct().Chunk(BatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = snapshot;
+            command.Parameters.AddWithValue("$kind", Epub);
+            command.CommandText = BookWordTotalsSql(AddInList(command, "f", files));
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var key = (reader.GetInt32(0), reader.GetString(1), reader.GetInt64(2), reader.GetString(3));
+                if (!rows.TryGetValue(key, out var forms))
+                {
+                    forms = new Dictionary<string, int>(StringComparer.Ordinal);
+                    rows[key] = forms;
+                }
+                forms[reader.GetString(4)] = reader.GetInt32(5);
+            }
+        }
+
+        // A reading's printed form is the one the file counts most
+        return rows
+            .Select(r => new BookWordTotal(r.Key.File, r.Key.Text, r.Key.WordId, r.Key.Reading,
+                r.Value.OrderByDescending(f => f.Value).ThenBy(f => f.Key, StringComparer.Ordinal).First().Key,
+                r.Value.Values.Sum()))
+            .OrderBy(t => t.MangaFileId).ThenBy(t => t.Text, StringComparer.Ordinal).ThenBy(t => t.Reading, StringComparer.Ordinal)
+            .ToList();
     }
 
     public async Task<IReadOnlyDictionary<long, string>> GetReadingChoicesAsync(int userId, int seriesId,

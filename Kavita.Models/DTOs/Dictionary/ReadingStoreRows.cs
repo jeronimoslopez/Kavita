@@ -125,6 +125,16 @@ public sealed record ReadingMarkTotal(string Reading, string Printed, int Count)
 public sealed record WordMarkTotals(long WordId, int Uses, IReadOnlyList<ReadingMarkTotal> Readings);
 
 /// <summary>
+/// How often one file's furigana defines a book word with one reading, summed over its pages
+/// </summary>
+/// <param name="Text">The word as the book writes it, which is also its word row's lemma</param>
+/// <param name="WordId">The id of the word row the book word is looked up by</param>
+/// <param name="Reading">The reading in hiragana</param>
+/// <param name="Printed">The reading as the file prints it most often</param>
+/// <param name="Count">How many spans of the file define the word with this reading</param>
+public sealed record BookWordTotal(int MangaFileId, string Text, long WordId, string Reading, string Printed, int Count);
+
+/// <summary>
 /// A row of reading.db's word table
 /// </summary>
 /// <param name="Jlpt">1 (N1) to 5 (N5), or null when the word isn't listed</param>
