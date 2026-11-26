@@ -9,7 +9,7 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "The tokenizer's version, the word rules, the lexicon's version and the sidecar's, joined by ';', as in sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=<version>;sidecar=2. The lexicon's version holds ';' too, so compare the whole string. A change in any part can change the tokens of the same text.",
+      "description": "The tokenizer's version, the word rules, the lexicon's version and the sidecar's, joined by ';', as in sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=<version>;sidecar=3. The lexicon's version holds ';' too, so compare the whole string. A change in any part can change the tokens of the same text.",
       "pattern": "^.+;words=[0-9]+;lexicon=.+;sidecar=[0-9]+$"
     },
     "words": {
@@ -23,7 +23,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "tokens", "phrases"],
+        "required": ["id", "tokens", "phrases", "blind"],
         "properties": {
           "id": { "type": "string" },
           "tokens": {
@@ -34,6 +34,12 @@
             "type": "array",
             "description": "The block's phrases in text order, never overlapping, possibly none. A phrase lies over the tokens and changes none of them.",
             "items": { "$ref": "#/$defs/phrase" }
+          },
+          "blind": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "The s of each top-level token whose reading the sentence couldn't have changed, in text order, possibly none. Sudachi's dictionary has other entries with the token's surface, dictionary form, part of speech and connection ids that read it differently, so its fixed costs alone picked the reading, as with 瞬く read しばたたく. A rival counts only when it reads one of the word's offered entries that isn't all affix or counter senses (suf, pref, ctr, n-suf, n-pref), so 顔's suffix がお doesn't make 顔 blind. When an offered entry with the token's own reading is common, the rival's entry must be common and so must the rival's own kana form there, so 男 read おとこ isn't blind for the rare おのこ, nor 女性 じょせい for にょしょう, while 瞬く read しばたたく, whose entry isn't common, weighs every rival. Readings that one JMdict entry gives the same senses don't count, and a joined unit is never blind.",
+            "items": { "$ref": "#/$defs/offset" }
           }
         }
       }
@@ -49,7 +55,7 @@
       "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }]
     },
     "reading": {
-      "description": "The hiragana reading of this occurrence, or null when its text has no kanji.",
+      "description": "The hiragana reading of this occurrence, or null when its text has no kanji. When Sudachi's reading is a kana form of exactly one offered entry, and the entry's first reading takes the same senses, it is that first reading, so 言っ reads いっ where Sudachi gave ゆっ.",
       "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
     },
     "subToken": {
@@ -93,10 +99,32 @@
       ],
       "items": false
     },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seq", "common", "readings"],
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The JMdict seq, the part of a sense key before the colon."
+        },
+        "common": {
+          "type": "boolean",
+          "description": "For a lemma with a kanji, the kanji form it is spelled with is common in the entry and so is one of readings. For a kana lemma, its kana form is common in the entry."
+        },
+        "readings": {
+          "type": "array",
+          "uniqueItems": true,
+          "description": "The entry's kana forms that read this spelling, in hiragana and JMdict's order. A form whose appliesToKanji leaves the spelling out is not here, nor a search-only (sk) form, nor an outdated, irregular or rare one (ok, ik, rk) unless the entry has nothing else. A kana lemma reads as itself.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "word": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["lemma", "pos", "isProper", "reading", "jlpt", "readings", "senses"],
+      "required": ["lemma", "pos", "isProper", "reading", "jlpt", "readings", "senses", "entries"],
       "properties": {
         "lemma": {
           "type": "string",
@@ -114,7 +142,7 @@
         },
         "reading": {
           "type": "string",
-          "description": "The lemma's reading in hiragana, the same for every occurrence. It comes from the entries that match Sudachi's reading of the lemma, as shimen's own word rows do."
+          "description": "The lemma's reading in hiragana, the same for every occurrence. It comes from the entries that match Sudachi's reading of the lemma, as shimen's own word rows do, and is the first of the first such entry's entries readings."
         },
         "jlpt": {
           "description": "The JLPT level from 5 (easiest) to 1, or null, from the same entries as reading.",
@@ -128,7 +156,7 @@
         },
         "senses": {
           "type": "array",
-          "description": "The senses of the offered entries. The entries that match Sudachi's reading come first, in the lexicon's order, then the others written with the lemma, common ones first, then by seq. Within an entry, senses follow JMdict's order.",
+          "description": "The senses of the offered entries. The entries that match Sudachi's reading come first, in the lexicon's order, then the others written with the lemma, common ones first, then by seq. Within an entry, senses follow JMdict's order. A sense JMdict restricts to other spellings, or to readings this spelling lacks, is left out.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -140,9 +168,21 @@
                 "description": "<JMdict seq>:<n>, n counted from 1 within the entry, the key shimen's annotations use."
               },
               "pos": { "type": "array", "items": { "type": "string" } },
-              "gloss": { "type": "array", "items": { "type": "string" } }
+              "gloss": { "type": "array", "items": { "type": "string" } },
+              "r": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "description": "Present only when JMdict restricts the sense to some of the readings of its entry: those readings, in hiragana. It is left out when the sense takes every reading in its entry's readings, and it can name a reading that readings leaves out as outdated.",
+                "items": { "type": "string", "minLength": 1 }
+              }
             }
           }
+        },
+        "entries": {
+          "type": "array",
+          "description": "One item per offered JMdict entry, in the order their senses come in senses.",
+          "items": { "$ref": "#/$defs/entry" }
         }
       }
     }

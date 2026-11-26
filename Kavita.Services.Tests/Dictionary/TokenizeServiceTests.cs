@@ -370,7 +370,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     {
         var (_, service, files) = await Setup();
         var blocks = SampleBlocks();
-        blocks.Add(Block(4, string.Empty));
+        blocks.Add(Block(5, string.Empty));
         blocks[3] = blocks[3] with { Ruby = [new RubyDto(0, 2, "かみさま")] };
         _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 2, Arg.Any<CancellationToken>()).Returns(blocks);
         _httpTest.RespondWith(SampleResponse);
@@ -386,9 +386,13 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
 
         var (stored, version) = SavedUnit();
         Assert.Equal(sample.Version, version);
-        Assert.Equal([0, 1, 2, 3, 4], stored.Select(b => b.Index));
+        Assert.Equal([0, 1, 2, 3, 4, 5], stored.Select(b => b.Index));
         Assert.Equal(blocks.Select(b => b.Text), stored.Select(b => b.Text));
-        Assert.Empty(stored[4].Tokens);
+        Assert.Empty(stored[5].Tokens);
+        // Blind offsets are the block's own, so they're stored as the sidecar sent them
+        Assert.Equal([2], stored[4].Blind);
+        Assert.Equal([6], stored[1].Blind);
+        Assert.Empty(stored[5].Blind);
 
         // 経済政策 is word 4 with the parts 経済 (word 2) and 政策 (word 3)
         var compound = stored[0].Tokens[4];

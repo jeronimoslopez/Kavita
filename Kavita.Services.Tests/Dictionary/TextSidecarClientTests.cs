@@ -35,9 +35,11 @@ public class TextSidecarClientTests : IDisposable
         using var body = JsonDocument.Parse(call.RequestBody!);
         Assert.Equal(["0", "1", "2"], body.RootElement.GetProperty("blocks").EnumerateArray().Select(b => b.GetProperty("id").GetString()));
         Assert.Equal("上手に店を開く。", body.RootElement.GetProperty("blocks")[2].GetProperty("text").GetString());
-        Assert.Equal(23, response.Words.Count);
+        Assert.Equal(28, response.Words.Count);
         Assert.Equal(new TokenDto(6, 8, 8, "つらい", null), response.Blocks[1].Tokens[4]);
         Assert.Equal([new PhraseDto(3, 7, 14)], response.Blocks[2].Phrases);
+        Assert.Equal([6], response.Blocks[1].Blind);
+        Assert.Equal(3, response.Words[24].Entries!.Count);
     }
 
     [Fact]
@@ -82,6 +84,66 @@ public class TextSidecarClientTests : IDisposable
         Assert.Equal(2, response.Words.Count);
         Assert.Equal(0, response.Blocks[0].Tokens[0].W);
         Assert.Equal(1, response.Blocks[^1].Tokens[0].W);
+    }
+
+    [Fact]
+    public async Task Tokenize_SplitAnswers_KeepEachBlocksBlindOffsetsAndEachWordsEntriesAndRestrictions()
+    {
+        var first = new TokenizeResponseDto
+        {
+            Version = "lexicon=x;sidecar=3",
+            Words = [new SidecarWordDto
+            {
+                Lemma = "今日", Pos = "名詞", Reading = "きょう", Readings = ["きょう", "こんにち"],
+                Senses = [new SenseDto("1:1", ["n"], ["today"]), new SenseDto("1:2", ["n"], ["these days"], ["こんにち"])],
+                Entries = [new WordEntryDto(1, true, ["きょう", "こんにち"])],
+            }],
+            Blocks = Enumerable.Range(0, TextSidecarClient.MaxBlocksPerRequest)
+                .Select(i => new TokenizedBlockDto { Id = i.ToString(), Tokens = [new TokenDto(0, 2, 0, "きょう", null)], Blind = i == 0 ? [0] : [] })
+                .ToList(),
+        };
+        var second = new TokenizeResponseDto
+        {
+            Version = "lexicon=x;sidecar=3",
+            Words = [new SidecarWordDto
+            {
+                Lemma = "瞬く", Pos = "動詞", Reading = "しばたたく", Readings = ["しばたたく", "またたく"],
+                Senses = [new SenseDto("2:1", ["v5k"], ["to blink"]), new SenseDto("3:1", ["v5k"], ["to twinkle"])],
+                Entries = [new WordEntryDto(2, false, ["しばたたく"]), new WordEntryDto(3, true, ["またたく"])],
+            }],
+            Blocks = [new TokenizedBlockDto { Id = TextSidecarClient.MaxBlocksPerRequest.ToString(), Tokens = [new TokenDto(0, 2, 0, "しばたたく", null)], Blind = [0] }],
+        };
+        _httpTest.RespondWithJson(first).RespondWithJson(second);
+        var blocks = Enumerable.Range(0, TextSidecarClient.MaxBlocksPerRequest + 1)
+            .Select(i => new TokenizeBlockDto(i.ToString(), "今日"))
+            .ToList();
+
+        var response = await _client.TokenizeAsync("http://text:8000", blocks);
+
+        Assert.Equal(2, _httpTest.CallLog.Count);
+        Assert.Equal([0], response.Blocks[0].Blind);
+        Assert.Empty(response.Blocks[1].Blind);
+        Assert.Equal([0], response.Blocks[^1].Blind);
+        Assert.Equal(1, response.Blocks[^1].Tokens[0].W);
+        Assert.Equal([1L], response.Words[0].Entries!.Select(e => e.Seq));
+        Assert.Equal(["こんにち"], response.Words[0].Senses[1].R!);
+        Assert.Null(response.Words[0].Senses[0].R);
+        Assert.Equal([2L, 3L], response.Words[1].Entries!.Select(e => e.Seq));
+    }
+
+    [Fact]
+    public void Answer_FromVersion2_ReadsWithNoEntriesRestrictionsOrBlindOffsets()
+    {
+        var response = JsonSerializer.Deserialize<TokenizeResponseDto>("""
+            {"version": "lexicon=x;sidecar=2",
+             "words": [{"lemma": "猫", "pos": "名詞", "isProper": false, "reading": "ねこ", "jlpt": null, "readings": ["ねこ"],
+                        "senses": [{"key": "1:1", "pos": ["n"], "gloss": ["cat"]}]}],
+             "blocks": [{"id": "0", "tokens": [[0, 1, 0, "ねこ", null]], "phrases": []}]}
+            """)!;
+
+        Assert.Null(response.Words[0].Entries);
+        Assert.Null(response.Words[0].Senses[0].R);
+        Assert.Empty(response.Blocks[0].Blind);
     }
 
     /// <summary>

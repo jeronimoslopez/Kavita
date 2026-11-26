@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
@@ -55,6 +56,12 @@ public sealed record TokenizedBlockDto
     /// </summary>
     [JsonPropertyName("phrases")]
     public IList<PhraseDto> Phrases { get; init; } = [];
+    /// <summary>
+    /// The start offsets of the top-level tokens whose reading the tokenizer chose by fixed cost alone, so the sentence
+    /// had no say in it. A sidecar before version 3 sends none, and the list is empty then
+    /// </summary>
+    [JsonPropertyName("blind")]
+    public IList<int> Blind { get; init; } = [];
 }
 
 /// <summary>
@@ -85,6 +92,12 @@ public sealed record SidecarWordDto
     public IList<string> Readings { get; init; } = [];
     [JsonPropertyName("senses")]
     public IList<SenseDto> Senses { get; init; } = [];
+    /// <summary>
+    /// The JMdict entries the senses come from, in the order their senses appear. Null when the answer has no entries
+    /// field, as a sidecar before version 3 sends it, and empty for a version 3 word no entry matched
+    /// </summary>
+    [JsonPropertyName("entries")]
+    public IList<WordEntryDto>? Entries { get; init; }
 
     /// <summary>
     /// A word with more than one sense or more than one reading. Only its occurrences get an analysis row. The reading
@@ -98,7 +111,30 @@ public sealed record SidecarWordDto
 /// One JMdict sense
 /// </summary>
 /// <param name="Key"><c>"&lt;seq&gt;:&lt;n&gt;"</c>, the JMdict entry's sequence number and the sense's 1-based position in it</param>
+/// <param name="R">The readings of its entry the sense is restricted to, in hiragana. Null, and left out of the JSON,
+/// when the sense takes every reading of its entry</param>
 public sealed record SenseDto(
     [property: JsonPropertyName("key")] string Key,
     [property: JsonPropertyName("pos")] IList<string> Pos,
-    [property: JsonPropertyName("gloss")] IList<string> Gloss);
+    [property: JsonPropertyName("gloss")] IList<string> Gloss,
+    [property: JsonPropertyName("r"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IList<string>? R = null)
+{
+    /// <summary>
+    /// The JMdict seq of the sense's entry, the part of <see cref="Key"/> before the colon, or null when the key has
+    /// no number there
+    /// </summary>
+    [JsonIgnore]
+    public long? Seq => Key.IndexOf(':') is > 0 and var colon && long.TryParse(Key.AsSpan(0, colon), out var seq) ? seq : null;
+}
+
+/// <summary>
+/// One JMdict entry a word's senses come from
+/// </summary>
+/// <param name="Seq">The JMdict seq, the part of a sense key before the colon</param>
+/// <param name="Common">Whether the spelling is a common form in the entry</param>
+/// <param name="Readings">The entry's kana forms that read the spelling, in hiragana and JMdict's order</param>
+public sealed record WordEntryDto(
+    [property: JsonPropertyName("seq")] long Seq,
+    [property: JsonPropertyName("common")] bool Common,
+    [property: JsonPropertyName("readings")] IList<string> Readings);

@@ -18,8 +18,8 @@ public class TokenizeContractTests
 
         Assert.NotNull(response);
         Assert.StartsWith("sudachipy=", response.Version);
-        Assert.EndsWith(";sidecar=2", response.Version);
-        Assert.Equal(["0", "1", "2", "3"], response.Blocks.Select(b => b.Id));
+        Assert.EndsWith(";sidecar=3", response.Version);
+        Assert.Equal(["0", "1", "2", "3", "4"], response.Blocks.Select(b => b.Id));
 
         var harsh = response.Words[8];
         Assert.Equal("辛い", harsh.Lemma);
@@ -55,6 +55,38 @@ public class TokenizeContractTests
         Assert.Equal([new PhraseDto(3, 7, 14)], response.Blocks[2].Phrases);
         Assert.Equal("店を開く", response.Words[14].Lemma);
         Assert.Empty(response.Blocks[0].Phrases);
+    }
+
+    [Fact]
+    public void SampleResponse_CarriesEntriesRestrictionsAndBlindOffsets()
+    {
+        var response = JsonSerializer.Deserialize<TokenizeResponseDto>(SampleResponse)!;
+
+        // 瞬く has three entries, and the tokenizer read it しばたたく by fixed cost alone
+        var blink = response.Words[24];
+        Assert.Equal("瞬く", blink.Lemma);
+        var entries = blink.Entries!;
+        Assert.Equal([2831002L, 1341200L, 2831001L], entries.Select(e => e.Seq));
+        Assert.Equal(["またたく", "まばたく", "まだたく"], entries[1].Readings);
+        Assert.True(entries[1].Common);
+        Assert.False(entries[0].Common);
+        Assert.Equal(new TokenDto(2, 4, 24, "しばたたく", null), response.Blocks[4].Tokens[2]);
+        Assert.Equal([2], response.Blocks[4].Blind);
+
+        // 今日's second sense is restricted to こんにち, and its first takes every reading
+        var today = response.Words[0];
+        Assert.Null(today.Senses[0].R);
+        Assert.Equal(["こんにち"], today.Senses[1].R!);
+        Assert.Equal(1579110L, today.Senses[1].Seq);
+
+        // 言う has one entry for both its readings, and 言っ reads いっ
+        var say = response.Words[27];
+        Assert.Equal(("言う", 1), (say.Lemma, say.Entries!.Count));
+        Assert.Equal(["いう", "ゆう"], say.Entries[0].Readings);
+        Assert.Equal(new TokenDto(17, 19, 27, "いっ", null), response.Blocks[4].Tokens[15]);
+
+        Assert.All(response.Words, w => Assert.NotEmpty(w.Entries!));
+        Assert.Equal([3], response.Blocks[0].Blind);
     }
 
     [Fact]
