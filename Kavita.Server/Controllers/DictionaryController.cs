@@ -22,7 +22,8 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     public const int MaxPassageLimit = 20;
 
     /// <summary>
-    /// The page's blocks with their tokens, the words they point at, and the stored AI answers
+    /// The page's blocks with their tokens and phrases, the words they point at with their senses, and the stored AI
+    /// answers. That's everything <see cref="Lookup"/> reads, so the reader can answer a tap on this page itself
     /// </summary>
     /// <param name="page">0-based, as the book reader counts pages</param>
     /// <returns>No content when the page isn't tokenized yet. It moves up the queue, and DictionaryPagesReady follows.

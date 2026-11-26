@@ -1,3 +1,6 @@
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Kavita.API.Database;
 using Kavita.API.Services;
 using Kavita.API.Services.SignalR;
@@ -123,9 +126,51 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         Assert.Equal([6, 4], page.Blocks.Select(b => b.Length));
         Assert.Equal(unit.Blocks[1].Tokens, page.Blocks[1].Tokens);
         Assert.Equal([Karai.Id, Nihongo.Id, Nihon.Id, Go.Id], page.Words.Keys.Order());
-        Assert.Equal(new WordBriefDto("辛い", "からい", 3), page.Words[Karai.Id]);
-        Assert.Equal([new AnalysisEntryDto(0, 3, HarshSense.Key, "つらい")], page.Analysis);
+        var karai = page.Words[Karai.Id];
+        Assert.Equal(("辛い", "からい", 3, "形容詞", false), (karai.Lemma, karai.Reading, karai.Jlpt, karai.Pos, karai.IsProper));
+        Assert.Equal(["からい", "つらい"], karai.Readings);
+        Assert.Equal([SpicySense, HarshSense], karai.Senses);
+        Assert.Equal(Go.Senses, page.Words[Go.Id].Senses);
+        Assert.All(page.Blocks, b => Assert.Null(b.Phrases));
+        Assert.Equal([new AnalysisEntryDto(0, 3, HarshSense.Key, "つらい", "claude-sonnet")], page.Analysis);
         _workerSignal.DidNotReceive().Wake();
+    }
+
+    [Fact]
+    public async Task GetEpubPage_CarriesTheBlocksPhrasesInOrderAndTheirWords()
+    {
+        var book = await Setup();
+        GivenPageWithPhrases(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+
+        Assert.NotNull(page);
+        Assert.Equal([new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id)], page.Blocks[0].Phrases);
+        // No token points at either phrase word, so only the phrases bring them in
+        Assert.Equal([Ki.Id, Suru.Id, KiGaSuru.Id, GaSuru.Id], page.Words.Keys.Order());
+        Assert.Equal(KiGaSuru.Senses, page.Words[KiGaSuru.Id].Senses);
+        Assert.Equal("表現", page.Words[KiGaSuru.Id].Pos);
+        Assert.Empty(page.Words[GaSuru.Id].Senses);
+    }
+
+    [Fact]
+    public async Task GetEpubPage_OfAPageStoredBeforePhrasesWritesNoPhrasesAndOmitsAFalseIsProper()
+    {
+        var book = await Setup();
+        GivenTokenizedPage(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(page, Web));
+
+        var blocks = json.RootElement.GetProperty("blocks");
+        Assert.All(blocks.EnumerateArray(), b => Assert.False(b.TryGetProperty("phrases", out _)));
+        Assert.Equal("""[[0,3,20,"にほんご",[[0,2,21,"にほん"],[2,3,22,"ご"]]],[3,4,null,null,null]]""",
+            blocks[1].GetProperty("tokens").GetRawText());
+        var karai = json.RootElement.GetProperty("words").GetProperty("11");
+        Assert.False(karai.TryGetProperty("isProper", out _));
+        Assert.Equal(3, karai.GetProperty("jlpt").GetInt32());
+        Assert.Equal("""[{"key":"1001:1","pos":["adj-i"],"gloss":["spicy"]},{"key":"1001:2","pos":["adj-i"],"gloss":["harsh"]}]""",
+            karai.GetProperty("senses").GetRawText());
     }
 
     [Fact]
@@ -361,6 +406,164 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
 
         Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null)));
         await _store.DidNotReceiveWithAnyArgs().RaiseAnalysisPriorityAsync(default, default, default, default, default);
+    }
+
+    #endregion
+
+    #region Lookup parity fixture
+
+    /// <summary>
+    /// The web defaults ASP.NET writes answers with. Non-ASCII stays unescaped so the fixture reads as Japanese,
+    /// which changes the bytes and not the values
+    /// </summary>
+    private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    /// <summary>
+    /// Read by the reader's local-lookup.spec.ts, which checks that its lookups give these answers
+    /// </summary>
+    private static readonly string ParityFixturePath = Path.Join(Directory.GetCurrentDirectory(),
+        "../../../../UI/Web/src/app/reader-shared/dictionary/fixtures/lookup-parity.json");
+
+    private static readonly StoredWord Totemo = new(41, "とても", "副詞", false, "とても", 4, ["とても"],
+        [new SenseDto("4001:1", ["adv"], ["very", "awfully"])], "lex1");
+    private static readonly StoredWord Kamisama = new(80, "神様", "名詞", false, "かみさま", null, ["かみさま"],
+        [new SenseDto("8000:1", ["n"], ["God"]), new SenseDto("8000:2", ["n"], ["superior person"])], "lex1");
+    private static readonly StoredWord Kami = new(81, "神", "名詞", false, "かみ", 4, ["かみ", "しん"],
+        [new SenseDto("8001:1", ["n"], ["god", "deity"])], "lex1");
+    private static readonly StoredWord Shikaru = new(60, "𠮟る", "動詞", false, "しかる", 2, ["しかる"],
+        [new SenseDto("6000:1", ["v5r", "vt"], ["to scold"])], "lex1");
+    private static readonly StoredWord Tanaka = new(70, "田中", "名詞", true, "たなか", null, ["たなか"],
+        [new SenseDto("7000:1", ["n-pr"], ["Tanaka"])], "lex1");
+    /// <summary>
+    /// Word ids that tokens and phrases point at and the store doesn't have
+    /// </summary>
+    private const long MissingTokenWord = 888;
+    private const long MissingPhraseWord = 999;
+
+    /// <summary>
+    /// One page with every kind of tap the reader can send
+    /// </summary>
+    private ReadingUnit GivenParityPage(MangaFile file, int page)
+    {
+        var unit = new ReadingUnit(7, ReadingUnitKind.Epub, file.Id, page, ReadingUnitState.Done, "stamp", "sidecar=2",
+        [
+            // A plain word, then 辛かった inflected from 辛い, then punctuation
+            new StoredBlock(0, "とても辛かった。",
+            [
+                new TokenDto(0, 3, Totemo.Id, "とても", null), new TokenDto(3, 7, Karai.Id, "からかった", null),
+                new TokenDto(7, 8, null, null, null),
+            ]),
+            // The compound 日本語, a particle without a word, and 神様 joined from 神 and a part without a word
+            new StoredBlock(1, "日本語と神様",
+            [
+                new TokenDto(0, 3, Nihongo.Id, "にほんご", [new SubTokenDto(0, 2, Nihon.Id, "にほん"), new SubTokenDto(2, 3, Go.Id, "ご")]),
+                new TokenDto(3, 4, null, null, null),
+                new TokenDto(4, 6, Kamisama.Id, "かみさま", [new SubTokenDto(4, 5, Kami.Id, "かみ"), new SubTokenDto(5, 6, null, "さま")]),
+            ]),
+            // Phrase 2's word is missing from the store, so lookups leave it out
+            new StoredBlock(2, "気がした。",
+            [
+                new TokenDto(0, 1, Ki.Id, "き", null), new TokenDto(1, 2, null, null, null),
+                new TokenDto(2, 4, Suru.Id, "した", [new SubTokenDto(2, 3, Suru.Id, "し"), new SubTokenDto(3, 4, null, null)]),
+                new TokenDto(4, 5, null, null, null),
+            ]) { Phrases = [new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id), new PhraseDto(0, 2, MissingPhraseWord)] },
+            // 𠮟 is a surrogate pair, so 𠮟る is three UTF-16 units. 田中 is a proper noun
+            new StoredBlock(3, "𠮟る田中",
+                [new TokenDto(0, 3, Shikaru.Id, "しかる", null), new TokenDto(3, 5, Tanaka.Id, "たなか", null)]),
+            new StoredBlock(4, "謎だ", [new TokenDto(0, 1, MissingTokenWord, "なぞ", null), new TokenDto(1, 2, null, null, null)]),
+        ]);
+        _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
+        GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka);
+        _store.GetUnitAnalysisAsync(unit.Id, Arg.Any<CancellationToken>()).Returns([
+            Row(1, unit.Id, 0, 3, 7, Karai.Id, AnalysisState.Done, sense: HarshSense.Key, reading: "つらい", generator: "claude-sonnet"),
+            Row(2, unit.Id, 0, 0, 3, Totemo.Id, AnalysisState.Pending),
+            Row(3, unit.Id, 1, 4, 6, Kamisama.Id, AnalysisState.Done, generator: "claude-haiku"),
+            Row(4, unit.Id, 2, 2, 4, Suru.Id, AnalysisState.Done, sense: "3002:1", generator: "claude-sonnet"),
+        ]);
+        return unit;
+    }
+
+    /// <summary>
+    /// Taps as (block, s, sub, phrase). The comment on each says what the server answers
+    /// </summary>
+    private static readonly (int Block, int S, int? Sub, int? Phrase)[] ParityTaps =
+    [
+        (0, 0, null, null), // a plain word
+        (0, 3, null, null), // an inflected word with its analysis
+        (0, 3, 0, null), // null, the token has no parts
+        (0, 7, null, null), // null, punctuation has no word
+        (0, 1, null, null), // null, no token starts there
+        (9, 0, null, null), // null, no such block
+        (1, 0, null, null), // a compound with its parts
+        (1, 0, 0, null), // a part, keeping the parts
+        (1, 0, 1, null),
+        (1, 0, 2, null), // null, past the parts
+        (1, 0, -1, null), // null
+        (1, 4, null, null), // a joined token whose analysis has no sense or reading
+        (1, 4, 0, null), // its part with a word
+        (1, 4, 1, null), // null, its part without a word
+        (2, 0, null, null), // a word inside one phrase whose word exists
+        (2, 2, null, null), // a word inside two phrases, with its analysis
+        (2, 2, 0, null), // a part inside two phrases, with no analysis
+        (2, 1, null, null), // null, inside phrases but without a word
+        (2, 2, null, 0), // a phrase
+        (2, 1, null, 1), // a phrase whose word has no senses
+        (2, 3, 1, 0), // a phrase, which ignores sub and needs no token at s
+        (2, 0, null, 1), // null, before the phrase
+        (2, 4, null, 0), // null, at the phrase's end
+        (2, 0, null, 2), // null, the phrase's word is missing
+        (2, 0, null, 3), // null, past the phrases
+        (2, 0, null, -1), // null
+        (3, 0, null, null), // a surface with a surrogate pair
+        (3, 3, null, null), // a proper noun
+        (4, 0, null, null), // null, the token's word is missing
+    ];
+
+    /// <summary>
+    /// Builds the page response and the lookup answer for every tap in <see cref="ParityTaps"/>, and checks them
+    /// against the checked-in fixture. Run with <c>KAVITA_UPDATE_FIXTURES=1</c> to write the fixture instead
+    /// </summary>
+    [Fact]
+    public async Task ParityFixture_MatchesThePageResponseAndTheLookupAnswers()
+    {
+        var book = await Setup();
+        var unit = GivenParityPage(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var taps = new JsonArray();
+        foreach (var (block, s, sub, phrase) in ParityTaps)
+        {
+            var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub, phrase));
+            taps.Add(new JsonObject
+            {
+                ["request"] = new JsonObject { ["block"] = block, ["s"] = s, ["sub"] = sub, ["phrase"] = phrase },
+                ["result"] = JsonSerializer.SerializeToNode(result, Web),
+            });
+        }
+
+        var fixture = new JsonObject
+        {
+            ["page"] = JsonSerializer.SerializeToNode(page, Web),
+            // The reader rebuilds these from the DOM
+            ["texts"] = new JsonObject(unit.Blocks.Select(b =>
+                new KeyValuePair<string, JsonNode?>(b.Index.ToString(), JsonValue.Create(b.Text)))),
+            ["taps"] = taps,
+        };
+        var json = fixture.ToJsonString(new JsonSerializerOptions(Web) { WriteIndented = true }) + "\n";
+
+        if (Environment.GetEnvironmentVariable("KAVITA_UPDATE_FIXTURES") == "1")
+        {
+            await File.WriteAllTextAsync(ParityFixturePath, json);
+            return;
+        }
+
+        Assert.True(File.Exists(ParityFixturePath), $"Run with KAVITA_UPDATE_FIXTURES=1 to write {ParityFixturePath}");
+        var stored = (await File.ReadAllTextAsync(ParityFixturePath)).ReplaceLineEndings("\n");
+        Assert.True(stored == json, "The page response or a lookup answer changed. Run the test with " +
+                                    "KAVITA_UPDATE_FIXTURES=1 to write the fixture, then run the UI's local-lookup spec");
     }
 
     #endregion
