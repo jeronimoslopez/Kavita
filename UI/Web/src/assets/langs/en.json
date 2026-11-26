@@ -5136,7 +5136,14 @@
         "no-entry": "No dictionary entry for this word",
         "loading": "Looking up…",
         "lookup-failed": "The lookup failed. Try again in a moment.",
-        "ai-sense": "Sense chosen by AI"
+        "ai-sense": "Sense chosen by AI",
+        "readings": "Readings",
+        "from-book": "from this book",
+        "from-series": "from this series",
+        "your-choice": "your choice",
+        "best-guess": "best guess",
+        "use-reading": "Use this reading",
+        "stop-using-reading": "Stop using this reading"
     },
     "yomitan-settings": {
         "description": "These are the settings of Yomitan, the pop-up dictionary in the book reader. Changes are saved as you make them and apply to every reader you have open. Turn Yomitan on for a reading profile from the reader's General Settings.",
