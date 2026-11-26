@@ -1,7 +1,12 @@
 import {HttpClient} from '@angular/common/http';
 import {inject, Injectable} from '@angular/core';
 import {environment} from '../../environments/environment';
-import {DictionaryLookupRequest, DictionaryLookupResult, EpubPageTokens} from '../_models/dictionary/dictionary';
+import {
+  DictionaryLookupRequest,
+  DictionaryLookupResult,
+  EpubPageTokens,
+  ReadingChoiceRequest,
+} from '../_models/dictionary/dictionary';
 
 @Injectable({
   providedIn: 'root'
@@ -22,6 +27,15 @@ export class DictionaryService {
   /** @returns Null when nothing can be looked up at that offset */
   lookup(request: DictionaryLookupRequest) {
     return this.httpClient.post<DictionaryLookupResult | null>(this.baseUrl + 'dictionary/lookup', request);
+  }
+
+  /** Saves the reading the user picked for a word in a series, replacing any saved before */
+  saveReadingChoice(request: ReadingChoiceRequest) {
+    return this.httpClient.put(this.baseUrl + 'dictionary/reading-choice', request);
+  }
+
+  clearReadingChoice(seriesId: number, wordId: number) {
+    return this.httpClient.delete(this.baseUrl + `dictionary/reading-choice?seriesId=${seriesId}&wordId=${wordId}`);
   }
 
   /** Call when a chapter opens, so it and the next chapter are tokenized first */

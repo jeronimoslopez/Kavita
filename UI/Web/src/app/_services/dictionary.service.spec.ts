@@ -37,4 +37,23 @@ describe('DictionaryService', () => {
     req.flush(phrase);
     expect(await answer).toEqual(phrase);
   });
+
+  it('saves a reading choice with a PUT of its body', async () => {
+    const done = firstValueFrom(service.saveReadingChoice({seriesId: 3, wordId: 9, reading: 'またたく'}));
+
+    const req = http.expectOne(environment.apiUrl + 'dictionary/reading-choice');
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({seriesId: 3, wordId: 9, reading: 'またたく'});
+    req.flush(null);
+    await done;
+  });
+
+  it('clears a reading choice with a DELETE naming the series and word', async () => {
+    const done = firstValueFrom(service.clearReadingChoice(3, 9));
+
+    const req = http.expectOne(environment.apiUrl + 'dictionary/reading-choice?seriesId=3&wordId=9');
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+    await done;
+  });
 });
