@@ -45,6 +45,28 @@
           <p class="dp-reading dp-ai-reading" lang="ja" data-testid="popup-ai-reading">{{ reading }}</p>
         }
 
+        @if (partOf().length > 0) {
+          <div class="dp-parts" data-testid="popup-part-of">
+            <p class="dp-label">{{ t('part-of') }}</p>
+            <ul class="dp-rows">
+              @for (p of partOf(); track p.index) {
+                <li>
+                  <button type="button" class="dp-link-row" data-testid="popup-phrase"
+                          [attr.aria-pressed]="view().openPhrase === p.index" (click)="phrase.emit(p.index)">
+                    <span class="dp-row-word">
+                      <span lang="ja">{{ p.lemma }}</span>&ngsp;
+                      <span class="dp-row-reading" lang="ja">{{ p.reading }}</span>
+                    </span>
+                    @if (p.gloss) {
+                      <span class="dp-meta" data-testid="popup-phrase-gloss">{{ p.gloss }}</span>
+                    }
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
         @if (senses().length > 0) {
           <ol class="dp-senses" [attr.aria-label]="t('senses')" data-testid="popup-senses">
             @for (s of senses(); track s.sense.key) {
@@ -77,28 +99,6 @@
                           [attr.aria-pressed]="view().openSub === p.sub" (click)="part.emit(p.sub)">
                     <span lang="ja">{{ p.lemma }}</span>&ngsp;
                     <span class="dp-chip-reading" lang="ja">{{ p.reading }}</span>
-                  </button>
-                </li>
-              }
-            </ul>
-          </div>
-        }
-
-        @if (partOf().length > 0) {
-          <div class="dp-parts" data-testid="popup-part-of">
-            <p class="dp-label">{{ t('part-of') }}</p>
-            <ul class="dp-rows">
-              @for (p of partOf(); track p.index) {
-                <li>
-                  <button type="button" class="dp-link-row" data-testid="popup-phrase"
-                          [attr.aria-pressed]="view().openPhrase === p.index" (click)="phrase.emit(p.index)">
-                    <span class="dp-row-word">
-                      <span lang="ja">{{ p.lemma }}</span>&ngsp;
-                      <span class="dp-row-reading" lang="ja">{{ p.reading }}</span>
-                    </span>
-                    @if (p.gloss) {
-                      <span class="dp-meta" data-testid="popup-phrase-gloss">{{ p.gloss }}</span>
-                    }
                   </button>
                 </li>
               }
