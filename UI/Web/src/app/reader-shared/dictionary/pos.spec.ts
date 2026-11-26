@@ -9,6 +9,10 @@ describe('posLabel', () => {
     expect(posLabel('exp')).toBe('expression');
   });
 
+  it('names the tokenizer part of speech the server gives a phrase', () => {
+    expect(posLabel('表現')).toBe('expression');
+  });
+
   it('groups classical verb classes and drops repeated labels', () => {
     expect(posLabel('v2r-s')).toBe('archaic verb');
     expect(posLabel('v4k')).toBe('archaic verb');

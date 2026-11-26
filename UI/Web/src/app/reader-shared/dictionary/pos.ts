@@ -17,6 +17,8 @@ const POS: ReadonlyMap<string, string> = new Map(Object.entries({
   num: 'number',
   ctr: 'counter',
   exp: 'expression',
+  // The tokenizer's name, which the server gives a phrase from partOf
+  表現: 'expression',
   int: 'interjection',
   conj: 'conjunction',
   prt: 'particle',
