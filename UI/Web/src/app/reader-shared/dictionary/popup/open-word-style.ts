@@ -7,7 +7,7 @@ import {OPEN_WORD_HIGHLIGHT} from '../highlight';
  */
 export const OPEN_WORD_CSS = `::highlight(${OPEN_WORD_HIGHLIGHT}) {
   background-color: color-mix(in srgb, var(--primary-color) 28%, transparent);
-  text-decoration: underline 2px var(--primary-color);
+  text-decoration: underline 3px var(--primary-color);
   text-underline-offset: 3px;
 }`;
 

@@ -1,9 +1,9 @@
 import {DestroyRef, DOCUMENT, inject, Injectable, InjectionToken, Provider} from '@angular/core';
 import {filter, Subscription} from 'rxjs';
-import {DictionaryPagesEvent, EpubPageTokens} from '../../_models/dictionary/dictionary';
+import {DictionaryLookupRequest, DictionaryPagesEvent, EpubPageTokens} from '../../_models/dictionary/dictionary';
 import {DictionaryService} from '../../_services/dictionary.service';
 import {EVENTS, MessageHubService} from '../../_services/message-hub.service';
-import {enclosingBlock, readBlockText} from './block-text';
+import {enclosingBlock, rangeForBlockOffsets, readBlockText} from './block-text';
 import {EpubHit, locateEpubWord} from './epub-locator';
 import {clearOpenWord, markOpenWord} from './highlight';
 import {DictionaryPopupPresenter, PopupCloseReason} from './popup/dictionary-popup.presenter';
@@ -38,9 +38,12 @@ export interface ReaderDictionaryOptions {
   vertical: () => boolean;
 }
 
-/** One entry on the popup's stack. The first is the tapped word and each part chip pushes another */
+/** One entry on the popup's stack. The first is the tapped word and each part or Part of chip pushes another */
 interface StackEntry {
   sub: number | null;
+  phrase: number | null;
+  /** What the page highlights while the entry shows, the phrase's span for a phrase and the word otherwise */
+  range: Range;
   state: DictionaryPopupState;
 }
 
@@ -282,13 +285,15 @@ export class ReaderDictionaryController {
     this.lookups = new Subscription();
     this.dismissal = null;
     const open: OpenWord = {
-      hit, surface: surfaceOf(hit), chapterId, page, stack: [{sub: null, state: {kind: 'loading'}}],
+      hit, surface: surfaceOf(hit), chapterId, page,
+      stack: [{sub: null, phrase: null, range: hit.range, state: {kind: 'loading'}}],
       analysisArrived: false,
     };
     this.open = open;
     this.highlighter.mark(hit.range);
     this.presenter.show(hit.range, {vertical: this.vertical(), viaKeyboard}, {
       part: sub => this.openPart(sub),
+      phrase: index => this.openPhrase(index),
       back: () => this.back(),
       closed: reason => this.closedByPopup(reason),
     });
@@ -301,8 +306,25 @@ export class ReaderDictionaryController {
   private openPart(sub: number) {
     const open = this.open;
     if (open === null || open.stack[open.stack.length - 1].sub === sub) return;
-    const entry: StackEntry = {sub, state: {kind: 'loading'}};
+    const entry: StackEntry = {sub, phrase: null, range: open.hit.range, state: {kind: 'loading'}};
+    this.push(open, entry);
+  }
+
+  private openPhrase(index: number) {
+    const open = this.open;
+    if (open === null) return;
+    const top = open.stack[open.stack.length - 1];
+    if (top.phrase === index || top.state.kind !== 'result') return;
+    const phrase = top.state.result.partOf?.find(p => p.index === index);
+    if (phrase === undefined) return;
+    const range = phraseRange(open.hit, phrase.s, phrase.e) ?? open.hit.range;
+    this.push(open, {sub: null, phrase: index, range, state: {kind: 'loading'}});
+  }
+
+  private push(open: OpenWord, entry: StackEntry) {
+    const below = open.stack[open.stack.length - 1];
     open.stack.push(entry);
+    if (entry.range !== below.range) this.highlighter.mark(entry.range);
     this.render();
     this.fetch(open, entry, false);
   }
@@ -310,8 +332,10 @@ export class ReaderDictionaryController {
   private back() {
     const open = this.open;
     if (open === null || open.stack.length < 2) return;
+    const popped = open.stack[open.stack.length - 1];
     open.stack.pop();
     const entry = open.stack[open.stack.length - 1];
+    if (entry.range !== popped.range) this.highlighter.mark(entry.range);
     this.render();
     if (entry.state.kind === 'failed') {
       entry.state = {kind: 'loading'};
@@ -325,7 +349,10 @@ export class ReaderDictionaryController {
    * so a failure or an empty answer leaves that result in place
    */
   private fetch(open: OpenWord, entry: StackEntry, silent: boolean) {
-    const request = {chapterId: open.chapterId, page: open.page, block: open.hit.blockIndex, s: open.hit.s, sub: entry.sub};
+    const request: DictionaryLookupRequest = {
+      chapterId: open.chapterId, page: open.page, block: open.hit.blockIndex, s: open.hit.s, sub: entry.sub,
+      phrase: entry.phrase,
+    };
     this.lookups.add(this.dictionary.lookup(request).subscribe({
       next: result => {
         if (silent && result === null) return;
@@ -358,6 +385,7 @@ export class ReaderDictionaryController {
       surface: open.surface,
       canGoBack: open.stack.length > 1,
       openSub: top.sub,
+      openPhrase: top.phrase,
     });
   }
 
@@ -378,4 +406,10 @@ export class ReaderDictionaryController {
 function surfaceOf(hit: EpubHit): string {
   const block = enclosingBlock(hit.range.startContainer);
   return block === null ? '' : readBlockText(block).text.slice(hit.s, hit.e);
+}
+
+/** A Range over block offsets `[s, e)` in the hit's block, or null when the block's text doesn't reach them */
+function phraseRange(hit: EpubHit, s: number, e: number): Range | null {
+  const block = enclosingBlock(hit.range.startContainer);
+  return block === null ? null : rangeForBlockOffsets(readBlockText(block), s, e);
 }

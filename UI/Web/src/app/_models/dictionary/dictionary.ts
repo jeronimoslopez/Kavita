@@ -57,6 +57,8 @@ export interface DictionaryLookupRequest {
   s: number;
   /** Index into the token's parts, or null for the whole token */
   sub: number | null;
+  /** A `DictionaryPhrase.index` to look that phrase up instead, with `sub` null. Null or missing for the word */
+  phrase?: number | null;
 }
 
 export interface DictionaryWord {
@@ -90,13 +92,28 @@ export interface DictionaryPart {
   senses: Sense[];
 }
 
+/** A dictionary expression that contains the tapped word, such as 気がする around 気 */
+export interface DictionaryPhrase {
+  /** Send back as `phrase` to look the expression up */
+  index: number;
+  /** UTF-16 offsets of the expression in the block's text, like a token's */
+  s: number;
+  e: number;
+  lemma: string;
+  reading: string;
+  /** The phrase's first sense as short text, or empty */
+  gloss: string;
+}
+
 export interface DictionaryLookupResult {
   word: DictionaryWord;
   senses: Sense[];
-  /** Always null for a part of a compound */
+  /** Always null for a part of a compound and for a phrase */
   analysis: DictionaryAnalysis | null;
   /** The top-level token's parts, also while one part is open */
   parts: DictionaryPart[];
+  /** Expressions the word is part of. An older server leaves it out, and a phrase's own result has none */
+  partOf?: DictionaryPhrase[];
 }
 
 export interface AnalysisItem {

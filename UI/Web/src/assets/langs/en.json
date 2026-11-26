@@ -5132,6 +5132,7 @@
         "senses": "Senses",
         "used-here": "Used here",
         "parts": "Parts",
+        "part-of": "Part of",
         "no-entry": "No dictionary entry for this word",
         "loading": "Looking up…",
         "lookup-failed": "The lookup failed. Try again in a moment.",
