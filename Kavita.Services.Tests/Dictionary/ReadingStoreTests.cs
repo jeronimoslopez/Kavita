@@ -3,6 +3,7 @@ using Kavita.API.Services;
 using Kavita.Models.DTOs.Dictionary;
 using Kavita.Services.Dictionary;
 using Microsoft.Data.Sqlite;
+using Xunit.Abstractions;
 
 namespace Kavita.Services.Tests.Dictionary;
 
@@ -13,13 +14,15 @@ public class ReadingStoreTests : IDisposable
     private const string Lexicon = "lex-1";
     private const string Tokenizer = "sidecar=1";
 
+    private readonly ITestOutputHelper _output;
     private readonly string _directory;
     private readonly ReadingDatabase _database;
     private readonly ManualTime _time = new();
     private readonly ReadingStore _store;
 
-    public ReadingStoreTests()
+    public ReadingStoreTests(ITestOutputHelper output)
     {
+        _output = output;
         _directory = Path.Join(Path.GetTempPath(), "kavita-reading-tests", Guid.NewGuid().ToString("N"));
         // The database creates its own folder, so this one stays absent until the first connection
         _database = new ReadingDatabase(Path.Join(_directory, "reading", "reading.db"));
@@ -122,6 +125,14 @@ public class ReadingStoreTests : IDisposable
 
     private async Task<SqliteConnection> OpenAsync() => await _database.OpenConnectionAsync();
 
+    private async Task<string> TextAsync(string sql)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (string) (await command.ExecuteScalarAsync())!;
+    }
+
     private async Task<long> ScalarAsync(string sql)
     {
         await using var connection = await OpenAsync();
@@ -196,6 +207,62 @@ public class ReadingStoreTests : IDisposable
 
         Assert.Equal(1200, words.Count);
         Assert.Equal("w1199", words[ids[1199]].Lemma);
+    }
+
+    private static readonly SidecarWordDto Today = new()
+    {
+        Lemma = "今日", Pos = "名詞", Reading = "きょう", Jlpt = 5, Readings = ["きょう", "こんにち"],
+        Senses = [new SenseDto("1579110:1", ["n"], ["today"]), new SenseDto("1579110:2", ["n"], ["these days"], ["こんにち"])],
+        Entries = [new WordEntryDto(1579110, true, ["きょう", "こんにち"])],
+    };
+
+    [Fact]
+    public async Task GetWords_RoundTripsEntriesAndRestrictedSenses()
+    {
+        var id = (await _store.UpsertWordsAsync([Today], Lexicon))[0];
+
+        var word = (await _store.GetWordsAsync([id]))[id];
+
+        var entry = Assert.Single(word.Entries!);
+        Assert.Equal((1579110L, true), (entry.Seq, entry.Common));
+        Assert.Equal(["きょう", "こんにち"], entry.Readings);
+        Assert.Null(word.Senses[0].R);
+        Assert.Equal(["こんにち"], word.Senses[1].R!);
+        // Senses without a restriction are written without the key, as they were before restrictions
+        Assert.Equal("""[{"key":"1579110:1","pos":["n"],"gloss":["today"]},{"key":"1579110:2","pos":["n"],"gloss":["these days"],"r":["こんにち"]}]""",
+            await TextAsync($"SELECT senses FROM word WHERE id = {id}"));
+        Assert.Equal("""[{"seq":1579110,"common":true,"readings":["きょう","こんにち"]}]""",
+            await TextAsync($"SELECT entries FROM word WHERE id = {id}"));
+    }
+
+    [Fact]
+    public async Task GetWords_TellsAWordWithoutTheFieldFromOneWithEmptyEntries()
+    {
+        var ids = await _store.UpsertWordsAsync([Word("a"), Word("b") with { Entries = [] }], Lexicon);
+
+        var words = await _store.GetWordsAsync(ids);
+
+        Assert.Null(words[ids[0]].Entries);
+        Assert.NotNull(words[ids[1]].Entries);
+        Assert.Empty(words[ids[1]].Entries!);
+        Assert.Equal("[]", await TextAsync($"SELECT entries FROM word WHERE id = {ids[1]}"));
+    }
+
+    [Fact]
+    public async Task UpsertWords_AVersion2WordGetsItsEntriesWhenAVersion3AnswerWritesItAgain()
+    {
+        var version2 = Today with { Entries = null, Senses = Today.Senses.Select(s => s with { R = null }).ToList() };
+        var id = (await _store.UpsertWordsAsync([version2], "lex-2"))[0];
+        Assert.Null((await _store.GetWordsAsync([id]))[id].Entries);
+        Assert.Equal(1, await ScalarAsync($"SELECT COUNT(*) FROM word WHERE id = {id} AND entries IS NULL"));
+
+        var again = await _store.UpsertWordsAsync([Today], "lex-3");
+
+        Assert.Equal(id, again[0]);
+        var word = (await _store.GetWordsAsync([id]))[id];
+        Assert.Equal([1579110L], word.Entries!.Select(e => e.Seq));
+        Assert.Equal(["こんにち"], word.Senses[1].R!);
+        Assert.Equal("lex-3", word.LexiconVersion);
     }
 
     [Fact]
@@ -1214,6 +1281,29 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task StoredForm_KeepsBlindOffsetsAndLeavesTheKeyOutOfABlockWithout()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        StoredBlock[] blocks =
+        [
+            Block(0, "星が瞬く", Token(0, 1, plain), Token(1, 2, null), Token(2, 4, plain, "しばたたく")) with { Blind = [2] },
+            Block(1, "猫", Token(0, 1, plain)),
+        ];
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var stored = (await _store.GetUnitAsync(1, 0))!.Blocks;
+        Assert.Equal([2], stored[0].Blind);
+        Assert.Empty(stored[1].Blind);
+        using var document = JsonDocument.Parse(await DecompressedBlocksAsync(unit.Id));
+        Assert.Equal("[2]", document.RootElement[0].GetProperty("blind").GetRawText());
+        Assert.False(document.RootElement[1].TryGetProperty("blind", out _));
+        Assert.Equal(ReadingBlocks.BrotliJson, (await RawBlocksAsync(unit.Id))[0]);
+    }
+
+    [Fact]
     public async Task StoredForm_KeepsRubyAndLeavesTheKeyOutOfABlockWithout()
     {
         var (_, _, plain) = await SeedWordsAsync();
@@ -1545,6 +1635,47 @@ public class ReadingStoreTests : IDisposable
         var totals = await _store.GetReadingMarksAsync(manyFiles, manyWords);
         Assert.Equal(3, Assert.Single(totals).Value.Uses);
         Assert.Equal(3, totals[w.Name].Readings.Single().Count);
+    }
+
+    #endregion
+
+    #region Reading choices
+
+    [Fact]
+    public async Task ReadingChoices_SaveReplaceAndClearOnlyTheUsersOwnRowInThatSeries()
+    {
+        await _store.SaveReadingChoiceAsync(1, 10, 100, "またたく");
+        await _store.SaveReadingChoiceAsync(1, 10, 101, "うわて");
+        await _store.SaveReadingChoiceAsync(2, 10, 100, "しばたたく");
+        await _store.SaveReadingChoiceAsync(1, 11, 100, "まばたく");
+
+        _time.Advance();
+        await _store.SaveReadingChoiceAsync(1, 10, 100, "まばたく");
+
+        Assert.Equal(new Dictionary<long, string> { [100] = "まばたく", [101] = "うわて" },
+            await _store.GetReadingChoicesAsync(1, 10, [100, 101, 102]));
+        Assert.Equal(new Dictionary<long, string> { [100] = "しばたたく" }, await _store.GetReadingChoicesAsync(2, 10, [100, 101]));
+        Assert.Equal(4, await ScalarAsync("SELECT COUNT(*) FROM reading_choice"));
+        Assert.Equal(_time.Now.UtcTicks,
+            await ScalarAsync("SELECT updated_utc FROM reading_choice WHERE user_id = 1 AND series_id = 10 AND word_id = 100"));
+
+        await _store.ClearReadingChoiceAsync(1, 10, 100);
+        await _store.ClearReadingChoiceAsync(1, 10, 999);
+
+        Assert.Equal(new Dictionary<long, string> { [101] = "うわて" }, await _store.GetReadingChoicesAsync(1, 10, [100, 101]));
+        Assert.Equal(new Dictionary<long, string> { [100] = "まばたく" }, await _store.GetReadingChoicesAsync(1, 11, [100]));
+        Assert.Empty(await _store.GetReadingChoicesAsync(1, 10, []));
+    }
+
+    [Fact]
+    public async Task ReadingChoices_ReadMoreWordsThanOneBatchAndOutliveTheSeriesFiles()
+    {
+        foreach (var word in Enumerable.Range(1, 1200)) await _store.SaveReadingChoiceAsync(1, 10, word, "よみ");
+        await TokenizedPageAsync(1, []);
+
+        await _store.DeleteFilesAsync([1]);
+
+        Assert.Equal(1200, (await _store.GetReadingChoicesAsync(1, 10, Enumerable.Range(1, 1200).Select(w => (long) w).ToList())).Count);
     }
 
     #endregion

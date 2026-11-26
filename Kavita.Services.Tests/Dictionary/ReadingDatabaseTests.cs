@@ -55,7 +55,7 @@ public class ReadingDatabaseTests : IDisposable
     }
 
     private static readonly string[] AllTables =
-        ["analysis", "analysis_request", "reading_mark", "unit", "word", "word_use"];
+        ["analysis", "analysis_request", "reading_choice", "reading_mark", "unit", "word", "word_use"];
 
     private async Task CreateRawFileAsync(int userVersion)
     {
@@ -439,7 +439,7 @@ public class ReadingDatabaseTests : IDisposable
         await database.InitializeAsync();
 
         await using var connection = await database.OpenConnectionAsync();
-        Assert.Equal(3L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal((long) ReadingDatabase.SchemaVersion, await ScalarAsync(connection, "PRAGMA user_version"));
         Assert.Equal(AllTables, await TablesAsync(connection));
         Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM reading_mark"));
         Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM word_use"));
@@ -453,12 +453,10 @@ public class ReadingDatabaseTests : IDisposable
     [Fact]
     public async Task Upgrade_FromVersion2_DoesNotTurnCallersAway()
     {
-        await CreateRawFileAsync(0);
-        await new ReadingDatabase(_path).InitializeAsync();
-        SqliteConnection.ClearAllPools();
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
         await using var raw = new SqliteConnection($"Data Source={_path};Pooling=False");
         await raw.OpenAsync();
-        await NonQueryAsync(raw, "DROP TABLE reading_mark; DROP TABLE word_use; PRAGMA user_version = 2;");
+        await NonQueryAsync(raw, ReadingDatabase.Version1Schema + "\nPRAGMA user_version = 2;");
 
         // Another writer holds the lock, so the step waits on it and a caller arrives while it runs
         var blocker = raw.BeginTransaction(deferred: false);
@@ -472,8 +470,61 @@ public class ReadingDatabaseTests : IDisposable
         await blocker.DisposeAsync();
         await upgrade;
         await using var connection = await caller;
-        Assert.Equal(3L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal((long) ReadingDatabase.SchemaVersion, await ScalarAsync(connection, "PRAGMA user_version"));
         Assert.Equal(AllTables, await TablesAsync(connection));
+    }
+
+    #endregion
+
+    #region Version 4 upgrade
+
+    [Fact]
+    public async Task Upgrade_FromVersion3_AddsEntriesAndAnEmptyChoiceTableAndKeepsEveryWord()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        await using (var raw = new SqliteConnection($"Data Source={_path};Pooling=False"))
+        {
+            await raw.OpenAsync();
+            await NonQueryAsync(raw, ReadingDatabase.Version1Schema + ReadingDatabase.Version3Schema + """
+
+                PRAGMA user_version = 3;
+                INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version)
+                VALUES ('瞬く', '動詞', 0, 'しばたたく', NULL, '["しばたたく","またたく"]',
+                        '[{"key":"1341200:1","pos":["v5k"],"gloss":["to twinkle"]}]', 'lex-1');
+                """);
+        }
+
+        var database = new ReadingDatabase(_path);
+        await database.InitializeAsync();
+
+        await using var connection = await database.OpenConnectionAsync();
+        Assert.Equal(4L, await ScalarAsync(connection, "PRAGMA user_version"));
+        Assert.Equal(4, ReadingDatabase.SchemaVersion);
+        Assert.Equal(AllTables, await TablesAsync(connection));
+        Assert.Equal(0L, await ScalarAsync(connection, "SELECT COUNT(*) FROM reading_choice"));
+        Assert.Equal(1L, await ScalarAsync(connection, "SELECT COUNT(*) FROM word WHERE entries IS NULL"));
+        // A word stored before entries reads back with none, and keeps the rest
+        var word = Assert.Single((await new ReadingStore(database).GetWordsAsync([1])).Values);
+        Assert.Null(word.Entries);
+        Assert.Equal(["しばたたく", "またたく"], word.Readings);
+        Assert.Equal("1341200:1", Assert.Single(word.Senses).Key);
+    }
+
+    [Fact]
+    public async Task Upgrade_FromVersion3_RunsOnceWhenTwoDatabasesOpenTheSameFile()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        await using (var raw = new SqliteConnection($"Data Source={_path};Pooling=False"))
+        {
+            await raw.OpenAsync();
+            await NonQueryAsync(raw, ReadingDatabase.Version1Schema + ReadingDatabase.Version3Schema + "\nPRAGMA user_version = 3;");
+        }
+
+        // A second ADD COLUMN would fail, so both opening means the step ran once
+        await Task.WhenAll(new ReadingDatabase(_path).InitializeAsync(), new ReadingDatabase(_path).InitializeAsync());
+
+        await using var connection = await new ReadingDatabase(_path).OpenConnectionAsync();
+        Assert.Equal(4L, await ScalarAsync(connection, "PRAGMA user_version"));
     }
 
     #endregion
