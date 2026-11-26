@@ -1213,6 +1213,41 @@ public class ReadingStoreTests : IDisposable
         Assert.False(document.RootElement[1].TryGetProperty("phrases", out _));
     }
 
+    [Fact]
+    public async Task StoredForm_KeepsRubyAndLeavesTheKeyOutOfABlockWithout()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        StoredBlock[] blocks =
+        [
+            Block(0, "高順は漢字", Token(0, 2, plain), Token(2, 3, null), Token(3, 5, plain))
+                with { Ruby = [new RubyDto(0, 2, "ガオシュン"), new RubyDto(3, 4, "かん"), new RubyDto(4, 5, "じ")] },
+            Block(1, "猫", Token(0, 1, plain)),
+        ];
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var stored = (await _store.GetUnitAsync(1, 0))!.Blocks;
+        Assert.Equal(blocks[0].Ruby, stored[0].Ruby);
+        Assert.Empty(stored[1].Ruby);
+        var json = await DecompressedBlocksAsync(unit.Id);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal("""[[0,2,"ガオシュン"],[3,4,"かん"],[4,5,"じ"]]""",
+            document.RootElement[0].GetProperty("ruby").GetRawText());
+        Assert.False(document.RootElement[1].TryGetProperty("ruby", out _));
+        // The format byte is the one blocks had before ruby, so nothing needs rewriting
+        Assert.Equal(ReadingBlocks.BrotliJson, (await RawBlocksAsync(unit.Id))[0]);
+    }
+
+    private async Task<byte[]> RawBlocksAsync(long unitId)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT blocks FROM unit WHERE id = {unitId}";
+        return (byte[]) (await command.ExecuteScalarAsync())!;
+    }
+
     private async Task<string> DecompressedBlocksAsync(long unitId)
     {
         await using var connection = await OpenAsync();
@@ -1251,8 +1286,9 @@ public class ReadingStoreTests : IDisposable
         var block = (await _store.GetUnitAsync(1, 0))!.Blocks.Single();
         Assert.Equal("食べ物", block.Text);
         Assert.Equal(Token(0, 3, hot, "たべもの"), block.Tokens.Single());
-        // Blocks written before phrases existed have no phrases key
+        // Blocks written before phrases and ruby existed have neither key
         Assert.Empty(block.Phrases);
+        Assert.Empty(block.Ruby);
 
         // The other two reads of blocks take the same form
         await _store.RequestAnalysisAsync([1], 0);

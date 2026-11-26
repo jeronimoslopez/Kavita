@@ -95,6 +95,11 @@ public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto>
     /// sends no phrases. Phrases never get analysis rows
     /// </summary>
     public IReadOnlyList<PhraseDto> Phrases { get; init; } = [];
+    /// <summary>
+    /// The block's furigana in document order, with offsets into <see cref="Text"/>. Empty for a block stored before
+    /// furigana was kept
+    /// </summary>
+    public IReadOnlyList<RubyDto> Ruby { get; init; } = [];
 }
 
 /// <summary>

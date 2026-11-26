@@ -28,7 +28,8 @@ internal static class ReadingBlocks
     public static byte[] Encode(IReadOnlyList<StoredBlock> blocks)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(
-            blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens, b.Phrases.Count == 0 ? null : b.Phrases)).ToList(),
+            blocks.Select(b => new BlockJson(b.Index, b.Text, b.Tokens, b.Phrases.Count == 0 ? null : b.Phrases,
+                b.Ruby.Count == 0 ? null : b.Ruby)).ToList(),
             ReadingJson.Options);
         using var output = new MemoryStream(json.Length / 3 + 16);
         output.WriteByte(BrotliJson);
@@ -56,9 +57,9 @@ internal static class ReadingBlocks
                 byte[] { Length: > 0 } blob => throw new InvalidDataException($"format byte 0x{blob[0]:X2} is unknown"),
                 _ => throw new InvalidDataException($"a {value.GetType().Name} isn't a stored form"),
             };
-            // A block written without tokens or phrases has none, so callers never meet a null list
+            // A block written without tokens, phrases or ruby has none, so callers never meet a null list
             return (json ?? [])
-                .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens ?? []) { Phrases = b.Phrases ?? [] })
+                .Select(b => new StoredBlock(b.Index, b.Text, b.Tokens ?? []) { Phrases = b.Phrases ?? [], Ruby = b.Ruby ?? [] })
                 .ToList();
         }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or InvalidOperationException)
@@ -77,13 +78,16 @@ internal static class ReadingBlocks
     }
 
     /// <summary>
-    /// A block in unit.blocks. Tokens and phrases use their DTOs' array converters, the same form the sidecar uses.
-    /// A block with no phrases is written without the key, the form every block had before phrases existed
+    /// A block in unit.blocks. Tokens, phrases and ruby spans use their DTOs' array converters, the same form the
+    /// sidecar uses. A block with no phrases or no ruby is written without that key, the form every block had before
+    /// they existed, so the format byte stays the same and blocks stored earlier read with neither
     /// </summary>
     private sealed record BlockJson(
         [property: JsonPropertyName("i")] int Index,
         [property: JsonPropertyName("text")] string Text,
         [property: JsonPropertyName("tokens")] IReadOnlyList<TokenDto>? Tokens,
         [property: JsonPropertyName("phrases"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<PhraseDto>? Phrases = null);
+        IReadOnlyList<PhraseDto>? Phrases = null,
+        [property: JsonPropertyName("ruby"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<RubyDto>? Ruby = null);
 }

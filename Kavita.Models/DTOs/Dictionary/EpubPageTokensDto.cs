@@ -36,8 +36,11 @@ public sealed record EpubPageTokensDto
 /// <param name="Phrases">The block's phrases in stored order, so a phrase's position is the
 /// <see cref="DictionaryLookupRequestDto.Phrase"/> index that looks it up. Word ids are reading.db word ids. Null, and
 /// left out of the JSON, when the block has none</param>
+/// <param name="Ruby">The block's furigana as <c>[s, e, reading]</c> spans over its text, with the reading as the book
+/// prints it. Null, and left out of the JSON, when the block has none</param>
 public sealed record EpubPageBlockDto(int Index, int Length, IList<TokenDto> Tokens,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IList<PhraseDto>? Phrases = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IList<PhraseDto>? Phrases = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IList<RubyDto>? Ruby = null);
 
 /// <summary>
 /// A word with everything a lookup returns about it, so the reader can answer a tap without asking the server

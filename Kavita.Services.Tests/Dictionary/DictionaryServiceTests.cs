@@ -154,6 +154,27 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
     }
 
     [Fact]
+    public async Task GetEpubPage_CarriesTheBlocksRubyAsArrays()
+    {
+        var book = await Setup();
+        var unit = GivenTokenizedPage(book.FirstFile, 2);
+        var withRuby = unit with
+        {
+            Blocks = [unit.Blocks[0] with { Ruby = [new RubyDto(3, 4, "つら")] }, unit.Blocks[1]],
+        };
+        _store.GetUnitAsync(book.FirstFile.Id, 2, Arg.Any<CancellationToken>()).Returns(withRuby);
+
+        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(page, Web));
+
+        Assert.Equal([new RubyDto(3, 4, "つら")], page!.Blocks[0].Ruby);
+        Assert.Null(page.Blocks[1].Ruby);
+        var blocks = json.RootElement.GetProperty("blocks");
+        Assert.Equal("""[[3,4,"つら"]]""", blocks[0].GetProperty("ruby").GetRawText());
+        Assert.False(blocks[1].TryGetProperty("ruby", out _));
+    }
+
+    [Fact]
     public async Task GetEpubPage_OfAPageStoredBeforePhrasesWritesNoPhrasesAndOmitsAFalseIsProper()
     {
         var book = await Setup();
@@ -164,6 +185,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
 
         var blocks = json.RootElement.GetProperty("blocks");
         Assert.All(blocks.EnumerateArray(), b => Assert.False(b.TryGetProperty("phrases", out _)));
+        Assert.All(blocks.EnumerateArray(), b => Assert.False(b.TryGetProperty("ruby", out _)));
         Assert.Equal("""[[0,3,20,"にほんご",[[0,2,21,"にほん"],[2,3,22,"ご"]]],[3,4,null,null,null]]""",
             blocks[1].GetProperty("tokens").GetRawText());
         var karai = json.RootElement.GetProperty("words").GetProperty("11");
@@ -470,9 +492,11 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
                 new TokenDto(2, 4, Suru.Id, "した", [new SubTokenDto(2, 3, Suru.Id, "し"), new SubTokenDto(3, 4, null, null)]),
                 new TokenDto(4, 5, null, null, null),
             ]) { Phrases = [new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id), new PhraseDto(0, 2, MissingPhraseWord)] },
-            // 𠮟 is a surrogate pair, so 𠮟る is three UTF-16 units. 田中 is a proper noun
+            // 𠮟 is a surrogate pair, so 𠮟る is three UTF-16 units. 田中 is a proper noun. The furigana over both
+            // changes no answer
             new StoredBlock(3, "𠮟る田中",
-                [new TokenDto(0, 3, Shikaru.Id, "しかる", null), new TokenDto(3, 5, Tanaka.Id, "たなか", null)]),
+                [new TokenDto(0, 3, Shikaru.Id, "しかる", null), new TokenDto(3, 5, Tanaka.Id, "たなか", null)])
+                { Ruby = [new RubyDto(0, 2, "しか"), new RubyDto(3, 5, "タナカ")] },
             new StoredBlock(4, "謎だ", [new TokenDto(0, 1, MissingTokenWord, "なぞ", null), new TokenDto(1, 2, null, null, null)]),
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
