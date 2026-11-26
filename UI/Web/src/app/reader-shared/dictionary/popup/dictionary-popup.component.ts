@@ -40,6 +40,8 @@ export class DictionaryPopupComponent {
 
   /** The `sub` index of the part chip that was pressed */
   readonly part = output<number>();
+  /** The `index` of the Part of chip that was pressed */
+  readonly phrase = output<number>();
   readonly back = output<void>();
   readonly dismiss = output<void>();
 
@@ -52,6 +54,7 @@ export class DictionaryPopupComponent {
   });
   protected readonly word = computed(() => this.result()?.word ?? null);
   protected readonly parts = computed(() => this.result()?.parts ?? []);
+  protected readonly partOf = computed(() => this.result()?.partOf ?? []);
   protected readonly senses = computed(() => {
     const result = this.result();
     return result === null ? [] : orderSenses(result.senses, result.analysis).map(s => ({

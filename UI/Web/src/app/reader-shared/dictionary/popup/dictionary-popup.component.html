@@ -84,6 +84,23 @@
           </div>
         }
 
+        @if (partOf().length > 0) {
+          <div class="dp-parts" data-testid="popup-part-of">
+            <p class="dp-label">{{ t('part-of') }}</p>
+            <ul class="dp-chips">
+              @for (p of partOf(); track p.index) {
+                <li>
+                  <button type="button" class="dp-chip" data-testid="popup-phrase"
+                          [attr.aria-pressed]="view().openPhrase === p.index" (click)="phrase.emit(p.index)">
+                    <span lang="ja">{{ p.lemma }}</span>&ngsp;
+                    <span class="dp-chip-reading" lang="ja">{{ p.reading }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          </div>
+        }
+
         @if (hasAi()) {
           <p class="dp-ai-note" data-testid="popup-ai-note">{{ t('ai-sense') }}</p>
         }

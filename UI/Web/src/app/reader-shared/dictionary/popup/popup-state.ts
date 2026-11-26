@@ -15,6 +15,8 @@ export interface DictionaryPopupView {
   canGoBack: boolean;
   /** The part whose entry is open, so its chip shows as pressed. Null for the whole word */
   openSub: number | null;
+  /** The `partOf` phrase whose entry is open, so its chip shows as pressed. Null for the word or a part */
+  openPhrase: number | null;
 }
 
 export type DictionaryPopupMode = 'popover' | 'sheet';

@@ -25,7 +25,7 @@ function result(overrides: Partial<DictionaryLookupResult> = {}): DictionaryLook
 }
 
 function view(state: DictionaryPopupState, extra: Partial<DictionaryPopupView> = {}): DictionaryPopupView {
-  return {state, surface: '辛い', canGoBack: false, openSub: null, ...extra};
+  return {state, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null, ...extra};
 }
 
 describe('DictionaryPopupComponent', () => {
@@ -148,6 +148,57 @@ describe('DictionaryPopupComponent', () => {
     fixture.componentInstance.part.subscribe(sub => emitted.push(sub));
     chips[0].click();
     expect(emitted).toEqual([0]);
+  });
+
+  it('has no Part of section when partOf is empty or missing', async () => {
+    let el = await show(view({kind: 'result', result: result({partOf: []})}));
+    expect(q(el, 'popup-part-of')).toBeNull();
+
+    el = await show(view({kind: 'result', result: result()}));
+    expect(q(el, 'popup-part-of')).toBeNull();
+    expect(all(el, 'popup-phrase')).toHaveLength(0);
+  });
+
+  it('renders Part of chips below the parts that emit their index and mark the open phrase', async () => {
+    const parts = [{sub: 0, wordId: 2, surface: '気', lemma: '気', reading: 'き', senses: []}];
+    const partOf = [
+      {index: 0, s: 12, e: 16, lemma: '気がする', reading: 'きがする'},
+      {index: 1, s: 12, e: 15, lemma: '気が', reading: 'きが'},
+    ];
+    const el = await show(view({kind: 'result', result: result({parts, partOf})}, {openPhrase: 1}));
+    const section = q(el, 'popup-part-of') as HTMLElement;
+    expect(section.querySelector('.dp-label')?.textContent).toBe(strings['part-of']);
+    const sections = Array.from(el.querySelectorAll('.dp-parts'));
+    expect(sections.indexOf(section)).toBe(1);
+
+    const chips = all(el, 'popup-phrase');
+    expect(chips.map(c => c.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['気がする きがする', '気が きが']);
+    expect(chips.map(c => c.getAttribute('aria-pressed'))).toEqual(['false', 'true']);
+    expect(chips.every(c => c.localName === 'button' && c.getAttribute('type') === 'button')).toBe(true);
+
+    const emitted: number[] = [];
+    fixture.componentInstance.phrase.subscribe(index => emitted.push(index));
+    chips[0].click();
+    expect(emitted).toEqual([0]);
+  });
+
+  it('shows a phrase with its senses and no parts, Part of or AI note', async () => {
+    const el = await show(view({kind: 'result', result: result({
+      word: {
+        id: 9, surface: '気がする', lemma: '気がする', pos: '表現', isProper: false,
+        occurrenceReading: null, reading: 'きがする', readings: ['きがする'], jlpt: null,
+      },
+      senses: [{key: '200:1', pos: ['exp', 'vs-i'], gloss: ['to have a feeling that']}],
+      parts: [],
+      partOf: [],
+    })}, {canGoBack: true, openPhrase: 0}));
+    expect(q(el, 'popup-lemma')?.textContent).toBe('気がする');
+    expect(all(el, 'sense')[0].textContent).toContain('to have a feeling that');
+    expect(all(el, 'sense')[0].textContent).toContain('expression, suru verb');
+    expect(all(el, 'popup-part')).toHaveLength(0);
+    expect(q(el, 'popup-part-of')).toBeNull();
+    expect(q(el, 'popup-ai-note')).toBeNull();
+    expect(q(el, 'popup-back')).not.toBeNull();
   });
 
   it('emits Back and Close', async () => {

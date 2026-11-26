@@ -177,7 +177,7 @@ describe('ReaderDictionaryController', () => {
     expect(presenter.visible).toBe(false);
 
     expect(controller.handleClick(click())).toBe(true);
-    expect(dictionary.lookups[0].request).toEqual({chapterId: 5, page: 2, block: 4, s: 7, sub: null});
+    expect(dictionary.lookups[0].request).toEqual({chapterId: 5, page: 2, block: 4, s: 7, sub: null, phrase: null});
     expect(presenter.shown[0]).toEqual({vertical: true, viaKeyboard: false});
     expect(presenter.view.state).toEqual({kind: 'loading'});
     expect(presenter.view.surface).toBe('新聞社');
@@ -280,6 +280,67 @@ describe('ReaderDictionaryController', () => {
     expect(presenter.view).toMatchObject({canGoBack: false, openSub: null});
     expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: '新聞社'}}});
     expect(dictionary.lookups).toHaveLength(2);
+  });
+
+  it('opens a phrase from Part of, highlights its span, and goes back to the word', () => {
+    openOnPage();
+    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 0, s: 5, e: 10, lemma: 'と、新聞社', reading: 'と、しんぶんしゃ'}]});
+    expect(highlighter.mark).toHaveBeenCalledTimes(1);
+
+    presenter.handlers?.phrase(0);
+    expect(dictionary.lookups[1].request).toEqual({chapterId: 5, page: 2, block: 4, s: 7, sub: null, phrase: 0});
+    expect(presenter.view).toMatchObject({state: {kind: 'loading'}, canGoBack: true, openSub: null, openPhrase: 0});
+    expect(highlighter.mark).toHaveBeenCalledTimes(2);
+    expect((highlighter.mark.mock.lastCall?.[0] as Range).toString()).toBe('と、新聞社');
+
+    const phrase: DictionaryLookupResult = {
+      ...lookupResult('と、新聞社'), word: {...lookupResult('と、新聞社').word, pos: '表現'}, parts: [], partOf: [],
+    };
+    dictionary.answerLookup(1, phrase);
+    expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: 'と、新聞社', pos: '表現'}}});
+
+    presenter.handlers?.back();
+    expect(presenter.view).toMatchObject({canGoBack: false, openSub: null, openPhrase: null});
+    expect(presenter.view.state).toMatchObject({kind: 'result', result: {word: {lemma: '新聞社'}}});
+    expect(highlighter.mark).toHaveBeenCalledTimes(3);
+    expect(highlighter.mark.mock.lastCall?.[0]).toBe(hit?.range);
+    expect(dictionary.lookups).toHaveLength(2);
+  });
+
+  it('highlights a phrase across ruby without its reading', () => {
+    container.innerHTML = '<p data-kb="4"><ruby>気<rt>き</rt></ruby>がした</p>';
+    const base = container.querySelector('ruby')!.firstChild as Text;
+    hit = hitOn(base, 0, 1);
+    openOnPage();
+    dictionary.answerLookup(0, {...lookupResult('気'), partOf: [{index: 0, s: 0, e: 4, lemma: '気がする', reading: 'きがする'}]});
+
+    presenter.handlers?.phrase(0);
+    const range = highlighter.mark.mock.lastCall?.[0] as Range;
+    expect(range.startContainer).toBe(base);
+    expect(range.endContainer).toBe(container.querySelector('p')!.lastChild);
+    expect(range.endOffset).toBe(3);
+  });
+
+  it('ignores a Part of index the open entry does not list, and the phrase already open', () => {
+    openOnPage();
+    presenter.handlers?.phrase(0);
+    expect(dictionary.lookups).toHaveLength(1);
+
+    dictionary.answerLookup(0, {...lookupResult('新聞社'), partOf: [{index: 3, s: 7, e: 10, lemma: 'x', reading: 'x'}]});
+    presenter.handlers?.phrase(0);
+    expect(dictionary.lookups).toHaveLength(1);
+
+    presenter.handlers?.phrase(3);
+    presenter.handlers?.phrase(3);
+    expect(dictionary.lookups).toHaveLength(2);
+  });
+
+  it('keeps the word highlighted while a part is open', () => {
+    openOnPage();
+    dictionary.answerLookup(0, lookupResult('新聞社'));
+    presenter.handlers?.part(1);
+    presenter.handlers?.back();
+    expect(highlighter.mark).toHaveBeenCalledTimes(1);
   });
 
   it('ignores a part answer that arrives after Back', () => {

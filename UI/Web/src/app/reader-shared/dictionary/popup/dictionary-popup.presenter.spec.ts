@@ -6,7 +6,7 @@ import en from '../../../../assets/langs/en.json';
 import {DictionaryPopupPresenter, PopupCloseReason, PopupHandlers} from './dictionary-popup.presenter';
 import {DictionaryPopupView} from './popup-state';
 
-const VIEW: DictionaryPopupView = {state: {kind: 'loading'}, surface: '辛い', canGoBack: false, openSub: null};
+const VIEW: DictionaryPopupView = {state: {kind: 'loading'}, surface: '辛い', canGoBack: false, openSub: null, openPhrase: null};
 
 describe('DictionaryPopupPresenter', () => {
   let presenter: DictionaryPopupPresenter;
@@ -28,7 +28,7 @@ describe('DictionaryPopupPresenter', () => {
     });
     presenter = TestBed.inject(DictionaryPopupPresenter);
     reasons = [];
-    handlers = {part: vi.fn(), back: vi.fn(), closed: reason => reasons.push(reason)};
+    handlers = {part: vi.fn(), phrase: vi.fn(), back: vi.fn(), closed: reason => reasons.push(reason)};
     word = document.createElement('p');
     word.textContent = '辛い';
     word.tabIndex = 0;
@@ -90,6 +90,19 @@ describe('DictionaryPopupPresenter', () => {
     document.body.dispatchEvent(new Event('pointerdown', {bubbles: true}));
     expect(presenter.isVisible()).toBe(false);
     expect(reasons).toEqual(['outside']);
+  });
+
+  it('passes Part of chips on', () => {
+    open();
+    presenter.render({...VIEW, state: {kind: 'result', result: {
+      word: {id: 1, surface: '気', lemma: '気', pos: '名詞', isProper: false, occurrenceReading: null, reading: 'き', readings: [], jlpt: null},
+      senses: [], analysis: null, parts: [],
+      partOf: [{index: 2, s: 0, e: 4, lemma: '気がする', reading: 'きがする'}],
+    }}});
+    TestBed.tick();
+    popup()?.querySelector<HTMLElement>('[data-testid="popup-phrase"]')?.click();
+    expect(handlers.phrase).toHaveBeenCalledWith(2);
+    expect(handlers.part).not.toHaveBeenCalled();
   });
 
   it('closes on Close and passes part chips and Back on', () => {
