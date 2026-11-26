@@ -1,6 +1,7 @@
 {
   "page": {
     "version": "sidecar=2",
+    "seriesId": 1,
     "blocks": [
       {
         "index": 0,
@@ -195,6 +196,191 @@
             null,
             null,
             null
+          ]
+        ]
+      },
+      {
+        "index": 5,
+        "length": 4,
+        "tokens": [
+          [
+            0,
+            1,
+            92,
+            "ほし",
+            null
+          ],
+          [
+            1,
+            2,
+            null,
+            null,
+            null
+          ],
+          [
+            2,
+            4,
+            90,
+            "しばたたく",
+            null
+          ]
+        ],
+        "blind": [
+          2
+        ]
+      },
+      {
+        "index": 6,
+        "length": 4,
+        "tokens": [
+          [
+            0,
+            1,
+            null,
+            null,
+            null
+          ],
+          [
+            1,
+            2,
+            null,
+            null,
+            null
+          ],
+          [
+            2,
+            4,
+            91,
+            "ひらく",
+            null
+          ]
+        ]
+      },
+      {
+        "index": 7,
+        "length": 6,
+        "tokens": [
+          [
+            0,
+            2,
+            93,
+            "じょうず",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            96,
+            "いっ",
+            null
+          ],
+          [
+            5,
+            6,
+            null,
+            null,
+            null
+          ]
+        ]
+      },
+      {
+        "index": 8,
+        "length": 5,
+        "tokens": [
+          [
+            0,
+            2,
+            94,
+            "きょう",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            94,
+            "きょう",
+            null
+          ]
+        ],
+        "ruby": [
+          [
+            3,
+            5,
+            "こんにち"
+          ]
+        ]
+      },
+      {
+        "index": 9,
+        "length": 5,
+        "tokens": [
+          [
+            0,
+            2,
+            95,
+            "しょうじょ",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            97,
+            "たかじゅん",
+            null
+          ]
+        ],
+        "ruby": [
+          [
+            0,
+            2,
+            "ねえちゃん"
+          ]
+        ]
+      },
+      {
+        "index": 10,
+        "length": 3,
+        "tokens": [
+          [
+            0,
+            3,
+            null,
+            null,
+            [
+              [
+                0,
+                2,
+                90,
+                "またたき"
+              ],
+              [
+                2,
+                3,
+                92,
+                "ぼし"
+              ]
+            ]
           ]
         ]
       }
@@ -484,7 +670,381 @@
               "Tanaka"
             ]
           }
+        ],
+        "hint": {
+          "reading": "たなか",
+          "printed": "タナカ",
+          "source": "book"
+        }
+      },
+      "90": {
+        "lemma": "瞬く",
+        "reading": "しばたたく",
+        "jlpt": null,
+        "pos": "動詞",
+        "readings": [
+          "しばたたく",
+          "しばたく",
+          "またたく",
+          "まばたく",
+          "めたたく",
+          "めばたく"
+        ],
+        "senses": [
+          {
+            "key": "2831002:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to blink"
+            ]
+          },
+          {
+            "key": "1341200:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to twinkle"
+            ]
+          },
+          {
+            "key": "2831001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to wink"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 2831002,
+            "common": false,
+            "readings": [
+              "しばたたく",
+              "しばたく"
+            ]
+          },
+          {
+            "seq": 1341200,
+            "common": true,
+            "readings": [
+              "またたく",
+              "まばたく"
+            ]
+          },
+          {
+            "seq": 2831001,
+            "common": false,
+            "readings": [
+              "めたたく",
+              "めばたく"
+            ]
+          }
         ]
+      },
+      "91": {
+        "lemma": "開く",
+        "reading": "ひらく",
+        "jlpt": 5,
+        "pos": "動詞",
+        "readings": [
+          "ひらく",
+          "あく"
+        ],
+        "senses": [
+          {
+            "key": "1202440:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to open (a door)"
+            ]
+          },
+          {
+            "key": "1586270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to be open"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1202440,
+            "common": true,
+            "readings": [
+              "ひらく"
+            ]
+          },
+          {
+            "seq": 1586270,
+            "common": true,
+            "readings": [
+              "あく"
+            ]
+          }
+        ],
+        "hint": {
+          "reading": "あく",
+          "printed": "あく",
+          "source": "book"
+        }
+      },
+      "92": {
+        "lemma": "星",
+        "reading": "ほし",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "ほし",
+          "せい"
+        ],
+        "senses": [
+          {
+            "key": "1376310:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star"
+            ]
+          },
+          {
+            "key": "2100980:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star (counter)"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1376310,
+            "common": true,
+            "readings": [
+              "ほし"
+            ]
+          },
+          {
+            "seq": 2100980,
+            "common": false,
+            "readings": [
+              "せい"
+            ]
+          }
+        ],
+        "hint": {
+          "reading": "せい",
+          "printed": "せい",
+          "source": "series"
+        }
+      },
+      "93": {
+        "lemma": "上手",
+        "reading": "じょうず",
+        "jlpt": 4,
+        "pos": "名詞",
+        "readings": [
+          "じょうず",
+          "うわて",
+          "かみて"
+        ],
+        "senses": [
+          {
+            "key": "1353320:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "skilful"
+            ]
+          },
+          {
+            "key": "1580400:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "upper part"
+            ]
+          },
+          {
+            "key": "1580400:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "upstage"
+            ],
+            "r": [
+              "かみて"
+            ]
+          },
+          {
+            "key": "1580400:3",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "superior"
+            ],
+            "r": [
+              "うわて"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1353320,
+            "common": true,
+            "readings": [
+              "じょうず"
+            ]
+          },
+          {
+            "seq": 1580400,
+            "common": false,
+            "readings": [
+              "うわて",
+              "かみて"
+            ]
+          }
+        ],
+        "hint": {
+          "reading": "じょうず",
+          "printed": "じょうず",
+          "source": "book"
+        },
+        "choice": "うわて"
+      },
+      "94": {
+        "lemma": "今日",
+        "reading": "きょう",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "きょう",
+          "こんにち",
+          "こんち"
+        ],
+        "senses": [
+          {
+            "key": "1579110:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "today"
+            ]
+          },
+          {
+            "key": "1579110:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "these days"
+            ],
+            "r": [
+              "こんにち"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1579110,
+            "common": true,
+            "readings": [
+              "きょう",
+              "こんにち",
+              "こんち"
+            ]
+          }
+        ]
+      },
+      "95": {
+        "lemma": "小姐",
+        "reading": "しょうじょ",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [
+          "しょうじょ"
+        ],
+        "senses": [
+          {
+            "key": "9100:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "young lady"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 9100,
+            "common": false,
+            "readings": [
+              "しょうじょ"
+            ]
+          }
+        ]
+      },
+      "96": {
+        "lemma": "言う",
+        "reading": "いう",
+        "jlpt": 5,
+        "pos": "動詞",
+        "readings": [
+          "いう",
+          "ゆう"
+        ],
+        "senses": [
+          {
+            "key": "1587040:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to say"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1587040,
+            "common": true,
+            "readings": [
+              "いう",
+              "ゆう"
+            ]
+          }
+        ]
+      },
+      "97": {
+        "lemma": "高順",
+        "reading": "たかじゅん",
+        "jlpt": null,
+        "pos": "名詞",
+        "isProper": true,
+        "readings": [],
+        "senses": [],
+        "entries": [],
+        "hint": {
+          "reading": "がおしゅん",
+          "printed": "ガオシュン",
+          "source": "book"
+        }
       }
     },
     "analysis": [
@@ -516,7 +1076,13 @@
     "1": "日本語と神様",
     "2": "気がした。",
     "3": "\uD842\uDF9Fる田中",
-    "4": "謎だ"
+    "4": "謎だ",
+    "5": "星が瞬く",
+    "6": "店を開く",
+    "7": "上手に言った",
+    "8": "今日と今日",
+    "9": "小姐と高順",
+    "10": "瞬き星"
   },
   "taps": [
     {
@@ -554,7 +1120,15 @@
         ],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -605,7 +1179,15 @@
           "generator": "claude-sonnet"
         },
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -637,7 +1219,7 @@
     },
     {
       "request": {
-        "block": 9,
+        "block": 99,
         "s": 0,
         "sub": null,
         "phrase": null
@@ -715,7 +1297,15 @@
             ]
           }
         ],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -790,7 +1380,15 @@
             ]
           }
         ],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -864,7 +1462,15 @@
             ]
           }
         ],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -952,7 +1558,15 @@
             ]
           }
         ],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1011,7 +1625,15 @@
             ]
           }
         ],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1067,7 +1689,15 @@
             "reading": "きがする",
             "gloss": "to have a feeling that; to feel like"
           }
-        ]
+        ],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1144,7 +1774,15 @@
             "reading": "がする",
             "gloss": ""
           }
-        ]
+        ],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1217,7 +1855,15 @@
             "reading": "がする",
             "gloss": ""
           }
-        ]
+        ],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1273,7 +1919,15 @@
         ],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1300,7 +1954,15 @@
         "senses": [],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1347,7 +2009,15 @@
         ],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1430,7 +2100,15 @@
         ],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1467,7 +2145,15 @@
         ],
         "analysis": null,
         "parts": [],
-        "partOf": []
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
       }
     },
     {
@@ -1478,6 +2164,1164 @@
         "phrase": null
       },
       "result": null
+    },
+    {
+      "request": {
+        "block": 5,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 92,
+          "surface": "星",
+          "lemma": "星",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ほし",
+          "reading": "ほし",
+          "readings": [
+            "ほし",
+            "せい"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1376310:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star"
+            ]
+          },
+          {
+            "key": "2100980:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star (counter)"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "series",
+          "shown": null,
+          "pick": "せい",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 2100980,
+              "readings": [
+                "せい"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2100980:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "star (counter)"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1376310,
+              "readings": [
+                "ほし"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1376310:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "star"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 5,
+        "s": 2,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 90,
+          "surface": "瞬く",
+          "lemma": "瞬く",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "しばたたく",
+          "reading": "しばたたく",
+          "readings": [
+            "しばたたく",
+            "しばたく",
+            "またたく",
+            "まばたく",
+            "めたたく",
+            "めばたく"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "2831002:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to blink"
+            ]
+          },
+          {
+            "key": "1341200:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to twinkle"
+            ]
+          },
+          {
+            "key": "2831001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to wink"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "しばたたく",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 2831002,
+              "readings": [
+                "しばたたく",
+                "しばたく"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2831002:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to blink"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1341200,
+              "readings": [
+                "またたく",
+                "まばたく"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1341200:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to twinkle"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 2831001,
+              "readings": [
+                "めたたく",
+                "めばたく"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2831001:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to wink"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 6,
+        "s": 2,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 91,
+          "surface": "開く",
+          "lemma": "開く",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "ひらく",
+          "reading": "ひらく",
+          "readings": [
+            "ひらく",
+            "あく"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1202440:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to open (a door)"
+            ]
+          },
+          {
+            "key": "1586270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to be open"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "book",
+          "shown": null,
+          "pick": "あく",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1586270,
+              "readings": [
+                "あく"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1586270:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to be open"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1202440,
+              "readings": [
+                "ひらく"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1202440:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to open (a door)"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 7,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 93,
+          "surface": "上手",
+          "lemma": "上手",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "じょうず",
+          "reading": "じょうず",
+          "readings": [
+            "じょうず",
+            "うわて",
+            "かみて"
+          ],
+          "jlpt": 4
+        },
+        "senses": [
+          {
+            "key": "1353320:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "skilful"
+            ]
+          },
+          {
+            "key": "1580400:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "upper part"
+            ]
+          },
+          {
+            "key": "1580400:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "upstage"
+            ],
+            "r": [
+              "かみて"
+            ]
+          },
+          {
+            "key": "1580400:3",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "superior"
+            ],
+            "r": [
+              "うわて"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "choice",
+          "shown": null,
+          "pick": "うわて",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1580400,
+              "readings": [
+                "うわて"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1580400:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "upper part"
+                  ]
+                },
+                {
+                  "key": "1580400:3",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "superior"
+                  ],
+                  "r": [
+                    "うわて"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1353320,
+              "readings": [
+                "じょうず"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1353320:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "skilful"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1580400,
+              "readings": [
+                "かみて"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1580400:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "upper part"
+                  ]
+                },
+                {
+                  "key": "1580400:2",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "upstage"
+                  ],
+                  "r": [
+                    "かみて"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 7,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 96,
+          "surface": "言っ",
+          "lemma": "言う",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "いっ",
+          "reading": "いう",
+          "readings": [
+            "いう",
+            "ゆう"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1587040:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to say"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "いう",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1587040,
+              "readings": [
+                "いう",
+                "ゆう"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1587040:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to say"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 8,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 94,
+          "surface": "今日",
+          "lemma": "今日",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "きょう",
+          "reading": "きょう",
+          "readings": [
+            "きょう",
+            "こんにち",
+            "こんち"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1579110:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "today"
+            ]
+          },
+          {
+            "key": "1579110:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "these days"
+            ],
+            "r": [
+              "こんにち"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "きょう",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1579110,
+              "readings": [
+                "きょう",
+                "こんち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1579110,
+              "readings": [
+                "こんにち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                },
+                {
+                  "key": "1579110:2",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "these days"
+                  ],
+                  "r": [
+                    "こんにち"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 8,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 94,
+          "surface": "今日",
+          "lemma": "今日",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "きょう",
+          "reading": "きょう",
+          "readings": [
+            "きょう",
+            "こんにち",
+            "こんち"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1579110:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "today"
+            ]
+          },
+          {
+            "key": "1579110:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "these days"
+            ],
+            "r": [
+              "こんにち"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "furigana",
+          "shown": "こんにち",
+          "pick": "こんにち",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1579110,
+              "readings": [
+                "こんにち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                },
+                {
+                  "key": "1579110:2",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "these days"
+                  ],
+                  "r": [
+                    "こんにち"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 9,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 95,
+          "surface": "小姐",
+          "lemma": "小姐",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "しょうじょ",
+          "reading": "しょうじょ",
+          "readings": [
+            "しょうじょ"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "9100:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "young lady"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "furigana",
+          "shown": "ねえちゃん",
+          "pick": null,
+          "bookOnly": true,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 9,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 97,
+          "surface": "高順",
+          "lemma": "高順",
+          "pos": "名詞",
+          "isProper": true,
+          "occurrenceReading": "たかじゅん",
+          "reading": "たかじゅん",
+          "readings": [],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "book",
+          "shown": "ガオシュン",
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 10,
+        "s": 0,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 90,
+          "surface": "瞬き",
+          "lemma": "瞬く",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "またたき",
+          "reading": "しばたたく",
+          "readings": [
+            "しばたたく",
+            "しばたく",
+            "またたく",
+            "まばたく",
+            "めたたく",
+            "めばたく"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "2831002:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to blink"
+            ]
+          },
+          {
+            "key": "1341200:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to twinkle"
+            ]
+          },
+          {
+            "key": "2831001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to wink"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 90,
+            "surface": "瞬き",
+            "lemma": "瞬く",
+            "reading": "しばたたく",
+            "senses": [
+              {
+                "key": "2831002:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to blink"
+                ]
+              },
+              {
+                "key": "1341200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to twinkle"
+                ]
+              },
+              {
+                "key": "2831001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to wink"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 92,
+            "surface": "星",
+            "lemma": "星",
+            "reading": "ほし",
+            "senses": [
+              {
+                "key": "1376310:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "star"
+                ]
+              },
+              {
+                "key": "2100980:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "star (counter)"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "またたく",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1341200,
+              "readings": [
+                "またたく",
+                "まばたく"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1341200:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to twinkle"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 2831002,
+              "readings": [
+                "しばたたく",
+                "しばたく"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2831002:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to blink"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 2831001,
+              "readings": [
+                "めたたく",
+                "めばたく"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2831001:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to wink"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 10,
+        "s": 0,
+        "sub": 1,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 92,
+          "surface": "星",
+          "lemma": "星",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ぼし",
+          "reading": "ほし",
+          "readings": [
+            "ほし",
+            "せい"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1376310:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star"
+            ]
+          },
+          {
+            "key": "2100980:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "star (counter)"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 90,
+            "surface": "瞬き",
+            "lemma": "瞬く",
+            "reading": "しばたたく",
+            "senses": [
+              {
+                "key": "2831002:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to blink"
+                ]
+              },
+              {
+                "key": "1341200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to twinkle"
+                ]
+              },
+              {
+                "key": "2831001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "to wink"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 92,
+            "surface": "星",
+            "lemma": "星",
+            "reading": "ほし",
+            "senses": [
+              {
+                "key": "1376310:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "star"
+                ]
+              },
+              {
+                "key": "2100980:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "star (counter)"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "ほし",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1376310,
+              "readings": [
+                "ほし"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1376310:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "star"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 2100980,
+              "readings": [
+                "せい"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2100980:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "star (counter)"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   ]
 }

@@ -23,7 +23,9 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
 
     /// <summary>
     /// The page's blocks with their tokens and phrases, the words they point at with their senses, and the stored AI
-    /// answers. That's everything <see cref="Lookup"/> reads, so the reader can answer a tap on this page itself
+    /// answers, with each top-level word's hint and the user's saved choice. That's everything <see cref="Lookup"/> reads,
+    /// so the reader can answer a tap on this page itself. The saved choices make the answer the user's own, so it's
+    /// never cached
     /// </summary>
     /// <param name="page">0-based, as the book reader counts pages</param>
     /// <returns>No content when the page isn't tokenized yet. It moves up the queue, and DictionaryPagesReady follows.
@@ -32,7 +34,7 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
     [HttpGet("epub-page")]
     public async Task<ActionResult<EpubPageTokensDto>> GetEpubPage(int chapterId, int page)
     {
-        var tokens = await dictionaryService.GetEpubPageAsync(chapterId, page, HttpContext.RequestAborted);
+        var tokens = await dictionaryService.GetEpubPageAsync(UserId, chapterId, page, HttpContext.RequestAborted);
         return tokens == null ? NoContent() : Ok(tokens);
     }
 
@@ -47,8 +49,55 @@ public class DictionaryController(IDictionaryService dictionaryService, IUnitOfW
         if (!User.IsInRole(PolicyConstants.AdminRole) &&
             !await unitOfWork.UserRepository.HasAccessToChapter(UserId, dto.ChapterId, ct)) return NotFound();
 
-        var result = await dictionaryService.LookupAsync(dto, ct);
+        var result = await dictionaryService.LookupAsync(UserId, dto, ct);
         return result == null ? NoContent() : Ok(result);
+    }
+
+    /// <summary>
+    /// Saves the reading the user picked for a word in a series, in place of any saved before. Later lookups of the
+    /// word anywhere in the series open on it
+    /// </summary>
+    /// <returns>400 when the reading isn't a reading of one of the word's groups, 404 without access to the series, and
+    /// 503 while reading.db is being upgraded</returns>
+    [HttpPut("reading-choice")]
+    public async Task<ActionResult> SaveReadingChoice(ReadingChoiceDto dto)
+    {
+        var ct = HttpContext.RequestAborted;
+        if (!User.IsInRole(PolicyConstants.AdminRole) &&
+            !await unitOfWork.UserRepository.HasAccessToSeries(UserId, dto.SeriesId, ct)) return NotFound();
+
+        try
+        {
+            await dictionaryService.SaveReadingChoiceAsync(UserId, dto, ct);
+        }
+        catch (KavitaException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (ReadingStoreNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
+        return Ok();
+    }
+
+    /// <summary>
+    /// Clears the user's saved reading for a word in a series. Clearing one that isn't saved succeeds
+    /// </summary>
+    /// <returns>503 while reading.db is being upgraded</returns>
+    [SeriesAccess]
+    [HttpDelete("reading-choice")]
+    public async Task<ActionResult> ClearReadingChoice(int seriesId, long wordId)
+    {
+        try
+        {
+            await dictionaryService.ClearReadingChoiceAsync(UserId, seriesId, wordId, HttpContext.RequestAborted);
+        }
+        catch (ReadingStoreNotReadyException ex)
+        {
+            return NotReady(ex);
+        }
+        return Ok();
     }
 
     /// <summary>

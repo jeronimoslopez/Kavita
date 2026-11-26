@@ -507,7 +507,10 @@ public class TokenizeService : ITokenizeService
             }
 
             var phrases = (response.Blocks[i].Phrases ?? []).Select(p => p with { W = wordIds[(int) p.W] }).ToList();
-            stored.Add(new StoredBlock(block.Index, block.Text, tokens) { Phrases = phrases, Ruby = block.Ruby });
+            stored.Add(new StoredBlock(block.Index, block.Text, tokens)
+            {
+                Phrases = phrases, Ruby = block.Ruby, Blind = (response.Blocks[i].Blind ?? []).ToList(),
+            });
         }
 
         return stored;

@@ -87,6 +87,21 @@ public static class MarkedReading
             dictionary == null ? null : ToHiragana(dictionary));
     }
 
+    /// <summary>
+    /// A reading of a whole token's surface turned into its lemma's reading, by the swap <see cref="Of"/> makes for the
+    /// dictionary form, so 言っ read いっ with the lemma 言う gives いう
+    /// </summary>
+    /// <param name="surface">The token's text</param>
+    /// <param name="reading">The surface's reading, such as the tokenizer's <see cref="TokenDto.R"/></param>
+    /// <param name="lemma">The lemma of the token's word</param>
+    /// <returns>The reading in hiragana, or null when the surface's stem doesn't match the lemma's or the reading is
+    /// shorter than the surface's trailing kana</returns>
+    public static string? DictionaryReading(string surface, string reading, string? lemma)
+    {
+        var form = DictionaryForm(surface, reading, 0, lemma);
+        return form == null ? null : ToHiragana(form);
+    }
+
     /// <param name="coveredEnd">Where the last span ends, as an offset into <paramref name="surface"/></param>
     private static string? DictionaryForm(string surface, string printed, int coveredEnd, string? lemma)
     {
@@ -99,6 +114,7 @@ public static class MarkedReading
         while (lemmaStem > 0 && IsKana(lemma[lemmaStem - 1])) lemmaStem--;
 
         if (surfaceStem == 0 || !surface.AsSpan(0, surfaceStem).SequenceEqual(lemma.AsSpan(0, lemmaStem))) return null;
+        if (printed.Length < surface.Length - surfaceStem) return null;
 
         // The trailing kana aren't under a span, so the printed reading ends with them as written
         return printed[..^(surface.Length - surfaceStem)] + lemma[lemmaStem..];

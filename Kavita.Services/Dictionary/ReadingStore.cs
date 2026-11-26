@@ -87,22 +87,24 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     /// <summary>
     /// The marked readings of some words over the units of some files, summed per word, reading and printed form.
-    /// It reads the files' units through unit's (kind, manga_file_id, page) key and each unit's rows for the words
-    /// through reading_mark's key. Public so the tests can check the plan
+    /// Furigana marks few of a book's words, so it reads each word's rows through ix_reading_mark_word and then each
+    /// row's unit by id. CROSS JOIN keeps that order, where the planner would otherwise read every unit of the files
+    /// and look each word up in each. Public so the tests can check the plan
     /// </summary>
     /// <param name="files">The IN list of file id parameters</param>
     /// <param name="words">The IN list of word id parameters</param>
     public static string ReadingMarkTotalsSql(string files, string words) => $"""
         SELECT m.word_id, m.reading, m.printed, SUM(m.count)
-        FROM unit u
-        JOIN reading_mark m ON m.unit_id = u.id
-        WHERE u.kind = $kind AND u.manga_file_id IN ({files}) AND m.word_id IN ({words})
+        FROM reading_mark m
+        CROSS JOIN unit u ON u.id = m.unit_id
+        WHERE m.word_id IN ({words}) AND u.kind = $kind AND u.manga_file_id IN ({files})
         GROUP BY m.word_id, m.reading, m.printed
         """;
 
     /// <summary>
-    /// The uses of some words over the units of some files, summed per word, read the way
-    /// <see cref="ReadingMarkTotalsSql"/> reads. Public so the tests can check the plan
+    /// The uses of some words over the units of some files, summed per word. Common words are on nearly every page, so
+    /// it reads the files' units through unit's (kind, manga_file_id, page) key and each unit's rows for the words
+    /// through word_use's key. Public so the tests can check the plan
     /// </summary>
     public static string WordUseTotalsSql(string files, string words) => $"""
         SELECT w.word_id, SUM(w.uses)
@@ -143,14 +145,15 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version)
-            VALUES ($lemma, $pos, $isProper, $reading, $jlpt, $readings, $senses, $lexiconVersion)
+            INSERT INTO word (lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries)
+            VALUES ($lemma, $pos, $isProper, $reading, $jlpt, $readings, $senses, $lexiconVersion, $entries)
             ON CONFLICT (lemma, pos, is_proper) DO UPDATE SET
                 reading = excluded.reading,
                 jlpt = excluded.jlpt,
                 readings = excluded.readings,
                 senses = excluded.senses,
-                lexicon_version = excluded.lexicon_version
+                lexicon_version = excluded.lexicon_version,
+                entries = excluded.entries
             RETURNING id
             """;
         var lemma = command.Parameters.Add("$lemma", SqliteType.Text);
@@ -160,6 +163,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         var jlpt = command.Parameters.Add("$jlpt", SqliteType.Integer);
         var readings = command.Parameters.Add("$readings", SqliteType.Text);
         var senses = command.Parameters.Add("$senses", SqliteType.Text);
+        var entries = command.Parameters.Add("$entries", SqliteType.Text);
         command.Parameters.AddWithValue("$lexiconVersion", lexiconVersion);
 
         var ids = new List<long>(words.Count);
@@ -172,6 +176,11 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             jlpt.Value = (object?) word.Jlpt ?? DBNull.Value;
             readings.Value = JsonSerializer.Serialize(word.Readings, ReadingJson.Options);
             senses.Value = JsonSerializer.Serialize(word.Senses, ReadingJson.Options);
+            // NULL for an answer without the field, which a sidecar before version 3 gives, and [] for a version 3
+            // word no entry matched, so the two read back apart
+            entries.Value = word.Entries == null
+                ? DBNull.Value
+                : JsonSerializer.Serialize(word.Entries, ReadingJson.Options);
             ids.Add(Convert.ToInt64(await command.ExecuteScalarAsync(ct)));
         }
 
@@ -509,35 +518,46 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     }
 
     public Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(int mangaFileId,
-        IReadOnlyCollection<long> wordIds, CancellationToken ct = default) =>
-        GetReadingMarksAsync([mangaFileId], wordIds, ct);
+        IReadOnlyCollection<long> wordIds, bool markedOnly = false, CancellationToken ct = default) =>
+        GetReadingMarksAsync([mangaFileId], wordIds, markedOnly, ct);
 
     public async Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(
-        IReadOnlyCollection<int> mangaFileIds, IReadOnlyCollection<long> wordIds, CancellationToken ct = default)
+        IReadOnlyCollection<int> mangaFileIds, IReadOnlyCollection<long> wordIds, bool markedOnly = false,
+        CancellationToken ct = default)
     {
         if (mangaFileIds.Count == 0 || wordIds.Count == 0) return new Dictionary<long, WordMarkTotals>();
 
         var uses = new Dictionary<long, int>();
         var marks = new Dictionary<(long WordId, string Reading, string Printed), int>();
         await using var connection = await database.OpenConnectionAsync(ct);
-        // One snapshot for every batch, so a page saved meanwhile counts in both tables or in neither
+        // One snapshot for every read, so a page saved meanwhile counts in both tables or in neither
         await using var snapshot = connection.BeginTransaction(deferred: true);
-        foreach (var files in mangaFileIds.Distinct().Chunk(MarkBatchSize))
+        var fileBatches = mangaFileIds.Distinct().Chunk(MarkBatchSize).ToList();
+        foreach (var files in fileBatches)
         foreach (var words in wordIds.Distinct().Chunk(MarkBatchSize))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = snapshot;
             command.Parameters.AddWithValue("$kind", Epub);
-            var fileList = AddInList(command, "f", files);
-            var wordList = AddInList(command, "w", words);
-            command.CommandText = ReadingMarkTotalsSql(fileList, wordList) + ";\n" + WordUseTotalsSql(fileList, wordList);
+            command.CommandText = ReadingMarkTotalsSql(AddInList(command, "f", files), AddInList(command, "w", words));
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 var key = (reader.GetInt64(0), reader.GetString(1), reader.GetString(2));
                 marks[key] = marks.GetValueOrDefault(key) + reader.GetInt32(3);
             }
-            await reader.NextResultAsync(ct);
+        }
+
+        // Counting uses reads every page of the files, so a caller that only needs the marked words' uses skips the rest
+        var usesFor = markedOnly ? marks.Keys.Select(m => m.WordId).Distinct().ToList() : wordIds.Distinct().ToList();
+        foreach (var files in fileBatches)
+        foreach (var words in usesFor.Chunk(MarkBatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = snapshot;
+            command.Parameters.AddWithValue("$kind", Epub);
+            command.CommandText = WordUseTotalsSql(AddInList(command, "f", files), AddInList(command, "w", words));
+            await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 var wordId = reader.GetInt64(0);
@@ -556,6 +576,61 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         return uses.Keys.Concat(readings.Select(r => r.Key)).Distinct().ToDictionary(id => id, id =>
             new WordMarkTotals(id, uses.GetValueOrDefault(id), readings[id]
                 .OrderByDescending(r => r.Count).ThenBy(r => r.Reading, StringComparer.Ordinal).ToList()));
+    }
+
+    public async Task<IReadOnlyDictionary<long, string>> GetReadingChoicesAsync(int userId, int seriesId,
+        IReadOnlyCollection<long> wordIds, CancellationToken ct = default)
+    {
+        var result = new Dictionary<long, string>();
+        if (wordIds.Count == 0) return result;
+
+        await using var connection = await database.OpenConnectionAsync(ct);
+        foreach (var batch in wordIds.Distinct().Chunk(BatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                SELECT word_id, reading FROM reading_choice
+                WHERE user_id = $user AND series_id = $series AND word_id IN ({AddInList(command, "w", batch)})
+                """;
+            command.Parameters.AddWithValue("$user", userId);
+            command.Parameters.AddWithValue("$series", seriesId);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) result[reader.GetInt64(0)] = reader.GetString(1);
+        }
+        return result;
+    }
+
+    public async Task SaveReadingChoiceAsync(int userId, int seriesId, long wordId, string reading,
+        CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO reading_choice (user_id, series_id, word_id, reading, updated_utc)
+            VALUES ($user, $series, $word, $reading, $now)
+            ON CONFLICT (user_id, series_id, word_id) DO UPDATE SET
+                reading = excluded.reading,
+                updated_utc = excluded.updated_utc
+            """;
+        command.Parameters.AddWithValue("$user", userId);
+        command.Parameters.AddWithValue("$series", seriesId);
+        command.Parameters.AddWithValue("$word", wordId);
+        command.Parameters.AddWithValue("$reading", reading);
+        command.Parameters.AddWithValue("$now", Now());
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task ClearReadingChoiceAsync(int userId, int seriesId, long wordId, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM reading_choice WHERE user_id = $user AND series_id = $series AND word_id = $word
+            """;
+        command.Parameters.AddWithValue("$user", userId);
+        command.Parameters.AddWithValue("$series", seriesId);
+        command.Parameters.AddWithValue("$word", wordId);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     public async Task<ReadingUnitState> RecordFailedAttemptAsync(long unitId, int maxAttempts, CancellationToken ct = default)
@@ -975,7 +1050,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = $"""
-                SELECT id, lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version
+                SELECT id, lemma, pos, is_proper, reading, jlpt, readings, senses, lexicon_version, entries
                 FROM word WHERE id IN ({AddInList(command, "w", batch)})
                 """;
             await using var reader = await command.ExecuteReaderAsync(ct);
@@ -986,7 +1061,10 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
                     reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
                     JsonSerializer.Deserialize<List<string>>(reader.GetString(6)) ?? [],
                     JsonSerializer.Deserialize<List<SenseDto>>(reader.GetString(7)) ?? [],
-                    reader.GetString(8));
+                    reader.GetString(8))
+                {
+                    Entries = reader.IsDBNull(9) ? null : JsonSerializer.Deserialize<List<WordEntryDto>>(reader.GetString(9)),
+                };
             }
         }
     }
