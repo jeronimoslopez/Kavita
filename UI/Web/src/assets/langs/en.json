@@ -5134,6 +5134,7 @@
         "parts": "Parts",
         "part-of": "Part of",
         "no-entry": "No dictionary entry for this word",
+        "book-word": "A name or word from this book",
         "loading": "Looking up…",
         "lookup-failed": "The lookup failed. Try again in a moment.",
         "ai-sense": "Sense chosen by AI",

@@ -220,6 +220,42 @@ describe('DictionaryPopupComponent', () => {
     expect(q(el, 'popup-back')).not.toBeNull();
   });
 
+  describe('a word the book defines', () => {
+    const suirei = (source: 'furigana' | 'book' | 'series' | 'dictionary') => result({
+      word: {
+        id: 98, surface: '翠苓', lemma: '翠苓', pos: '名詞', isProper: true,
+        occurrenceReading: null, reading: 'すいれい', readings: [], jlpt: null,
+      },
+      senses: [],
+      parts: [
+        {sub: 0, wordId: 82, surface: '翠', lemma: '翠', reading: 'みどり', senses: [{key: '9200:1', pos: ['n'], gloss: ['green']}]},
+        {sub: 1, wordId: 83, surface: '苓', lemma: '苓', reading: 'れい', senses: []},
+      ],
+      readings: {
+        level: source === 'dictionary' || source === 'furigana' ? 'certain' : 'likely', source,
+        shown: source === 'dictionary' ? null : 'スイレイ', pick: null, bookOnly: source === 'furigana', groups: [],
+      },
+    });
+
+    for (const source of ['furigana', 'book', 'series'] as const) {
+      it(`calls a word without senses read by ${source} a word from this book, with its reading and parts`, async () => {
+        const el = await show(view({kind: 'result', result: suirei(source)}));
+        expect(q(el, 'popup-book-word')?.textContent).toContain(strings['book-word']);
+        expect(q(el, 'popup-no-entry')).toBeNull();
+        expect(q(el, 'popup-lemma')?.textContent).toBe('翠苓');
+        expect(q(el, 'popup-reading')?.textContent).toBe('スイレイ');
+        expect(all(el, 'popup-part').map(p => p.textContent?.replace(/\s+/g, ' ').trim())).toEqual(['翠 みどり', '苓 れい']);
+      });
+    }
+
+    it('keeps saying there is no entry for a word without senses the dictionary alone reads', async () => {
+      const el = await show(view({kind: 'result', result: suirei('dictionary')}));
+      expect(q(el, 'popup-no-entry')?.textContent).toContain(strings['no-entry']);
+      expect(q(el, 'popup-book-word')).toBeNull();
+      expect(q(el, 'popup-reading')?.textContent).toBe('すいれい');
+    });
+  });
+
   it('emits Back and Close', async () => {
     const el = await show(view({kind: 'result', result: result()}, {canGoBack: true}));
     let back = 0;
