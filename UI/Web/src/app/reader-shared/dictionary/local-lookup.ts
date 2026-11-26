@@ -5,8 +5,11 @@ import {
   DictionaryWord,
   EpubPageTokens,
   EpubPageWord,
+  LookupReadings,
   SubToken,
 } from '../../_models/dictionary/dictionary';
+import {markedReadingOf} from './marked-reading';
+import {markedForResolver, NO_READINGS, readingGroups, resolveReadings, ResolverInput, tokenReadingOf} from './readings';
 
 /** A tap, as the `block`, `s`, `sub` and `phrase` of a DictionaryLookupRequest */
 export interface LocalLookupRequest {
@@ -52,6 +55,7 @@ export function localLookup(page: EpubPageTokens, request: LocalLookupRequest,
       analysis: null,
       parts: [],
       partOf: [],
+      readings: readingsOf(word, {tokenReading: word.reading}),
     };
   }
 
@@ -100,13 +104,39 @@ export function localLookup(page: EpubPageTokens, request: LocalLookupRequest,
     partOf.push({index, s, e, lemma: phraseWord.lemma, reading: phraseWord.reading, gloss: firstGloss(phraseWord)});
   });
 
+  const surface = slice(blockText, targetS, targetE);
+  const tokenReading = tokenReadingOf(surface, targetR, word.lemma, word.reading);
+  const readings = request.sub === null
+    ? readingsOf(word, {
+      marked: markedForResolver(markedReadingOf(blockText, tokenS, tokenE, block.ruby ?? [], word.lemma)),
+      choice: word.choice ?? null,
+      hint: word.hint ?? null,
+      tokenReading,
+      blind: block.blind?.includes(tokenS) ?? false,
+    })
+    : readingsOf(word, {tokenReading});
+
   return {
-    word: dictionaryWord(targetW, word, slice(blockText, targetS, targetE), targetR),
+    word: dictionaryWord(targetW, word, surface, targetR),
     senses: word.senses ?? [],
     analysis,
     parts: partResults,
     partOf,
+    readings,
   };
+}
+
+/**
+ * The resolver's answer for a word. A word without `entries`, as in all version 2 data, is certain from the dictionary
+ * with no groups, so the popup keeps its flat layout even where the book has furigana
+ */
+function readingsOf(word: EpubPageWord, input: Partial<Omit<ResolverInput, 'groups'>>): LookupReadings {
+  if (word.entries === undefined) return {...NO_READINGS, groups: []};
+  return resolveReadings({
+    groups: readingGroups(word.entries, word.senses ?? []),
+    marked: null, choice: null, hint: null, tokenReading: null, blind: false,
+    ...input,
+  });
 }
 
 function wordOf(page: EpubPageTokens, id: number): EpubPageWord | null {
