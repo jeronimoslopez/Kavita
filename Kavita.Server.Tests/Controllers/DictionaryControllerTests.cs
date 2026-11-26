@@ -109,6 +109,38 @@ public class DictionaryControllerTests
         await _unitOfWork.UserRepository.DidNotReceiveWithAnyArgs().HasAccessToChapter(default, default, default);
     }
 
+    /// <summary>
+    /// ASP.NET reads request bodies and writes answers with the web defaults, camelCase and case-insensitive
+    /// </summary>
+    private static readonly System.Text.Json.JsonSerializerOptions Web = new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    [Theory]
+    [InlineData("""{"chapterId": 3, "page": 1, "block": 2, "s": 4, "sub": null}""", null)]
+    [InlineData("""{"chapterId": 3, "page": 1, "block": 2, "s": 4}""", null)]
+    [InlineData("""{"chapterId": 3, "page": 1, "block": 2, "s": 4, "sub": null, "phrase": null}""", null)]
+    [InlineData("""{"chapterId": 3, "page": 1, "block": 2, "s": 4, "sub": null, "phrase": 1}""", 1)]
+    public void LookupRequest_ReadsWithOrWithoutAPhrase(string json, int? phrase)
+    {
+        var request = System.Text.Json.JsonSerializer.Deserialize<DictionaryLookupRequestDto>(json, Web)!;
+
+        Assert.Equal(new DictionaryLookupRequestDto(3, 1, 2, 4, null, phrase), request);
+    }
+
+    [Fact]
+    public void LookupResult_WritesPartOfInCamelCase()
+    {
+        var result = new DictionaryLookupResultDto
+        {
+            Word = new DictionaryWordDto(1, "気", "気", "名詞", false, "き", "き", ["き"], 4),
+            PartOf = [new DictionaryPhraseDto(0, 0, 3, "ki ga suru", "kigasuru", "to have a feeling that")],
+        };
+
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result, Web));
+
+        Assert.Equal("""[{"index":0,"s":0,"e":3,"lemma":"ki ga suru","reading":"kigasuru","gloss":"to have a feeling that"}]""",
+            json.RootElement.GetProperty("partOf").GetRawText());
+    }
+
     [Theory]
     [InlineData(null, 4)]
     [InlineData(0, 1)]
