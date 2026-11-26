@@ -7,6 +7,7 @@ using System.Net;
 using System.Text;
 using HtmlAgilityPack;
 using Kavita.API.Services;
+using Kavita.Models.DTOs.Dictionary;
 
 namespace Kavita.Services.Dictionary;
 
@@ -49,7 +50,8 @@ public class EpubTextBlocks : IEpubTextBlocks
     /// The tags whose text is left out of a block's text, and which never hold a block
     /// </summary>
     /// <remarks>
-    /// <c>rt</c> and <c>rp</c> hold furigana and its fallback parentheses, which aren't part of the sentence. The
+    /// <c>rt</c> and <c>rp</c> hold furigana and its fallback parentheses, which aren't part of the sentence. An
+    /// <c>rt</c> inside a <c>ruby</c> still gives its block a furigana span, without adding to the text. The
     /// browser parses the content of <c>iframe</c>, <c>noembed</c>, <c>noframes</c>, <c>xmp</c>, <c>plaintext</c>,
     /// <c>textarea</c>, <c>title</c>, and <c>noscript</c> (when scripts run) as plain text, keeps a
     /// <c>template</c>'s content out of the DOM, and drops or keeps tags inside a <c>select</c> depending on the
@@ -124,7 +126,7 @@ public class EpubTextBlocks : IEpubTextBlocks
         }
 
         // Blocks never nest, so a block found as the walk leaves it still comes out in document order
-        var block = new EpubTextBlock(blocks.Count, node, CollectText(node));
+        var block = CollectBlock(blocks.Count, node);
         blocks.Add(block);
         if (stamp)
         {
@@ -162,11 +164,112 @@ public class EpubTextBlocks : IEpubTextBlocks
         }
     }
 
-    private static string CollectText(HtmlNode block)
+    /// <summary>
+    /// A <c>ruby</c> element the text walk is inside, with the bases its next <c>rt</c> elements read
+    /// </summary>
+    /// <param name="start">The text offset where the ruby starts</param>
+    private sealed class OpenRuby(int start)
+    {
+        /// <summary>
+        /// Where the base of an <c>rt</c> with no <c>rb</c> to pair with starts, which is the ruby's start or the end
+        /// of the last <c>rt</c>
+        /// </summary>
+        public int SegmentStart { get; set; } = start;
+        /// <summary>
+        /// The <c>rb</c> elements no <c>rt</c> has read yet, as text offsets, so <c>rb rb rt rt</c> pairs in order
+        /// </summary>
+        public Queue<(int S, int E)> Bases { get; } = new();
+    }
+
+    /// <summary>
+    /// An element the text walk has entered and not yet left
+    /// </summary>
+    private sealed class OpenTextElement(HtmlNode node)
+    {
+        public HtmlNode Node { get; } = node;
+        public int NextChild { get; set; }
+        /// <summary>
+        /// Set when the element is a <c>ruby</c>
+        /// </summary>
+        public OpenRuby? Ruby { get; init; }
+        /// <summary>
+        /// The text offset where the element starts when it's an <c>rb</c> of an open ruby, and -1 otherwise
+        /// </summary>
+        public int RbStart { get; init; } = -1;
+    }
+
+    private static EpubTextBlock CollectBlock(int index, HtmlNode block)
     {
         var text = new StringBuilder();
-        var open = new Stack<OpenElement>();
-        open.Push(new OpenElement(block));
+        var ruby = new List<RubyDto>();
+        // Innermost last, so a ruby nested in another's base reads its own rt elements
+        var rubies = new List<OpenRuby>();
+        var open = new Stack<OpenTextElement>();
+        open.Push(new OpenTextElement(block));
+        while (open.Count > 0)
+        {
+            var element = open.Peek();
+            if (element.NextChild >= element.Node.ChildNodes.Count)
+            {
+                open.Pop();
+                if (element.Ruby != null) rubies.RemoveAt(rubies.Count - 1);
+                if (element.RbStart >= 0) rubies[^1].Bases.Enqueue((element.RbStart, text.Length));
+                continue;
+            }
+
+            switch (element.Node.ChildNodes[element.NextChild++])
+            {
+                case HtmlTextNode textNode:
+                    text.Append(DecodeAsBrowser(textNode));
+                    break;
+                case { NodeType: HtmlNodeType.Element } rt when rubies.Count > 0 && IsTag(rt, "rt"):
+                    AddReading(rubies[^1], ReadingText(rt), text, ruby);
+                    break;
+                case { NodeType: HtmlNodeType.Element } child when !SkippedTags.Contains(child.Name):
+                    if (IsTag(child, "ruby"))
+                    {
+                        var openRuby = new OpenRuby(text.Length);
+                        rubies.Add(openRuby);
+                        open.Push(new OpenTextElement(child) { Ruby = openRuby });
+                    }
+                    else
+                    {
+                        open.Push(new OpenTextElement(child) { RbStart = rubies.Count > 0 && IsTag(child, "rb") ? text.Length : -1 });
+                    }
+                    break;
+            }
+        }
+
+        ruby.Sort((a, b) => a.S.CompareTo(b.S));
+        return new EpubTextBlock(index, block, text.ToString()) { Ruby = ruby };
+    }
+
+    private static bool IsTag(HtmlNode node, string name) => node.Name.Equals(name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Pairs an <c>rt</c> with the oldest unread <c>rb</c> of its ruby, or with the text since the ruby's start or its
+    /// last <c>rt</c>. Whitespace around the base or the reading isn't part of either, and a base or a reading that's
+    /// empty without it gives no span
+    /// </summary>
+    private static void AddReading(OpenRuby openRuby, string reading, StringBuilder text, List<RubyDto> ruby)
+    {
+        var (s, e) = openRuby.Bases.Count > 0 ? openRuby.Bases.Dequeue() : (openRuby.SegmentStart, text.Length);
+        openRuby.SegmentStart = text.Length;
+
+        while (s < e && char.IsWhiteSpace(text[s])) s++;
+        while (e > s && char.IsWhiteSpace(text[e - 1])) e--;
+        reading = reading.Trim();
+        if (s < e && reading.Length > 0) ruby.Add(new RubyDto(s, e, reading));
+    }
+
+    /// <summary>
+    /// The text of an <c>rt</c>, through any markup inside it and without what a skipped tag inside it holds
+    /// </summary>
+    private static string ReadingText(HtmlNode rt)
+    {
+        var text = new StringBuilder();
+        var open = new Stack<OpenTextElement>();
+        open.Push(new OpenTextElement(rt));
         while (open.Count > 0)
         {
             var element = open.Peek();
@@ -182,7 +285,7 @@ public class EpubTextBlocks : IEpubTextBlocks
                     text.Append(DecodeAsBrowser(textNode));
                     break;
                 case { NodeType: HtmlNodeType.Element } child when !SkippedTags.Contains(child.Name):
-                    open.Push(new OpenElement(child));
+                    open.Push(new OpenTextElement(child));
                     break;
             }
         }

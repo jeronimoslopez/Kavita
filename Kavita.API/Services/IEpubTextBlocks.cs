@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using HtmlAgilityPack;
+using Kavita.Models.DTOs.Dictionary;
 
 namespace Kavita.API.Services;
 
@@ -13,7 +14,8 @@ namespace Kavita.API.Services;
 /// <c>style</c>, <c>noscript</c>, <c>template</c>, <c>iframe</c>, <c>noembed</c>, <c>noframes</c>, <c>xmp</c>,
 /// <c>plaintext</c>, <c>textarea</c>, <c>title</c> and <c>select</c>, taking no text and no block from inside them.
 /// Blocks are numbered from 0 in document order. Blocks whose text is empty keep their number, so indices don't
-/// depend on the text.
+/// depend on the text. Each <c>ruby</c> inside a block gives the block furigana spans over its base text, read from
+/// its <c>rt</c> elements, without changing the block's text.
 /// </remarks>
 public interface IEpubTextBlocks
 {
@@ -40,4 +42,11 @@ public interface IEpubTextBlocks
 /// <param name="Index">The block's position in document order, which is also its <c>data-kb</c> value</param>
 /// <param name="Node">The block element</param>
 /// <param name="Text">The block's text. Token offsets are UTF-16 offsets into it</param>
-public sealed record EpubTextBlock(int Index, HtmlNode Node, string Text);
+public sealed record EpubTextBlock(int Index, HtmlNode Node, string Text)
+{
+    /// <summary>
+    /// The block's furigana in document order, one span per <c>rt</c> with a reading over a base with text. Offsets
+    /// are UTF-16 offsets into <see cref="Text"/>, which never holds the readings themselves
+    /// </summary>
+    public IReadOnlyList<RubyDto> Ruby { get; init; } = [];
+}
