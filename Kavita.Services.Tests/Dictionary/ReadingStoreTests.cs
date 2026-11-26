@@ -1349,6 +1349,206 @@ public class ReadingStoreTests : IDisposable
 
     #endregion
 
+    #region Reading marks
+
+    private sealed record MarkWords(long Name, long Say, long Open, long Part, long Phrase);
+
+    private async Task<MarkWords> SeedMarkWordsAsync()
+    {
+        var ids = await _store.UpsertWordsAsync([Word("高順"), Word("言う"), Word("開く"), Word("開"), Word("言うまでもない")], Lexicon);
+        return new MarkWords(ids[0], ids[1], ids[2], ids[3], ids[4]);
+    }
+
+    /// <summary>
+    /// 高順 three times, twice printed in katakana and once in hiragana, 言っ marked and 言う unmarked, and 開く marked
+    /// as a compound whose part has a word. A phrase over 言う and a token of an unknown word count for nothing
+    /// </summary>
+    private static StoredBlock[] MarkedPage(MarkWords w) =>
+    [
+        Block(0, "高順は言った。高順と高順", Token(0, 2, w.Name), Token(2, 3, null), Token(3, 5, w.Say), Token(5, 6, null),
+                Token(6, 7, null), Token(7, 9, w.Name), Token(9, 10, null), Token(10, 12, w.Name))
+            with
+            {
+                Ruby = [new RubyDto(0, 2, "ガオシュン"), new RubyDto(3, 4, "い"), new RubyDto(7, 9, "ガオシュン"), new RubyDto(10, 12, "がおしゅん")],
+                Phrases = [new PhraseDto(3, 6, w.Phrase)],
+            },
+        Block(1, "言う", Token(0, 2, w.Say)),
+        Block(2, "開く謎", Token(0, 2, w.Open, sub: [new SubTokenDto(0, 1, w.Part, "あ"), new SubTokenDto(1, 2, null, "く")]),
+                Token(2, 3, 9999))
+            with { Ruby = [new RubyDto(0, 1, "あ"), new RubyDto(2, 3, "なぞ")] },
+    ];
+
+    private async Task<List<(long Unit, long Word, string Reading, string Printed, long Count)>> MarkRowsAsync()
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT unit_id, word_id, reading, printed, count FROM reading_mark ORDER BY unit_id, word_id, reading";
+        var rows = new List<(long, long, string, string, long)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add((reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4)));
+        }
+        return rows;
+    }
+
+    private async Task<List<(long Unit, long Word, long Uses)>> UseRowsAsync()
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT unit_id, word_id, uses FROM word_use ORDER BY unit_id, word_id";
+        var rows = new List<(long, long, long)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync()) rows.Add((reader.GetInt64(0), reader.GetInt64(1), reader.GetInt64(2)));
+        return rows;
+    }
+
+    private async Task<long> SaveMarkedPageAsync(int file, int page, IReadOnlyList<StoredBlock> blocks, int pageCount = 2)
+    {
+        if (page == 0) await _store.SeedFileAsync(file, pageCount, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(file, page))!;
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+        return unit.Id;
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_CountsTopLevelUsesAndDictionaryFormMarks()
+    {
+        var w = await SeedMarkWordsAsync();
+
+        var unit = await SaveMarkedPageAsync(1, 0, MarkedPage(w));
+
+        Assert.Equal(
+        [
+            (unit, w.Name, "がおしゅん", "ガオシュン", 3L),
+            (unit, w.Say, "いう", "いう", 1L),
+            (unit, w.Open, "あく", "あく", 1L),
+        ], await MarkRowsAsync());
+        Assert.Equal([(unit, w.Name, 3L), (unit, w.Say, 2L), (unit, w.Open, 1L), (unit, 9999L, 1L)], await UseRowsAsync());
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_WithoutRuby_CountsUsesAndNoMarks()
+    {
+        var w = await SeedMarkWordsAsync();
+
+        var unit = await SaveMarkedPageAsync(1, 0, MarkedPage(w).Select(b => b with { Ruby = [] }).ToList());
+
+        Assert.Empty(await MarkRowsAsync());
+        Assert.Contains((unit, w.Name, 3L), await UseRowsAsync());
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_AgainReplacesOnlyThatPagesRows()
+    {
+        var w = await SeedMarkWordsAsync();
+        var first = await SaveMarkedPageAsync(1, 0, MarkedPage(w));
+        var second = await SaveMarkedPageAsync(1, 1, MarkedPage(w));
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(first, Stamp, Tokenizer,
+            [Block(0, "開か", Token(0, 2, w.Open)) with { Ruby = [new RubyDto(0, 1, "ひら")] }]));
+
+        var marks = await MarkRowsAsync();
+        Assert.Equal([(first, w.Open, "ひらく", "ひらく", 1L)], marks.Where(r => r.Unit == first));
+        Assert.Equal(3, marks.Count(r => r.Unit == second));
+        Assert.Equal([(first, w.Open, 1L)], (await UseRowsAsync()).Where(r => r.Unit == first));
+        Assert.Equal(4, (await UseRowsAsync()).Count(r => r.Unit == second));
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_ThatIsRefusedWritesNoRows()
+    {
+        var w = await SeedMarkWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+
+        Assert.False(await _store.SaveTokenizedUnitAsync(unit.Id, NewStamp, Tokenizer, MarkedPage(w)));
+
+        Assert.Empty(await MarkRowsAsync());
+        Assert.Empty(await UseRowsAsync());
+    }
+
+    [Fact]
+    public async Task DeletingUnits_RemovesTheirRows_AndReseedingKeepsThem()
+    {
+        var w = await SeedMarkWordsAsync();
+        var first = await SaveMarkedPageAsync(1, 0, MarkedPage(w), pageCount: 3);
+        await SaveMarkedPageAsync(1, 1, MarkedPage(w));
+        var last = await SaveMarkedPageAsync(1, 2, MarkedPage(w));
+        var other = await SaveMarkedPageAsync(2, 0, MarkedPage(w));
+
+        // A new stamp keeps the rows until the page is tokenized again, and fewer pages delete the rest
+        await _store.SeedFileAsync(1, 2, NewStamp, 0);
+        Assert.DoesNotContain(await MarkRowsAsync(), r => r.Unit == last);
+        Assert.DoesNotContain(await UseRowsAsync(), r => r.Unit == last);
+        Assert.Contains(await MarkRowsAsync(), r => r.Unit == first);
+
+        await _store.DeleteFilesAsync([1]);
+        Assert.Equal([other], (await MarkRowsAsync()).Select(r => r.Unit).Distinct());
+        Assert.Equal([other], (await UseRowsAsync()).Select(r => r.Unit).Distinct());
+    }
+
+    [Fact]
+    public async Task GetReadingMarks_SumsOneFilesPagesForTheAskedWords()
+    {
+        var w = await SeedMarkWordsAsync();
+        await SaveMarkedPageAsync(1, 0, MarkedPage(w));
+        await SaveMarkedPageAsync(1, 1, [
+            Block(0, "高順", Token(0, 2, w.Name)) with { Ruby = [new RubyDto(0, 2, "こうじゅん")] },
+            Block(1, "開く", Token(0, 2, w.Open)),
+        ]);
+        await SaveMarkedPageAsync(2, 0, MarkedPage(w));
+
+        var totals = await _store.GetReadingMarksAsync(1, [w.Name, w.Open, w.Part, 12345]);
+
+        Assert.Equal([w.Name, w.Open], totals.Keys.Order());
+        Assert.Equal(4, totals[w.Name].Uses);
+        Assert.Equal([new ReadingMarkTotal("がおしゅん", "ガオシュン", 3), new ReadingMarkTotal("こうじゅん", "こうじゅん", 1)],
+            totals[w.Name].Readings);
+        Assert.Equal(2, totals[w.Open].Uses);
+        Assert.Equal([new ReadingMarkTotal("あく", "あく", 1)], totals[w.Open].Readings);
+    }
+
+    [Fact]
+    public async Task GetReadingMarks_SumsEveryFileAndPicksThePrintedFormCountedMost()
+    {
+        var w = await SeedMarkWordsAsync();
+        await SaveMarkedPageAsync(1, 0, MarkedPage(w));
+        // Four hiragana marks in file 2 outweigh file 1's three katakana ones
+        await SaveMarkedPageAsync(2, 0, [
+            Block(0, "高順高順高順高順", Token(0, 2, w.Name), Token(2, 4, w.Name), Token(4, 6, w.Name), Token(6, 8, w.Name))
+                with { Ruby = [new RubyDto(0, 2, "がおしゅん"), new RubyDto(2, 4, "がおしゅん"), new RubyDto(4, 6, "がおしゅん"), new RubyDto(6, 8, "がおしゅん")] },
+        ]);
+        await SaveMarkedPageAsync(3, 0, MarkedPage(w));
+
+        var both = await _store.GetReadingMarksAsync([1, 2, 2], [w.Name, w.Say]);
+
+        Assert.Equal(7, both[w.Name].Uses);
+        Assert.Equal([new ReadingMarkTotal("がおしゅん", "がおしゅん", 7)], both[w.Name].Readings);
+        Assert.Equal(2, both[w.Say].Uses);
+        Assert.Equal([new ReadingMarkTotal("いう", "いう", 1)], both[w.Say].Readings);
+        Assert.Equal(["ガオシュン"], (await _store.GetReadingMarksAsync([1], [w.Name]))[w.Name].Readings.Select(r => r.Printed));
+    }
+
+    [Fact]
+    public async Task GetReadingMarks_GivesAnEmptyAnswerForNothingAskedAndBatchesLongLists()
+    {
+        var w = await SeedMarkWordsAsync();
+        await SaveMarkedPageAsync(1, 0, MarkedPage(w));
+
+        Assert.Empty(await _store.GetReadingMarksAsync([], [w.Name]));
+        Assert.Empty(await _store.GetReadingMarksAsync([1], []));
+        Assert.Empty(await _store.GetReadingMarksAsync(7, [w.Name]));
+
+        var manyWords = Enumerable.Range(100_000, 1200).Select(i => (long) i).Append(w.Name).ToList();
+        var manyFiles = Enumerable.Range(10, 1200).Append(1).ToList();
+        var totals = await _store.GetReadingMarksAsync(manyFiles, manyWords);
+        Assert.Equal(3, Assert.Single(totals).Value.Uses);
+        Assert.Equal(3, totals[w.Name].Readings.Single().Count);
+    }
+
+    #endregion
+
     #region Counts
 
     [Fact]

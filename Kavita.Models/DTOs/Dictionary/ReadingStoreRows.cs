@@ -103,6 +103,23 @@ public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto>
 }
 
 /// <summary>
+/// One way a book's furigana reads a word in dictionary form, summed over the pages asked about
+/// </summary>
+/// <param name="Reading">The reading in hiragana</param>
+/// <param name="Printed">The reading as the book prints it, the most frequent printed form when the pages print it
+/// more than one way</param>
+/// <param name="Count">How many top-level tokens of the word the furigana reads this way</param>
+public sealed record ReadingMarkTotal(string Reading, string Printed, int Count);
+
+/// <summary>
+/// How a word is used and marked over the pages asked about
+/// </summary>
+/// <param name="Uses">How many top-level tokens point at the word, marked or not</param>
+/// <param name="Readings">The marked readings, most counted first and then by reading. Empty when no token of the
+/// word is marked</param>
+public sealed record WordMarkTotals(long WordId, int Uses, IReadOnlyList<ReadingMarkTotal> Readings);
+
+/// <summary>
 /// A row of reading.db's word table
 /// </summary>
 /// <param name="Jlpt">1 (N1) to 5 (N5), or null when the word isn't listed</param>

@@ -86,9 +86,42 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     public const string AmbiguousWord = "(json_array_length(senses) > 1 OR json_array_length(readings) > 1)";
 
     /// <summary>
+    /// The marked readings of some words over the units of some files, summed per word, reading and printed form.
+    /// It reads the files' units through unit's (kind, manga_file_id, page) key and each unit's rows for the words
+    /// through reading_mark's key. Public so the tests can check the plan
+    /// </summary>
+    /// <param name="files">The IN list of file id parameters</param>
+    /// <param name="words">The IN list of word id parameters</param>
+    public static string ReadingMarkTotalsSql(string files, string words) => $"""
+        SELECT m.word_id, m.reading, m.printed, SUM(m.count)
+        FROM unit u
+        JOIN reading_mark m ON m.unit_id = u.id
+        WHERE u.kind = $kind AND u.manga_file_id IN ({files}) AND m.word_id IN ({words})
+        GROUP BY m.word_id, m.reading, m.printed
+        """;
+
+    /// <summary>
+    /// The uses of some words over the units of some files, summed per word, read the way
+    /// <see cref="ReadingMarkTotalsSql"/> reads. Public so the tests can check the plan
+    /// </summary>
+    public static string WordUseTotalsSql(string files, string words) => $"""
+        SELECT w.word_id, SUM(w.uses)
+        FROM unit u
+        JOIN word_use w ON w.unit_id = u.id
+        WHERE u.kind = $kind AND u.manga_file_id IN ({files}) AND w.word_id IN ({words})
+        GROUP BY w.word_id
+        """;
+
+    /// <summary>
     /// Ids per IN list. Older SQLite builds cap a statement at 999 parameters
     /// </summary>
     private const int BatchSize = 500;
+
+    /// <summary>
+    /// File ids and word ids per IN list when reading marks. A statement holds one list of each, so both together stay
+    /// under 999 parameters
+    /// </summary>
+    private const int MarkBatchSize = 400;
 
     /// <summary>
     /// Units whose blocks <see cref="RequestAnalysisAsync"/> holds in memory at once. A page's blocks run to a few
@@ -195,6 +228,10 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         command.CommandText = """
             DELETE FROM analysis WHERE unit_id IN (
                 SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
+            DELETE FROM reading_mark WHERE unit_id IN (
+                SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
+            DELETE FROM word_use WHERE unit_id IN (
+                SELECT id FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount);
             DELETE FROM unit WHERE kind = $kind AND manga_file_id = $file AND page >= $pageCount;
 
             UPDATE unit
@@ -227,6 +264,10 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             var files = AddInList(command, "f", batch);
             command.CommandText = $"""
                 DELETE FROM analysis WHERE unit_id IN (
+                    SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
+                DELETE FROM reading_mark WHERE unit_id IN (
+                    SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
+                DELETE FROM word_use WHERE unit_id IN (
                     SELECT id FROM unit WHERE kind = $kind AND manga_file_id IN ({files}));
                 DELETE FROM unit WHERE kind = $kind AND manga_file_id IN ({files});
                 DELETE FROM analysis_request WHERE manga_file_id IN ({files});
@@ -307,6 +348,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         command.Parameters.AddWithValue("$version", tokenizerVersion);
         command.Parameters.Add("$blocks", SqliteType.Blob).Value = ReadingBlocks.Encode(blocks);
         await command.ExecuteNonQueryAsync(ct);
+
+        await ReplaceMarksAsync(connection, transaction, unitId, blocks, ct);
 
         command.CommandText = "SELECT priority FROM analysis_request WHERE manga_file_id = $file";
         command.Parameters.AddWithValue("$file", mangaFileId);
@@ -406,6 +449,113 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             while (await reader.ReadAsync(ct)) result.Add(reader.GetInt64(0));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Replaces the unit's reading_mark and word_use rows with the ones its top-level tokens give
+    /// </summary>
+    private static async Task ReplaceMarksAsync(SqliteConnection connection, SqliteTransaction transaction,
+        long unitId, IReadOnlyList<StoredBlock> blocks, CancellationToken ct)
+    {
+        var lemmas = await LemmasAsync(connection, transaction,
+            blocks.Where(b => b.Ruby.Count > 0).SelectMany(b => b.Tokens).Select(t => t.W).OfType<long>(), ct);
+        var (marks, uses) = PageMarks.Count(blocks, lemmas);
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM reading_mark WHERE unit_id = $unit; DELETE FROM word_use WHERE unit_id = $unit;";
+        command.Parameters.AddWithValue("$unit", unitId);
+        await command.ExecuteNonQueryAsync(ct);
+
+        command.CommandText = "INSERT INTO word_use (unit_id, word_id, uses) VALUES ($unit, $word, $count)";
+        var word = command.Parameters.Add("$word", SqliteType.Integer);
+        var count = command.Parameters.Add("$count", SqliteType.Integer);
+        foreach (var (wordId, n) in uses)
+        {
+            word.Value = wordId;
+            count.Value = n;
+            await command.ExecuteNonQueryAsync(ct);
+        }
+
+        command.CommandText = """
+            INSERT INTO reading_mark (unit_id, word_id, reading, printed, count)
+            VALUES ($unit, $word, $reading, $printed, $count)
+            """;
+        var reading = command.Parameters.Add("$reading", SqliteType.Text);
+        var printed = command.Parameters.Add("$printed", SqliteType.Text);
+        foreach (var mark in marks)
+        {
+            word.Value = mark.WordId;
+            reading.Value = mark.Reading;
+            printed.Value = mark.Printed;
+            count.Value = mark.Count;
+            await command.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task<Dictionary<long, string>> LemmasAsync(SqliteConnection connection,
+        SqliteTransaction transaction, IEnumerable<long> wordIds, CancellationToken ct)
+    {
+        var result = new Dictionary<long, string>();
+        foreach (var batch in wordIds.Distinct().Chunk(BatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"SELECT id, lemma FROM word WHERE id IN ({AddInList(command, "w", batch)})";
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) result[reader.GetInt64(0)] = reader.GetString(1);
+        }
+        return result;
+    }
+
+    public Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(int mangaFileId,
+        IReadOnlyCollection<long> wordIds, CancellationToken ct = default) =>
+        GetReadingMarksAsync([mangaFileId], wordIds, ct);
+
+    public async Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(
+        IReadOnlyCollection<int> mangaFileIds, IReadOnlyCollection<long> wordIds, CancellationToken ct = default)
+    {
+        if (mangaFileIds.Count == 0 || wordIds.Count == 0) return new Dictionary<long, WordMarkTotals>();
+
+        var uses = new Dictionary<long, int>();
+        var marks = new Dictionary<(long WordId, string Reading, string Printed), int>();
+        await using var connection = await database.OpenConnectionAsync(ct);
+        // One snapshot for every batch, so a page saved meanwhile counts in both tables or in neither
+        await using var snapshot = connection.BeginTransaction(deferred: true);
+        foreach (var files in mangaFileIds.Distinct().Chunk(MarkBatchSize))
+        foreach (var words in wordIds.Distinct().Chunk(MarkBatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = snapshot;
+            command.Parameters.AddWithValue("$kind", Epub);
+            var fileList = AddInList(command, "f", files);
+            var wordList = AddInList(command, "w", words);
+            command.CommandText = ReadingMarkTotalsSql(fileList, wordList) + ";\n" + WordUseTotalsSql(fileList, wordList);
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var key = (reader.GetInt64(0), reader.GetString(1), reader.GetString(2));
+                marks[key] = marks.GetValueOrDefault(key) + reader.GetInt32(3);
+            }
+            await reader.NextResultAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                var wordId = reader.GetInt64(0);
+                uses[wordId] = uses.GetValueOrDefault(wordId) + reader.GetInt32(1);
+            }
+        }
+
+        // A reading's printed form is the one counted most over every page asked about
+        var readings = marks
+            .GroupBy(m => (m.Key.WordId, m.Key.Reading))
+            .Select(g => (g.Key.WordId, Total: new ReadingMarkTotal(g.Key.Reading,
+                g.OrderByDescending(m => m.Value).ThenBy(m => m.Key.Printed, StringComparer.Ordinal).First().Key.Printed,
+                g.Sum(m => m.Value))))
+            .ToLookup(r => r.WordId, r => r.Total);
+
+        return uses.Keys.Concat(readings.Select(r => r.Key)).Distinct().ToDictionary(id => id, id =>
+            new WordMarkTotals(id, uses.GetValueOrDefault(id), readings[id]
+                .OrderByDescending(r => r.Count).ThenBy(r => r.Reading, StringComparer.Ordinal).ToList()));
     }
 
     public async Task<ReadingUnitState> RecordFailedAttemptAsync(long unitId, int maxAttempts, CancellationToken ct = default)

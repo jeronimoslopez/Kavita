@@ -36,15 +36,17 @@ public interface IReadingStore
     Task<IReadOnlyDictionary<int, string>> GetFileStampsAsync(CancellationToken ct = default);
     /// <summary>
     /// Makes the file's units match its current pages. Pages from 0 to <paramref name="pageCount"/> - 1 without a unit
-    /// get a pending one, and units past the end are deleted with their analysis. A unit with a different stamp goes
-    /// back to pending with the new stamp and keeps its blocks and analysis until it's tokenized again. A failed unit
+    /// get a pending one, and units past the end are deleted with their analysis, reading marks and word uses. A unit
+    /// with a different stamp goes back to pending with the new stamp and keeps its blocks, analysis, reading marks and
+    /// word uses until it's tokenized again. A failed unit
     /// with the same stamp stays failed
     /// </summary>
     /// <param name="sourceStamp">Changes whenever the file's content does, such as its last write time in UTC ticks</param>
     /// <param name="priority">Priority of the units this call creates or sends back to pending</param>
     Task SeedFileAsync(int mangaFileId, int pageCount, string sourceStamp, int priority, CancellationToken ct = default);
     /// <summary>
-    /// Deletes the files' units, analysis rows and analysis requests. Words stay, because other files share them
+    /// Deletes the files' units, analysis rows, reading marks, word uses and analysis requests. Words stay, because
+    /// other files share them
     /// </summary>
     Task DeleteFilesAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default);
 
@@ -64,7 +66,8 @@ public interface IReadingStore
     /// tokens whose word is ambiguous, which is the rule <see cref="SidecarWordDto.IsAmbiguous"/> applies to the
     /// stored word. A row whose (block, s, e, word id) is still a span keeps its state, priority and answer, other
     /// rows are deleted, and a span with no row gets one, pending at the request's priority. Parts of compounds never
-    /// get a row
+    /// get a row. The same transaction replaces the unit's reading marks and word uses with those its top-level
+    /// tokens give: a use per token with a word, and a mark per token the block's furigana reads in dictionary form
     /// </summary>
     /// <param name="sourceStamp">The stamp from the <see cref="ReadingUnitRef"/> that was tokenized</param>
     /// <param name="blocks">Every block of the page in index order, with reading.db word ids in its tokens</param>
@@ -132,6 +135,20 @@ public interface IReadingStore
     /// Deletes the files' analysis requests and every one of their analysis rows, answers included. Units and words stay
     /// </summary>
     Task ClearAnalysisAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default);
+
+    /// <summary>
+    /// How one file's furigana reads the words, summed over its pages
+    /// </summary>
+    /// <returns>An entry per word of <paramref name="wordIds"/> that a top-level token of the file uses, with the
+    /// file's marked readings of it. Pages tokenized before furigana was kept count for neither</returns>
+    Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(int mangaFileId,
+        IReadOnlyCollection<long> wordIds, CancellationToken ct = default);
+    /// <summary>
+    /// How the files' furigana reads the words, summed over every page of every file
+    /// </summary>
+    /// <returns>As the one-file overload returns, summed over the files</returns>
+    Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(IReadOnlyCollection<int> mangaFileIds,
+        IReadOnlyCollection<long> wordIds, CancellationToken ct = default);
 
     /// <param name="mangaFileIds">The files to count, or null for the whole store</param>
     Task<ReadingStoreCounts> GetCountsAsync(IReadOnlyCollection<int>? mangaFileIds, CancellationToken ct = default);

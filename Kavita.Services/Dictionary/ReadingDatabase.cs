@@ -84,10 +84,40 @@ public class ReadingDatabase
         );
         """;
 
+    /// <summary>
+    /// The tables version 3 adds. Both are keyed by unit first, so saving a page replaces its rows through the key, and
+    /// a question about some words in some files reads each file's units through unit's (kind, manga_file_id, page)
+    /// key and then each unit's rows for the words through this key. A WITHOUT ROWID table stores its rows in the key's
+    /// b-tree, so neither needs another index
+    /// </summary>
+    /// <remarks>
+    /// reading_mark has a row per page, word and dictionary-form reading the page's furigana gives the word. reading is
+    /// hiragana, printed the form the page prints most often for it, and count how many top-level tokens it reads that
+    /// way. word_use has a row per page and word, with how many top-level tokens of the page point at the word
+    /// </remarks>
+    internal const string Version3Schema = """
+        CREATE TABLE IF NOT EXISTS reading_mark (
+            unit_id INTEGER NOT NULL,
+            word_id INTEGER NOT NULL,
+            reading TEXT NOT NULL,
+            printed TEXT NOT NULL,
+            count INTEGER NOT NULL,
+            PRIMARY KEY (unit_id, word_id, reading)
+        ) WITHOUT ROWID;
+
+        CREATE TABLE IF NOT EXISTS word_use (
+            unit_id INTEGER NOT NULL,
+            word_id INTEGER NOT NULL,
+            uses INTEGER NOT NULL,
+            PRIMARY KEY (unit_id, word_id)
+        ) WITHOUT ROWID;
+        """;
+
     private static readonly IReadOnlyList<Func<ReadingDatabase, SqliteConnection, CancellationToken, Task>> Migrations =
     [
         (_, connection, ct) => CreateTablesAsync(connection, ct),
         (database, connection, ct) => database.ShrinkAsync(connection, ct),
+        (_, connection, ct) => AddReadingMarksAsync(connection, ct),
     ];
 
     private readonly string _connectionString;
@@ -128,13 +158,13 @@ public class ReadingDatabase
     public string DatabasePath { get; }
 
     /// <summary>
-    /// Units per transaction in the version 2 rewrite. Words go ten times as many per transaction, being far smaller.
+    /// Units per transaction in a rewrite of existing rows, which version 2 does. Words go ten times as many per transaction, being far smaller.
     /// Settable so tests can run the rewrite in several batches
     /// </summary>
     internal int MigrationUnitsPerBatch { get; init; } = 100;
 
     /// <summary>
-    /// Called with the phase name after each committed batch of the version 2 rewrite, so tests can stop it midway
+    /// Called with the phase name after each committed batch of a rewrite, so tests can stop it midway
     /// </summary>
     internal Action<string>? AfterMigrationBatch { get; init; }
 
@@ -229,9 +259,10 @@ public class ReadingDatabase
                 $"reading.db is at schema version {version}, and this build only knows up to {Migrations.Count}");
         }
 
-        // A file at version 1 or later holds tokenized books, and upgrading or compacting it can take minutes. Callers
-        // other than the one that started this are turned away meanwhile instead of waiting
-        var rewrites = version >= 1 && version < Migrations.Count;
+        // A file at version 1 or later holds tokenized books, and the version 2 rewrite or a compaction can take
+        // minutes. Callers other than the one that started this are turned away meanwhile instead of waiting. Version 3
+        // only adds empty tables, so callers wait for it
+        var rewrites = version == 1;
         _rewriting = rewrites || await NeedsVacuumAsync(connection, ct);
         _initDecided.TrySetResult();
 
@@ -316,9 +347,9 @@ public class ReadingDatabase
             }
         }
 
-        await RunPhaseAsync(connection, "analysis", "unit", MigrationUnitsPerBatch, DeleteUnrequestedAnalysisAsync, ct);
-        await RunPhaseAsync(connection, "unit", "unit", MigrationUnitsPerBatch, RewriteBlocksAsync, ct);
-        await RunPhaseAsync(connection, "word", "word", MigrationUnitsPerBatch * 10, RewriteWordsAsync, ct);
+        await RunPhaseAsync(connection, 2, "analysis", "unit", MigrationUnitsPerBatch, DeleteUnrequestedAnalysisAsync, ct);
+        await RunPhaseAsync(connection, 2, "unit", "unit", MigrationUnitsPerBatch, RewriteBlocksAsync, ct);
+        await RunPhaseAsync(connection, 2, "word", "word", MigrationUnitsPerBatch * 10, RewriteWordsAsync, ct);
 
         await using (var transaction = connection.BeginTransaction(deferred: false))
         await using (var command = connection.CreateCommand())
@@ -338,7 +369,8 @@ public class ReadingDatabase
     /// Walks <paramref name="table"/> by id, one transaction per batch, from where migration_progress says the phase
     /// stopped
     /// </summary>
-    private async Task RunPhaseAsync(SqliteConnection connection, string phase, string table, int batchSize,
+    /// <param name="schema">The version the phase's step takes the file to, for the log</param>
+    private async Task RunPhaseAsync(SqliteConnection connection, int schema, string phase, string table, int batchSize,
         BatchAsync batch, CancellationToken ct)
     {
         long afterId;
@@ -383,9 +415,27 @@ public class ReadingDatabase
             AfterMigrationBatch?.Invoke(phase);
             if (++batches % 20 == 0)
             {
-                _logger.LogInformation("[ReadingDatabase] Schema 2 {Phase} rows up to id {Id}", phase, afterId);
+                _logger.LogInformation("[ReadingDatabase] Schema {Schema} {Phase} rows up to id {Id}", schema, phase, afterId);
             }
         }
+    }
+
+    /// <summary>
+    /// Version 3. Adds reading_mark and word_use, empty. Pages tokenized before them get their rows when they're
+    /// tokenized again, so nothing existing is rewritten and the step is one transaction
+    /// </summary>
+    private static async Task AddReadingMarksAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        // The version is read again inside the write transaction, so a second process opening the same file can't
+        // run the step twice
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        if (await UserVersionAsync(connection, transaction, ct) != 2) return;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = Version3Schema + "\nPRAGMA user_version = 3;";
+        await command.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 
     /// <summary>
