@@ -395,6 +395,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal([new SubTokenDto(6, 8, 102, "けいざい"), new SubTokenDto(8, 10, 103, "せいさく")], compound.Sub);
         Assert.Null(stored[0].Tokens[1].W);
         Assert.Equal(108, stored[1].Tokens[4].W);
+        Assert.Equal([new PhraseDto(10, 14, 114)], stored[0].Phrases);
     }
 
     [Fact]

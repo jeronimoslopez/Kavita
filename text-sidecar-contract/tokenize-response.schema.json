@@ -9,12 +9,12 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "The tokenizer's version, the word rules, the lexicon's version and the sidecar's, joined by ';', as in sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=<version>;sidecar=1. The lexicon's version holds ';' too, so compare the whole string. A change in any part can change the tokens of the same text.",
+      "description": "The tokenizer's version, the word rules, the lexicon's version and the sidecar's, joined by ';', as in sudachipy=0.6.11;sudachidict_full=20260723;modes=C/A;words=6;lexicon=<version>;sidecar=2. The lexicon's version holds ';' too, so compare the whole string. A change in any part can change the tokens of the same text.",
       "pattern": "^.+;words=[0-9]+;lexicon=.+;sidecar=[0-9]+$"
     },
     "words": {
       "type": "array",
-      "description": "The words the blocks use, each once across the whole response, keyed by lemma, pos and isProper. A token's w is an index into this list.",
+      "description": "The words the blocks use, each once across the whole response, keyed by lemma, pos and isProper. A token's w and a phrase's w are indices into this list, and a word may be one only a phrase points at.",
       "items": { "$ref": "#/$defs/word" }
     },
     "blocks": {
@@ -23,12 +23,17 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "tokens"],
+        "required": ["id", "tokens", "phrases"],
         "properties": {
           "id": { "type": "string" },
           "tokens": {
             "type": "array",
             "items": { "$ref": "#/$defs/token" }
+          },
+          "phrases": {
+            "type": "array",
+            "description": "The block's dictionary expressions, in no set order. Present from sidecar=2, and empty when the block has none. A sidecar=1 response leaves it out, which reads as empty.",
+            "items": { "$ref": "#/$defs/phrase" }
           }
         }
       }
@@ -59,8 +64,19 @@
       ],
       "items": false
     },
+    "phrase": {
+      "description": "[s, e, w] for a dictionary expression over two or more whole tokens, such as 気がする over 気, が and し. s is the start of its first token and e the end of its last. w is never null, and its word's pos is 表現. Phrases can overlap each other, and they never get analysis.",
+      "type": "array",
+      "minItems": 3,
+      "prefixItems": [
+        { "$ref": "#/$defs/offset" },
+        { "$ref": "#/$defs/offset" },
+        { "type": "integer", "minimum": 0 }
+      ],
+      "items": false
+    },
     "token": {
-      "description": "[s, e, w, r, sub]. sub is null, or the short-unit parts when the long unit splits and the unit or one of its parts has a word. When w is null and sub isn't, the words are in the parts.",
+      "description": "[s, e, w, r, sub]. sub is null, or the short-unit parts when the long unit splits and the unit or one of its parts has a word. When w is null and sub isn't, the words are in the parts. From sidecar=2, neighbouring tokens whose joined text is a dictionary headword come back as one token with the originals as its sub, so 神 and 様 are one token 神様 with the parts 神 and 様.",
       "type": "array",
       "minItems": 5,
       "prefixItems": [

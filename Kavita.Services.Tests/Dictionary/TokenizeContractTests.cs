@@ -18,7 +18,7 @@ public class TokenizeContractTests
 
         Assert.NotNull(response);
         Assert.StartsWith("sudachipy=", response.Version);
-        Assert.EndsWith(";sidecar=1", response.Version);
+        Assert.EndsWith(";sidecar=2", response.Version);
         Assert.Equal(["0", "1", "2"], response.Blocks.Select(b => b.Id));
 
         var harsh = response.Words[8];
@@ -41,6 +41,12 @@ public class TokenizeContractTests
         Assert.Equal((6, 10, 4L, "けいざいせいさく"), (compound.S, compound.E, compound.W, compound.R));
         Assert.NotNull(compound.Sub);
         Assert.Equal([new SubTokenDto(6, 8, 2, "けいざい"), new SubTokenDto(8, 10, 3, "せいさく")], compound.Sub);
+
+        // について spans に, つい and て, and no token points at its word
+        Assert.Equal([new PhraseDto(10, 14, 14)], response.Blocks[0].Phrases);
+        Assert.Equal(("について", "表現"), (response.Words[14].Lemma, response.Words[14].Pos));
+        Assert.DoesNotContain(response.Blocks.SelectMany(b => b.Tokens), t => t.W == 14);
+        Assert.Empty(response.Blocks[1].Phrases);
     }
 
     [Fact]
