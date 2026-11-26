@@ -76,7 +76,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             Version = unit.TokenizerVersion ?? string.Empty,
             Blocks = unit.Blocks
                 .Select(b => new EpubPageBlockDto(b.Index, b.Text.Length, b.Tokens.ToList(),
-                    b.Phrases.Count == 0 ? null : b.Phrases.ToList()))
+                    b.Phrases.Count == 0 ? null : b.Phrases.ToList(), b.Ruby.Count == 0 ? null : b.Ruby.ToList()))
                 .ToList(),
             Words = words.Values.ToDictionary(w => w.Id, w => new EpubPageWordDto(w.Lemma, w.Reading, w.Jlpt, w.Pos,
                 w.IsProper, w.Readings.ToList(), w.Senses.ToList())),

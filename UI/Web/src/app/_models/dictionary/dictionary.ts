@@ -27,6 +27,11 @@ export interface EpubPageBlock {
   tokens: Token[];
   /** In stored order, so a phrase's position is the `phrase` index that looks it up. Missing when the block has none */
   phrases?: Phrase[];
+  /**
+   * The block's furigana, `[s, e, reading]` with UTF-16 offsets of the base into the block's text and the `rt` text as
+   * the book prints it. Missing when the block has none
+   */
+  ruby?: [s: number, e: number, reading: string][];
 }
 
 /**

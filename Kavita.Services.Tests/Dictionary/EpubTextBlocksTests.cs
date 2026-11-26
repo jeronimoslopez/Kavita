@@ -1,5 +1,6 @@
 using HtmlAgilityPack;
 using Kavita.API.Services;
+using Kavita.Models.DTOs.Dictionary;
 using Kavita.Services.Dictionary;
 
 namespace Kavita.Services.Tests.Dictionary;
@@ -69,6 +70,96 @@ public class EpubTextBlocksTests
             "<p><ruby><rb>吾輩</rb><rt>わがはい</rt></ruby>は猫である</p>" +
             "<p><ruby>始<rp>（</rp><rt>はじ</rt><rp>）</rp></ruby>まり</p>"));
     }
+
+    #region Ruby spans
+
+    private EpubTextBlock Block(string bodyHtml) => Assert.Single(_blocks.GetBlocks(Body(bodyHtml)));
+
+    /// <summary>
+    /// Each case's block text, which must be the text the block had before ruby spans existed, and its spans
+    /// </summary>
+    public static TheoryData<string, string, RubyDto[]> RubyShapes => new()
+    {
+        // One ruby over its whole base
+        { "<p><ruby>漢字<rt>かんじ</rt></ruby>を書く</p>", "漢字を書く", [new RubyDto(0, 2, "かんじ")] },
+        // One span per rb and rt pair
+        { "<p><ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby></p>", "漢字",
+            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+        // Every rb first and every rt after, paired in order
+        { "<p><ruby><rb>漢</rb><rb>字</rb><rt>かん</rt><rt>じ</rt></ruby></p>", "漢字",
+            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+        // Bases without rb, each up to its rt
+        { "<p><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+        // rp fallbacks are in neither the text nor the reading
+        { "<p><ruby>始<rp>（</rp><rt>はじ</rt><rp>）</rp></ruby>まり</p>", "始まり", [new RubyDto(0, 1, "はじ")] },
+        { "<p><ruby>漢<rp>(</rp><rt>かん</rt><rp>)</rp>字<rp>(</rp><rt>じ</rt><rp>)</rp></ruby></p>", "漢字",
+            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+        // Markup inside rt is read through
+        { "<p><ruby>東京<rt><span class='k'>とう</span><b>きょう</b></rt></ruby></p>", "東京", [new RubyDto(0, 2, "とうきょう")] },
+        // An empty rt, or one of whitespace, gives no span
+        { "<p><ruby>空<rt></rt></ruby>と<ruby>白<rt> </rt></ruby></p>", "空と白", [] },
+        // A ruby inside inline elements inside the block, after other text
+        { "<p>前<span><em>と<ruby>後<rt>うしろ</rt></ruby></em></span>だ</p>", "前と後だ", [new RubyDto(2, 3, "うしろ")] },
+        // A surrogate pair before the ruby counts as two UTF-16 units
+        { "<p>𠮷<ruby>野家<rt>のや</rt></ruby></p>", "𠮷野家", [new RubyDto(2, 4, "のや")] },
+        { "<p><ruby>𠮟<rt>しか</rt></ruby>る</p>", "𠮟る", [new RubyDto(0, 2, "しか")] },
+        // A ruby whose base is empty or only whitespace gives no span
+        { "<p>あ<ruby><rt>から</rt></ruby>い<ruby> <rt>そら</rt></ruby></p>", "あい ", [] },
+        // Whitespace around the base or the reading belongs to neither
+        { "<p><ruby>\n 猫 <rt> ねこ </rt></ruby></p>", "\n 猫 ", [new RubyDto(2, 3, "ねこ")] },
+        // A katakana reading stays as printed
+        { "<p><ruby>高順<rt>ガオシュン</rt></ruby>は</p>", "高順は", [new RubyDto(0, 2, "ガオシュン")] },
+        // A ruby nested in another's base reads its own rt, and the outer one covers both
+        { "<p><ruby><ruby>明<rt>あ</rt></ruby>日<rt>あした</rt></ruby></p>", "明日",
+            [new RubyDto(0, 1, "あ"), new RubyDto(0, 2, "あした")] },
+        // An rtc holds the rt elements of the ruby
+        { "<p><ruby>漢字<rtc><rt>かんじ</rt></rtc></ruby></p>", "漢字", [new RubyDto(0, 2, "かんじ")] },
+        // An rb left without an rt gives no span
+        { "<p><ruby><rb>漢</rb><rb>字</rb><rt>かん</rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん")] },
+        // Entities decode in the reading as in the text
+        { "<p><ruby>&#x5B57;<rt>&#x3058;</rt></ruby></p>", "字", [new RubyDto(0, 1, "じ")] },
+    };
+
+    [Theory]
+    [MemberData(nameof(RubyShapes))]
+    public void Ruby_GivesSpansOverTheBaseAndLeavesTheTextAlone(string html, string text, RubyDto[] ruby)
+    {
+        var block = Block(html);
+
+        Assert.Equal(text, block.Text);
+        Assert.Equal(ruby, block.Ruby);
+    }
+
+    [Fact]
+    public void Ruby_StrayRtOutsideARubyGivesNoSpan()
+    {
+        var block = Block("<p>猫<rt>ねこ</rt>だ</p>");
+
+        Assert.Equal("猫だ", block.Text);
+        Assert.Empty(block.Ruby);
+    }
+
+    [Fact]
+    public void Ruby_SpansBelongToTheirOwnBlock()
+    {
+        var blocks = _blocks.GetBlocks(Body(
+            "<p><ruby>一<rt>いち</rt></ruby></p><p>に<ruby>二<rt>に</rt></ruby></p><p>三</p>"));
+
+        Assert.Equal(["一", "に二", "三"], blocks.Select(b => b.Text));
+        Assert.Equal([new RubyDto(0, 1, "いち")], blocks[0].Ruby);
+        Assert.Equal([new RubyDto(1, 2, "に")], blocks[1].Ruby);
+        Assert.Empty(blocks[2].Ruby);
+    }
+
+    [Fact]
+    public void Ruby_StampBlocksFindsTheSameSpans()
+    {
+        const string html = "<p><ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby>を</p>";
+
+        Assert.Equal(_blocks.GetBlocks(Body(html))[0].Ruby, _blocks.StampBlocks(Body(html))[0].Ruby);
+    }
+
+    #endregion
 
     [Fact]
     public void Entities_DecodeLikeABrowser()

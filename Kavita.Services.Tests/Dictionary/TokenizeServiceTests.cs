@@ -371,6 +371,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         var (_, service, files) = await Setup();
         var blocks = SampleBlocks();
         blocks.Add(Block(4, string.Empty));
+        blocks[3] = blocks[3] with { Ruby = [new RubyDto(0, 2, "かみさま")] };
         _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 2, Arg.Any<CancellationToken>()).Returns(blocks);
         _httpTest.RespondWith(SampleResponse);
         ReturnWordIds();
@@ -401,6 +402,10 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Equal([new PhraseDto(10, 13, 122)], stored[3].Phrases);
         Assert.Equal([new PhraseDto(3, 7, 114)], stored[2].Phrases);
         Assert.Empty(stored[0].Phrases);
+        // Furigana comes from the page and never goes to the sidecar
+        Assert.Equal([new RubyDto(0, 2, "かみさま")], stored[3].Ruby);
+        Assert.Empty(stored[0].Ruby);
+        Assert.DoesNotContain("ruby", _httpTest.CallLog.Single().RequestBody);
     }
 
     [Fact]

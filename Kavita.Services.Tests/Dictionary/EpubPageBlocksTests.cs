@@ -8,6 +8,7 @@ using Kavita.API.Services;
 using Kavita.Common;
 using Kavita.Common.Helpers;
 using Kavita.Models.DTOs.Account;
+using Kavita.Models.DTOs.Dictionary;
 using Kavita.Models.DTOs.Reader;
 using Kavita.Models.Entities.Enums.User;
 using Kavita.Services.Dictionary;
@@ -179,6 +180,32 @@ public class EpubPageBlocksTests
             "",
             "注1を参照。平成31年。",
         ], blocks.Select(b => b.Text));
+    }
+
+    [Fact]
+    public async Task JapaneseBook_BlocksKeepTheFuriganaBesideTheText()
+    {
+        using var book = JapaneseBook();
+
+        var first = (await _bookService.GetEpubPageBlocksAsync(book.FilePath, 0))!;
+        var second = (await _bookService.GetEpubPageBlocksAsync(book.FilePath, 1))!;
+
+        Assert.Equal(
+        [
+            [new RubyDto(4, 5, "はじ")],
+            [new RubyDto(1, 3, "わがはい")],
+            [new RubyDto(3, 4, "うま")],
+            [], [], [], [],
+        ], first.Select(b => b.Ruby));
+        Assert.Equal(
+        [
+            [],
+            [new RubyDto(0, 2, "とうきょう"), new RubyDto(3, 5, "おおさか"), new RubyDto(10, 11, "と"), new RubyDto(11, 12, "し")],
+            [], [], [],
+        ], second.Select(b => b.Ruby));
+        // Each span's base is the text the book prints the reading over
+        Assert.Equal(["始", "吾輩", "生"], first.SelectMany(b => b.Ruby.Select(r => b.Text[r.S..r.E])));
+        Assert.Equal(["東京", "大阪", "都", "市"], second.SelectMany(b => b.Ruby.Select(r => b.Text[r.S..r.E])));
     }
 
     [Fact]
