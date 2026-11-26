@@ -37,6 +37,7 @@ public class DictionaryServiceTests : AbstractDbTest
             Arg.Any<CancellationToken>()).Returns(new Dictionary<long, WordMarkTotals>());
         _store.GetReadingChoicesAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyCollection<long>>(),
             Arg.Any<CancellationToken>()).Returns(new Dictionary<long, string>());
+        _store.GetBookWordsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>()).Returns([]);
     }
     private readonly ITokenizeService _tokenizeService = Substitute.For<ITokenizeService>();
     private readonly ITokenizeWorkerSignal _workerSignal = Substitute.For<ITokenizeWorkerSignal>();
@@ -540,6 +541,39 @@ public class DictionaryServiceTests : AbstractDbTest
     /// A name the dictionary has no entry for, from a version 3 sidecar, so its entries are empty and not missing
     /// </summary>
     private static readonly StoredWord Gaoshun = new(97, "高順", "名詞", true, "たかじゅん", null, [], [], "lex1") { Entries = [] };
+    private static readonly StoredWord Midori = new(82, "翠", "名詞", false, "みどり", null, ["みどり"], [Sense("9200:1", "green")], "lex1")
+    {
+        Entries = [new WordEntryDto(9200, false, ["みどり"])],
+    };
+    private static readonly StoredWord Rei = new(83, "苓", "名詞", false, "れい", null, [], [], "lex1") { Entries = [] };
+    private static readonly StoredWord Uma = new(84, "馬", "名詞", false, "うま", 5, ["うま"], [Sense("9300:1", "horse")], "lex1")
+    {
+        Entries = [new WordEntryDto(9300, true, ["うま"])],
+    };
+    /// <summary>
+    /// Words the book's furigana defines, with the word rows the reading store gives them
+    /// </summary>
+    private static readonly StoredWord Suirei = new(98, "翠苓", BookWords.Pos, true, "すいれい", null, [], [], BookWords.LexiconVersion)
+    {
+        Entries = [],
+    };
+    private static readonly StoredWord Basen = new(99, "馬閃", BookWords.Pos, true, "ばせん", null, [], [], BookWords.LexiconVersion)
+    {
+        Entries = [],
+    };
+
+    /// <summary>
+    /// The opened file defines 翠苓, and another file of the series defines 馬閃
+    /// </summary>
+    private void GivenBookWords(MangaFile file)
+    {
+        _store.GetBookWordsAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<CancellationToken>()).Returns(
+        [
+            new BookWordTotal(file.Id, Suirei.Lemma, Suirei.Id, "すいれい", "スイレイ", 1),
+            new BookWordTotal(file.Id + 1000, Suirei.Lemma, Suirei.Id, "みどりれい", "ミドリレイ", 5),
+            new BookWordTotal(file.Id + 1000, Basen.Lemma, Basen.Id, "ばせん", "バセン", 2),
+        ]);
+    }
 
     /// <summary>
     /// Word ids that tokens and phrases point at and the store doesn't have
@@ -604,10 +638,21 @@ public class DictionaryServiceTests : AbstractDbTest
             // A compound without a word of its own whose parts have groups
             new StoredBlock(10, "瞬き星",
                 [new TokenDto(0, 3, null, null, [new SubTokenDto(0, 2, Blink.Id, "またたき"), new SubTokenDto(2, 3, Hoshi.Id, "ぼし")])]),
+            // The book word 翠苓, split by the tokenizer, marked once and then unmarked. The page response joins both,
+            // drops the blind offset inside the first, and drops the analysis row of 翠 alone
+            new StoredBlock(11, "翠苓は翠苓と",
+            [
+                new TokenDto(0, 1, Midori.Id, "みどり", null), new TokenDto(1, 2, Rei.Id, null, null), new TokenDto(2, 3, null, null, null),
+                new TokenDto(3, 4, Midori.Id, "みどり", null), new TokenDto(4, 5, Rei.Id, null, null), new TokenDto(5, 6, null, null, null),
+            ]) { Ruby = [new RubyDto(0, 2, "スイレイ")], Blind = [0] },
+            // The book word 馬閃, defined only by another file of the series, with a part that has no word
+            new StoredBlock(12, "馬閃が",
+                [new TokenDto(0, 1, Uma.Id, "うま", null), new TokenDto(1, 2, null, "せん", null), new TokenDto(2, 3, null, null, null)]),
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
-            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun);
+            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen);
+        GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
                 new WordMarkTotals(Gaoshun.Id, 3, [new ReadingMarkTotal("がおしゅん", "ガオシュン", 1)]),
@@ -621,6 +666,7 @@ public class DictionaryServiceTests : AbstractDbTest
             Row(2, unit.Id, 0, 0, 3, Totemo.Id, AnalysisState.Pending),
             Row(3, unit.Id, 1, 4, 6, Kamisama.Id, AnalysisState.Done, generator: "claude-haiku"),
             Row(4, unit.Id, 2, 2, 4, Suru.Id, AnalysisState.Done, sense: "3002:1", generator: "claude-sonnet"),
+            Row(5, unit.Id, 11, 0, 1, Midori.Id, AnalysisState.Done, sense: "9200:1", generator: "claude-sonnet"),
         ]);
         return unit;
     }
@@ -670,6 +716,13 @@ public class DictionaryServiceTests : AbstractDbTest
         (9, 3, null, null), // a name with empty entries and a book hint
         (10, 0, 0, null), // a part with groups, by its own reading
         (10, 0, 1, null), // a part whose reading no group has
+        (11, 0, null, null), // a book word on its furigana, with no groups, and no analysis
+        (11, 3, null, null), // a book word unmarked, by the book's hint
+        (11, 3, 0, null), // a piece of a book word, with its groups
+        (11, 3, 1, null), // a piece with no entries
+        (11, 1, null, null), // null, inside a joined token
+        (12, 0, null, null), // a book word only the series defines, by the series' hint
+        (12, 0, 1, null), // null, a piece without a word
     ];
 
     /// <summary>
@@ -714,6 +767,53 @@ public class DictionaryServiceTests : AbstractDbTest
         var stored = (await File.ReadAllTextAsync(ParityFixturePath)).ReplaceLineEndings("\n");
         Assert.True(stored == json, "The page response or a lookup answer changed. Run the test with " +
                                     "KAVITA_UPDATE_FIXTURES=1 to write the fixture, then run the UI's local-lookup spec");
+    }
+
+    #endregion
+
+    #region Book words
+
+    [Fact]
+    public async Task GetEpubPage_JoinsTheSeriesBookWordsAndGivesEachItsBookWordHint()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
+
+        Assert.NotNull(page);
+        await _store.Received().GetBookWordsAsync(
+            Arg.Is<IReadOnlyCollection<int>>(f => f.Order().SequenceEqual(new[] { book.FirstFile.Id, book.SecondFile.Id }.Order())),
+            Arg.Any<CancellationToken>());
+        var block = page.Blocks.Single(b => b.Index == 11);
+        Assert.Equal([(0, 2, (long?) Suirei.Id), (2, 3, null), (3, 5, Suirei.Id), (5, 6, null)], block.Tokens.Select(t => (t.S, t.E, t.W)));
+        Assert.Null(block.Blind);
+        Assert.Equal(new ReadingHintDto("すいれい", "スイレイ", ReadingSource.Book), page.Words[Suirei.Id].Hint);
+        Assert.Equal(new ReadingHintDto("ばせん", "バセン", ReadingSource.Series), page.Words[Basen.Id].Hint);
+        Assert.Empty(page.Words[Suirei.Id].Entries!);
+        Assert.DoesNotContain(page.Analysis, a => a.Block == 11);
+        // The pieces stay on the page as parts, and the hint doesn't come from reading_mark
+        Assert.Contains(Midori.Id, page.Words.Keys);
+        await _store.DidNotReceive().GetReadingMarksAsync(Arg.Any<int>(),
+            Arg.Is<IReadOnlyCollection<long>>(ids => ids.Contains(Suirei.Id)), Arg.Any<bool>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Lookup_OfABookWord_ReadsTheFuriganaWhenMarkedAndTheHintWhenNot()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var marked = await ReadingsAt(book, 11, 0);
+        var unmarked = await ReadingsAt(book, 11, 3);
+        var series = await ReadingsAt(book, 12, 0);
+
+        Assert.Equal((ReadingLevel.Certain, ReadingSource.Furigana, "スイレイ", (string?) null, true, 0),
+            (marked.Level, marked.Source, marked.Shown, marked.Pick, marked.BookOnly, marked.Groups.Count));
+        Assert.Equal((ReadingLevel.Likely, ReadingSource.Book, "スイレイ", (string?) null, false, 0),
+            (unmarked.Level, unmarked.Source, unmarked.Shown, unmarked.Pick, unmarked.BookOnly, unmarked.Groups.Count));
+        Assert.Equal((ReadingLevel.Likely, ReadingSource.Series, "バセン", (string?) null, false, 0),
+            (series.Level, series.Source, series.Shown, series.Pick, series.BookOnly, series.Groups.Count));
     }
 
     #endregion

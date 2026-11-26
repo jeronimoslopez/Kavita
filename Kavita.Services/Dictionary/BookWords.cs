@@ -38,8 +38,8 @@ public static class BookWords
     public const string LexiconVersion = "book";
 
     /// <summary>
-    /// Kanji a counter or a unit of time, which the single-kanji rule never lets start a book word, so 回目 and 年前
-    /// stay split
+    /// Counters and units of time, which the single-kanji rule never lets start a book word, so 回目 and 年前 stay
+    /// split
     /// </summary>
     public const string CounterKanji = "年月日時分秒回度歳円組目番人本個枚階";
 

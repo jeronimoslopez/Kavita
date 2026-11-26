@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -149,7 +150,14 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     private const string Epub = "epub";
 
+    /// <summary>
+    /// The most sets of files whose book words stay cached, one per series read lately. Past it the cache starts over
+    /// </summary>
+    private const int MaxCachedBookWordSets = 64;
+
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
+    private readonly ConcurrentDictionary<string, CachedBookWords> _bookWords = new();
+    private long _bookWordGeneration;
 
     public async Task<IReadOnlyList<long>> UpsertWordsAsync(IReadOnlyList<SidecarWordDto> words, string lexiconVersion,
         CancellationToken ct = default)
@@ -295,6 +303,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             """;
         await command.ExecuteNonQueryAsync(ct);
         await transaction.CommitAsync(ct);
+        ForgetBookWords([mangaFileId]);
     }
 
     public async Task DeleteFilesAsync(IReadOnlyCollection<int> mangaFileIds, CancellationToken ct = default)
@@ -324,6 +333,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             await command.ExecuteNonQueryAsync(ct);
         }
         await transaction.CommitAsync(ct);
+        ForgetBookWords(mangaFileIds);
     }
 
     public async Task<ReadingUnitRef?> GetNextPendingUnitAsync(CancellationToken ct = default)
@@ -410,6 +420,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             command.CommandText = "DELETE FROM analysis WHERE unit_id = $unit";
             await command.ExecuteNonQueryAsync(ct);
             await transaction.CommitAsync(ct);
+            ForgetBookWords([mangaFileId]);
             return true;
         }
 
@@ -441,6 +452,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             requestPriority.Value, ct);
 
         await transaction.CommitAsync(ct);
+        ForgetBookWords([mangaFileId]);
         return true;
     }
 
@@ -669,15 +681,49 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
                 .OrderByDescending(r => r.Count).ThenBy(r => r.Reading, StringComparer.Ordinal).ToList()));
     }
 
+    /// <remarks>
+    /// Every page open and every tap reads its series' book words, so answers are kept in memory per set of files,
+    /// and a write to any page of one of the files drops every answer that includes it
+    /// </remarks>
     public async Task<IReadOnlyList<BookWordTotal>> GetBookWordsAsync(IReadOnlyCollection<int> mangaFileIds,
         CancellationToken ct = default)
     {
         if (mangaFileIds.Count == 0) return [];
 
+        var files = mangaFileIds.Distinct().Order().ToArray();
+        var key = string.Join(',', files);
+        if (_bookWords.TryGetValue(key, out var cached)) return cached.Totals;
+
+        var generation = Interlocked.Read(ref _bookWordGeneration);
+        var totals = await ReadBookWordsAsync(files, ct);
+        if (_bookWords.Count >= MaxCachedBookWordSets) _bookWords.Clear();
+        _bookWords[key] = new CachedBookWords(files.ToHashSet(), totals);
+        // A write that committed while this read ran may have been missed, and its ForgetBookWords may have run before
+        // the entry was added, so the entry goes again
+        if (Interlocked.Read(ref _bookWordGeneration) != generation) _bookWords.TryRemove(key, out _);
+        return totals;
+    }
+
+    /// <summary>
+    /// Drops the cached book words of every set of files that includes one of these. Called after each write to a
+    /// file's units commits
+    /// </summary>
+    private void ForgetBookWords(IReadOnlyCollection<int> mangaFileIds)
+    {
+        Interlocked.Increment(ref _bookWordGeneration);
+        foreach (var (key, entry) in _bookWords)
+        {
+            if (mangaFileIds.Any(entry.Files.Contains)) _bookWords.TryRemove(key, out _);
+        }
+    }
+
+    private async Task<IReadOnlyList<BookWordTotal>> ReadBookWordsAsync(IReadOnlyList<int> mangaFileIds,
+        CancellationToken ct)
+    {
         var rows = new Dictionary<(int File, string Text, long WordId, string Reading), Dictionary<string, int>>();
         await using var connection = await database.OpenConnectionAsync(ct);
         await using var snapshot = connection.BeginTransaction(deferred: true);
-        foreach (var files in mangaFileIds.Distinct().Chunk(BatchSize))
+        foreach (var files in mangaFileIds.Chunk(BatchSize))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = snapshot;
@@ -1227,6 +1273,8 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     private static ReadingUnitState ParseUnitState(string value) => Enum.Parse<ReadingUnitState>(value, ignoreCase: true);
 
     private static AnalysisState ParseAnalysisState(string value) => Enum.Parse<AnalysisState>(value, ignoreCase: true);
+
+    private sealed record CachedBookWords(HashSet<int> Files, IReadOnlyList<BookWordTotal> Totals);
 
     private sealed record AnswerTarget(AnalysisState State, long WordId, AnalysisStoredPage Page);
 
