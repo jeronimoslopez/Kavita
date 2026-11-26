@@ -159,7 +159,7 @@ describe('DictionaryPopupComponent', () => {
     expect(all(el, 'popup-phrase')).toHaveLength(0);
   });
 
-  it('renders Part of rows below the parts that emit their index and mark the open phrase', async () => {
+  it('renders Part of rows above the senses that emit their index and mark the open phrase', async () => {
     const parts = [{sub: 0, wordId: 2, surface: '気', lemma: '気', reading: 'き', senses: []}];
     const partOf = [
       {index: 0, s: 12, e: 16, lemma: '気がする', reading: 'きがする', gloss: 'to have a feeling that'},
@@ -169,7 +169,9 @@ describe('DictionaryPopupComponent', () => {
     const section = q(el, 'popup-part-of') as HTMLElement;
     expect(section.querySelector('.dp-label')?.textContent).toBe(strings['part-of']);
     const sections = Array.from(el.querySelectorAll('.dp-parts'));
-    expect(sections.indexOf(section)).toBe(1);
+    expect(sections.indexOf(section)).toBe(0);
+    const senses = q(el, 'popup-senses') ?? q(el, 'popup-no-entry');
+    expect(section.compareDocumentPosition(senses as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     expect(section.querySelector('.dp-chip')).toBeNull();
     const rows = all(el, 'popup-phrase');
