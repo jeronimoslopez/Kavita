@@ -59,6 +59,8 @@ export interface LookupReadings {
   source: ReadingSource;
   /** A reading to show in the headword in place of the first group's, or null */
   shown: string | null;
+  /** The reading, in hiragana, that put the first group first, or null when nothing picked one */
+  pick: string | null;
   /** The book marks a reading no group has, so the popup lists every sense ungrouped */
   bookOnly: boolean;
   groups: ReadingGroup[];

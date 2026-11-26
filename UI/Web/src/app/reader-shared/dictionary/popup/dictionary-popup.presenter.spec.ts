@@ -120,7 +120,7 @@ describe('DictionaryPopupPresenter', () => {
     const state: DictionaryPopupView['state'] = {kind: 'result', result: {
       word: {id: 1, surface: '瞬く', lemma: '瞬く', pos: '動詞', isProper: false, occurrenceReading: null, reading: 'またたく', readings: [], jlpt: null},
       senses: [], analysis: null, parts: [],
-      readings: {level: 'likely', source: 'choice', shown: null, bookOnly: false, groups},
+      readings: {level: 'likely', source: 'choice', shown: null, pick: 'またたく', bookOnly: false, groups},
     }};
     presenter.render({...VIEW, canChoose: true, state});
     TestBed.tick();

@@ -26,7 +26,7 @@ export interface ResolverInput {
 
 /** What a word gives when its data has no `entries`, which version 2 data never has */
 export const NO_READINGS: LookupReadings = Object.freeze({
-  level: 'certain', source: 'dictionary', shown: null, bookOnly: false, groups: [],
+  level: 'certain', source: 'dictionary', shown: null, pick: null, bookOnly: false, groups: [],
 }) as LookupReadings;
 
 /**
@@ -66,32 +66,38 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
   if (marked !== null) {
     const group = has(marked.reading);
     if (group !== undefined) {
-      return {level: 'certain', source: 'furigana', shown: marked.printed, bookOnly: false, groups: [group]};
+      return {
+        level: 'certain', source: 'furigana', shown: marked.printed, pick: marked.reading, bookOnly: false,
+        groups: [group],
+      };
     }
-    return {level: 'certain', source: 'furigana', shown: marked.printed, bookOnly: true, groups: []};
+    return {level: 'certain', source: 'furigana', shown: marked.printed, pick: null, bookOnly: true, groups: []};
   }
   if (groups.length === 0) {
-    if (hint !== null) return {level: 'likely', source: hint.source, shown: hint.printed, bookOnly: false, groups: []};
+    if (hint !== null) {
+      return {level: 'likely', source: hint.source, shown: hint.printed, pick: null, bookOnly: false, groups: []};
+    }
     return {...NO_READINGS, groups: []};
   }
-  if (groups.length === 1) return {level: 'certain', source: 'dictionary', shown: null, bookOnly: false, groups};
+  if (groups.length === 1) {
+    const pick = tokenReading !== null && groups[0].readings.includes(tokenReading) ? tokenReading : null;
+    return {level: 'certain', source: 'dictionary', shown: null, pick, bookOnly: false, groups};
+  }
 
-  let first: ReadingGroup;
+  let pick: string;
   let source: LookupReadings['source'];
   let level: LookupReadings['level'];
-  const chosen = has(choice);
-  const hinted = hint === null ? undefined : has(hint.reading);
-  const tokenized = has(tokenReading);
-  if (chosen !== undefined) {
-    [first, source, level] = [chosen, 'choice', 'likely'];
-  } else if (hinted !== undefined && hint !== null) {
-    [first, source, level] = [hinted, hint.source, 'likely'];
-  } else if (tokenized !== undefined) {
-    [first, source, level] = [tokenized, 'tokenizer', blind ? 'guess' : 'likely'];
+  if (choice !== null && has(choice) !== undefined) {
+    [pick, source, level] = [choice, 'choice', 'likely'];
+  } else if (hint !== null && has(hint.reading) !== undefined) {
+    [pick, source, level] = [hint.reading, hint.source, 'likely'];
+  } else if (tokenReading !== null && has(tokenReading) !== undefined) {
+    [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
   } else {
-    [first, source, level] = [groups[0], 'dictionary', 'guess'];
+    [pick, source, level] = [groups[0].readings[0], 'dictionary', 'guess'];
   }
-  return {level, source, shown: null, bookOnly: false, groups: [first, ...groups.filter(g => g !== first)]};
+  const first = has(pick) ?? groups[0];
+  return {level, source, shown: null, pick, bookOnly: false, groups: [first, ...groups.filter(g => g !== first)]};
 }
 
 /** The dictionary-form pair of a marked reading when it has one, and the surface's reading otherwise */

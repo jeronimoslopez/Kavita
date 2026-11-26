@@ -47,7 +47,7 @@ export class DictionaryPopupComponent {
   readonly dismiss = output<void>();
   /** The groupKey of the reading tab that was pressed */
   readonly group = output<string>();
-  /** The reading to save for the word, the selected group's first */
+  /** The reading to save for the word, always the selected group's first, so a choice names its group the same way */
   readonly chooseReading = output<string>();
   readonly clearReading = output<void>();
 
@@ -81,7 +81,10 @@ export class DictionaryPopupComponent {
     return selected === null ? null : groupKey(selected);
   });
   protected readonly firstSelected = computed(() => this.selected() === (this.groups()[0] ?? null));
-  /** The headword's reading, which follows the selected tab */
+  /**
+   * The headword's reading, which follows the selected tab. On the first tab it's the book's or the hint's printed
+   * reading, else the reading that picked the group, else the group's first
+   */
   protected readonly headwordReading = computed(() => {
     const word = this.word();
     const readings = this.readings();
@@ -89,7 +92,7 @@ export class DictionaryPopupComponent {
     if (word === null) return null;
     if (readings === null) return word.reading;
     if (selected === null) return readings.shown ?? word.reading;
-    if (this.firstSelected()) return readings.shown ?? selected.readings[0] ?? word.reading;
+    if (this.firstSelected()) return readings.shown ?? readings.pick ?? selected.readings[0] ?? word.reading;
     return selected.readings[0] ?? word.reading;
   });
   /** The en.json key of the label that says where the first group's reading came from, shown while it's selected */

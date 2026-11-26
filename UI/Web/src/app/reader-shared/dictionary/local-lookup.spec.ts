@@ -137,10 +137,19 @@ describe('localLookup', () => {
     const firsts = (page: EpubPageTokens, sub: number | null = null) => tap(page, sub)?.groups.map(g => g.readings[0]);
 
     it('orders the groups by the token reading in dictionary form and calls a blind reading a guess', () => {
-      expect(tap(blinkPage(), null)).toMatchObject({level: 'likely', source: 'tokenizer', shown: null, bookOnly: false});
+      expect(tap(blinkPage(), null)).toMatchObject({
+        level: 'likely', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false,
+      });
       expect(firsts(blinkPage())).toEqual(['しばたたく', 'またたく', 'めたたく']);
       expect(tap(blinkPage({}, {blind: [0, 2]}))).toMatchObject({level: 'guess', source: 'tokenizer'});
       expect(tap(blinkPage({}, {blind: [0]}))).toMatchObject({level: 'likely'});
+    });
+
+    it('picks a later reading of a group from the token reading in dictionary form', () => {
+      const page = blinkPage();
+      page.blocks[0].tokens[2] = [2, 5, 1, 'まばたいた', null];
+      expect(tap(page)).toMatchObject({level: 'likely', source: 'tokenizer', pick: 'まばたく'});
+      expect(firsts(page)).toEqual(['またたく', 'しばたたく', 'めたたく']);
     });
 
     it('puts the hint and then the saved choice ahead of the tokenizer', () => {
@@ -155,21 +164,21 @@ describe('localLookup', () => {
     it('takes the book furigana over everything and shows it in the dictionary form', () => {
       const page = blinkPage({choice: 'しばたたく'}, {ruby: [[2, 3, 'まばた']]});
       expect(tap(page)).toEqual({
-        level: 'certain', source: 'furigana', shown: 'まばたく', bookOnly: false,
+        level: 'certain', source: 'furigana', shown: 'まばたく', pick: 'まばたく', bookOnly: false,
         groups: [{seq: 20, readings: ['またたく', 'まばたく'], common: true, senses: [blink.senses![1]]}],
       });
     });
 
     it('lists every sense ungrouped when the furigana matches no group', () => {
       expect(tap(blinkPage({}, {ruby: [[2, 3, 'ぱちぱ']]}))).toEqual({
-        level: 'certain', source: 'furigana', shown: 'ぱちぱく', bookOnly: true, groups: [],
+        level: 'certain', source: 'furigana', shown: 'ぱちぱく', pick: null, bookOnly: true, groups: [],
       });
     });
 
     it('resolves a part from its own reading and nothing else', () => {
       const page = blinkPage({choice: 'めたたく', hint: {reading: 'またたく', printed: 'またたく', source: 'book'}},
         {ruby: [[2, 3, 'まばた']], blind: [2]});
-      expect(tap(page, 0)).toMatchObject({level: 'likely', source: 'tokenizer', shown: null, bookOnly: false});
+      expect(tap(page, 0)).toMatchObject({level: 'likely', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false});
       expect(firsts(page, 0)).toEqual(['しばたたく', 'またたく', 'めたたく']);
     });
 
@@ -180,14 +189,16 @@ describe('localLookup', () => {
     it('gives a word without entries no groups even where the book has furigana', () => {
       const old = blinkPage({entries: undefined}, {ruby: [[2, 3, 'まばた']], blind: [2]});
       const result = localLookup(old, {block: 0, s: 2, sub: null}, text);
-      expect(result?.readings).toEqual({level: 'certain', source: 'dictionary', shown: null, bookOnly: false, groups: []});
+      expect(result?.readings).toEqual({
+        level: 'certain', source: 'dictionary', shown: null, pick: null, bookOnly: false, groups: [],
+      });
       expect(result?.senses).toEqual(blink.senses);
       expect(result?.word.reading).toBe('またたく');
     });
 
     it('gives a word with an empty entry list the resolver answer for no groups', () => {
       const page = blinkPage({entries: [], hint: {reading: 'がおしゅん', printed: 'ガオシュン', source: 'book'}});
-      expect(tap(page)).toEqual({level: 'likely', source: 'book', shown: 'ガオシュン', bookOnly: false, groups: []});
+      expect(tap(page)).toEqual({level: 'likely', source: 'book', shown: 'ガオシュン', pick: null, bookOnly: false, groups: []});
     });
   });
 });

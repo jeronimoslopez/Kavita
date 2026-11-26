@@ -268,7 +268,10 @@ describe('DictionaryPopupComponent', () => {
     ]};
 
     function readings(overrides: Partial<LookupReadings> = {}): LookupReadings {
-      return {level: 'likely', source: 'tokenizer', shown: null, bookOnly: false, groups: [spicy, painful], ...overrides};
+      return {
+        level: 'likely', source: 'tokenizer', shown: null, pick: null, bookOnly: false, groups: [spicy, painful],
+        ...overrides,
+      };
     }
 
     const withReadings = (r: LookupReadings, extra: Partial<DictionaryPopupView> = {}) =>
@@ -309,6 +312,29 @@ describe('DictionaryPopupComponent', () => {
       expect(q(el, 'popup-reading')?.textContent).toBe('つらい');
       expect(text(q(el, 'popup-tab-others'))).toBe('づらい');
       expect(q(el, 'popup-source')).toBeNull();
+    });
+
+    it('shows the pick in the headword on the first tab, under shown, and the group reading on other tabs', async () => {
+      const groups = [painful, spicy];
+      let el = await show(withReadings(readings({groups, pick: 'づらい'})));
+      expect(q(el, 'popup-reading')?.textContent).toBe('づらい');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい', shown: 'ヅライ'})));
+      expect(q(el, 'popup-reading')?.textContent).toBe('ヅライ');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい'}), {openGroup: '100:からい'}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('からい');
+
+      el = await show(withReadings(readings({groups, pick: 'づらい'}), {openGroup: '200:つらい'}));
+      expect(q(el, 'popup-reading')?.textContent).toBe('づらい');
+    });
+
+    it("saves the first tab's first reading, not the pick", async () => {
+      const el = await show(withReadings(readings({groups: [painful, spicy], pick: 'づらい'}), {canChoose: true}));
+      const emitted: string[] = [];
+      fixture.componentInstance.chooseReading.subscribe(r => emitted.push(r));
+      (q(el, 'popup-use-reading') as HTMLElement).click();
+      expect(emitted).toEqual(['つらい']);
     });
 
     it('falls back to the first tab when the selected key is no longer a group', async () => {

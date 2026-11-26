@@ -77,51 +77,61 @@ describe('readingGroups', () => {
 
 describe('resolveReadings', () => {
   const cases: {name: string, input: ResolverInput, level: string, source: string, shown: string | null,
-    bookOnly: boolean, firsts: string[]}[] = [
+    pick: string | null, bookOnly: boolean, firsts: string[]}[] = [
     {
       name: '瞬く read しばたたく by fixed cost is a guess with that group first',
       input: input({tokenReading: 'しばたたく', blind: true}),
-      level: 'guess', source: 'tokenizer', shown: null, bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
     },
     {
       name: '瞬く read しばたたく by the tokenizer is likely',
       input: input({tokenReading: 'しばたたく'}),
-      level: 'likely', source: 'tokenizer', shown: null, bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+      level: 'likely', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
     },
     {
       name: '瞬く with a series hint of またたく is likely from the series, that group first',
       input: input({tokenReading: 'しばたたく', blind: true, hint: series('またたく')}),
-      level: 'likely', source: 'series', shown: null, bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+      level: 'likely', source: 'series', shown: null, pick: 'またたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
     },
     {
       name: 'a hint matches any reading of a group, not only its first',
       input: input({hint: {reading: 'めばたく', printed: 'めばたく', source: 'book'}}),
-      level: 'likely', source: 'book', shown: null, bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
+      level: 'likely', source: 'book', shown: null, pick: 'めばたく', bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
     },
     {
       name: 'a saved choice beats a hint',
       input: input({choice: 'めたたく', hint: series('またたく'), tokenReading: 'しばたたく'}),
-      level: 'likely', source: 'choice', shown: null, bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
+      level: 'likely', source: 'choice', shown: null, pick: 'めたたく', bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
+    },
+    {
+      name: 'a saved choice that names a later reading of a group still matches that group',
+      input: input({choice: 'まばたく', tokenReading: 'しばたたく'}),
+      level: 'likely', source: 'choice', shown: null, pick: 'まばたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+    },
+    {
+      name: '言う read by the tokenizer as a reading its group lacks picks nothing',
+      input: input({groups: say, tokenReading: 'いわ'}),
+      level: 'certain', source: 'dictionary', shown: null, pick: null, bookOnly: false, firsts: ['いう'],
     },
     {
       name: 'a choice no group has is skipped',
       input: input({choice: 'ちがう', hint: series('またたく')}),
-      level: 'likely', source: 'series', shown: null, bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+      level: 'likely', source: 'series', shown: null, pick: 'またたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
     },
     {
       name: 'a hint whose reading no group has is ignored',
       input: input({hint: series('メイク'), tokenReading: 'まばたく'}),
-      level: 'likely', source: 'tokenizer', shown: null, bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+      level: 'likely', source: 'tokenizer', shown: null, pick: 'まばたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
     },
     {
       name: 'nothing that matches a group falls back to the dictionary order as a guess',
       input: input({tokenReading: 'ちがう'}),
-      level: 'guess', source: 'dictionary', shown: null, bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+      level: 'guess', source: 'dictionary', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
     },
     {
       name: 'furigana that matches a group leaves only that group, certain',
       input: input({marked: {printed: 'マバタク', reading: 'まばたく'}, choice: 'しばたたく'}),
-      level: 'certain', source: 'furigana', shown: 'マバタク', bookOnly: false, firsts: ['またたく'],
+      level: 'certain', source: 'furigana', shown: 'マバタク', pick: 'まばたく', bookOnly: false, firsts: ['またたく'],
     },
     {
       name: 'ねえちゃん on 小姐 matches no group, so the book reading shows over every sense',
@@ -129,35 +139,35 @@ describe('resolveReadings', () => {
         groups: readingGroups([{seq: 70, common: false, readings: ['しょうしゃ']}], [sense('70:1', 'young lady')]),
         marked: {printed: 'ねえちゃん', reading: 'ねえちゃん'},
       }),
-      level: 'certain', source: 'furigana', shown: 'ねえちゃん', bookOnly: true, firsts: [],
+      level: 'certain', source: 'furigana', shown: 'ねえちゃん', pick: null, bookOnly: true, firsts: [],
     },
     {
       name: '言う with one entry is one group, certain',
       input: input({groups: say, tokenReading: 'ゆう', hint: series('ゆう'), choice: 'ゆう', blind: true}),
-      level: 'certain', source: 'dictionary', shown: null, bookOnly: false, firsts: ['いう'],
+      level: 'certain', source: 'dictionary', shown: null, pick: 'ゆう', bookOnly: false, firsts: ['いう'],
     },
     {
       name: '今日 restricted by r has two groups, and the tokenizer picks こんにち',
       input: input({groups: readingGroups(todayEntries, todaySenses), tokenReading: 'こんにち'}),
-      level: 'likely', source: 'tokenizer', shown: null, bookOnly: false, firsts: ['こんにち', 'きょう'],
+      level: 'likely', source: 'tokenizer', shown: null, pick: 'こんにち', bookOnly: false, firsts: ['こんにち', 'きょう'],
     },
     {
       name: 'a word without groups takes a hint as likely',
       input: input({groups: [], hint: {reading: 'がおしゅん', printed: 'ガオシュン', source: 'book'}}),
-      level: 'likely', source: 'book', shown: 'ガオシュン', bookOnly: false, firsts: [],
+      level: 'likely', source: 'book', shown: 'ガオシュン', pick: null, bookOnly: false, firsts: [],
     },
     {
       name: 'a word without groups or a hint is the dictionary, certain',
       input: input({groups: [], tokenReading: 'よみ', choice: 'よみ'}),
-      level: 'certain', source: 'dictionary', shown: null, bookOnly: false, firsts: [],
+      level: 'certain', source: 'dictionary', shown: null, pick: null, bookOnly: false, firsts: [],
     },
   ];
 
   for (const c of cases) {
     it(c.name, () => {
       const readings = resolveReadings(c.input);
-      expect({level: readings.level, source: readings.source, shown: readings.shown, bookOnly: readings.bookOnly})
-        .toEqual({level: c.level, source: c.source, shown: c.shown, bookOnly: c.bookOnly});
+      const {groups: _groups, ...decision} = readings;
+      expect(decision).toEqual({level: c.level, source: c.source, shown: c.shown, pick: c.pick, bookOnly: c.bookOnly});
       expect(firsts(readings)).toEqual(c.firsts);
     });
   }
@@ -181,7 +191,9 @@ describe('markedForResolver', () => {
   it('feeds the resolver a certain reading for 言う marked い', () => {
     const marked = markedForResolver(markedReadingOf('言う', 0, 2, [[0, 1, 'い']], '言う'));
     const readings = resolveReadings(input({groups: say, marked}));
-    expect(readings).toEqual({level: 'certain', source: 'furigana', shown: 'いう', bookOnly: false, groups: [say[0]]});
+    expect(readings).toEqual({
+      level: 'certain', source: 'furigana', shown: 'いう', pick: 'いう', bookOnly: false, groups: [say[0]],
+    });
   });
 });
 
