@@ -1716,6 +1716,233 @@ public class ReadingStoreTests : IDisposable
 
     #endregion
 
+    #region Book words
+
+    /// <summary>
+    /// 翠苓 under スイレイ twice and once under すいれい, 馬閃 under バセン, and 脱出方法 under its pieces' reading,
+    /// which defines nothing
+    /// </summary>
+    private static StoredBlock[] BookWordPage(long piece) =>
+    [
+        Block(0, "翠苓と翠苓", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, null), Token(3, 4, piece), Token(4, 5, piece))
+            with { Ruby = [new RubyDto(0, 2, "スイレイ"), new RubyDto(3, 5, "スイレイ")] },
+        Block(1, "翠苓、馬閃", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, null), Token(3, 4, piece, "うま"),
+                Token(4, 5, piece, "せん"))
+            with { Ruby = [new RubyDto(0, 2, "すいれい"), new RubyDto(3, 5, "バセン")] },
+        Block(2, "脱出方法", Token(0, 2, piece, "だっしゅつ"), Token(2, 4, piece, "ほうほう"))
+            with { Ruby = [new RubyDto(0, 4, "だっしゅつほうほう")] },
+    ];
+
+    private async Task<List<(long Unit, string Text, string Reading, string Printed, long Count)>> BookWordRowsAsync()
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT unit_id, text, reading, printed, count FROM book_word ORDER BY unit_id, text, reading";
+        var rows = new List<(long, string, string, string, long)>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add((reader.GetInt64(0), reader.GetString(1), reader.GetString(2), reader.GetString(3), reader.GetInt64(4)));
+        }
+        return rows;
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_StoresThePagesBookWordsAndAWordRowForEach()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+
+        var unit = await SaveMarkedPageAsync(1, 0, BookWordPage(piece));
+
+        Assert.Equal([(unit, "翠苓", "すいれい", "スイレイ", 3L), (unit, "馬閃", "ばせん", "バセン", 1L)], await BookWordRowsAsync());
+        var totals = await _store.GetBookWordsAsync([1]);
+        var words = await _store.GetWordsAsync(totals.Select(t => t.WordId).ToList());
+        var suirei = words[totals.Single(t => t.Text == "翠苓").WordId];
+        Assert.Equal(("翠苓", BookWords.Pos, true, "すいれい", BookWords.LexiconVersion), (suirei.Lemma, suirei.Pos,
+            suirei.IsProper, suirei.Reading, suirei.LexiconVersion));
+        Assert.Empty(suirei.Senses);
+        // Empty and not null, so the resolver tells it from a word stored before entries
+        Assert.NotNull(suirei.Entries);
+        Assert.Empty(suirei.Entries);
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_KeepsAWordRowTheSidecarAlreadyWrote()
+    {
+        var known = new SidecarWordDto
+        {
+            Lemma = "馬閃", Pos = BookWords.Pos, IsProper = true, Reading = "ばせん", Readings = ["ばせん"],
+            Senses = [new SenseDto("5000:1", ["n-pr"], ["Basen"])], Entries = [new WordEntryDto(5000, false, ["ばせん"])],
+        };
+        var ids = await _store.UpsertWordsAsync([known, Word("翠")], Lexicon);
+        var id = ids[0];
+
+        await SaveMarkedPageAsync(1, 0, BookWordPage(ids[1]));
+
+        var word = (await _store.GetWordsAsync([id]))[id];
+        Assert.Equal(Lexicon, word.LexiconVersion);
+        Assert.Equal("5000:1", Assert.Single(word.Senses).Key);
+        Assert.Equal(id, (await _store.GetBookWordsAsync([1])).Single(t => t.Text == "馬閃").WordId);
+    }
+
+    [Fact]
+    public async Task SaveTokenizedUnit_AgainReplacesThePagesBookWords_AndDeletingUnitsRemovesThem()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+        var first = await SaveMarkedPageAsync(1, 0, BookWordPage(piece), pageCount: 3);
+        var second = await SaveMarkedPageAsync(1, 1, BookWordPage(piece));
+        var last = await SaveMarkedPageAsync(1, 2, BookWordPage(piece));
+        var other = await SaveMarkedPageAsync(2, 0, BookWordPage(piece));
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(first, Stamp, Tokenizer, [Block(0, "翠苓", Token(0, 1, piece), Token(1, 2, piece))]));
+        Assert.DoesNotContain(await BookWordRowsAsync(), r => r.Unit == first);
+        Assert.Equal(2, (await BookWordRowsAsync()).Count(r => r.Unit == second));
+
+        await _store.SeedFileAsync(1, 2, NewStamp, 0);
+        Assert.DoesNotContain(await BookWordRowsAsync(), r => r.Unit == last);
+        Assert.Contains(await BookWordRowsAsync(), r => r.Unit == second);
+
+        await _store.DeleteFilesAsync([1]);
+        Assert.Equal([other], (await BookWordRowsAsync()).Select(r => r.Unit).Distinct());
+    }
+
+    [Fact]
+    public async Task GetBookWords_SumsEachFilesPagesAndKeepsFilesApart()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+        await SaveMarkedPageAsync(1, 0, BookWordPage(piece));
+        // Page 1 prints すいれい three times, so the file's printed form for it is a tie at three that ordinal order settles
+        await SaveMarkedPageAsync(1, 1, [
+            Block(0, "翠苓翠苓翠苓", Token(0, 1, piece), Token(1, 2, piece), Token(2, 3, piece), Token(3, 4, piece),
+                    Token(4, 5, piece), Token(5, 6, piece))
+                with { Ruby = [new RubyDto(0, 2, "すいれい"), new RubyDto(2, 4, "すいれい"), new RubyDto(4, 6, "すいれい")] },
+        ]);
+        await SaveMarkedPageAsync(2, 0, [
+            Block(0, "翠苓", Token(0, 1, piece), Token(1, 2, piece)) with { Ruby = [new RubyDto(0, 2, "ミドリ")] },
+        ]);
+        await SaveMarkedPageAsync(3, 0, BookWordPage(piece));
+
+        var totals = await _store.GetBookWordsAsync([1, 2, 2]);
+
+        var id = totals[0].WordId;
+        Assert.Equal(
+        [
+            new BookWordTotal(1, "翠苓", id, "すいれい", "すいれい", 6),
+            new BookWordTotal(1, "馬閃", totals[1].WordId, "ばせん", "バセン", 1),
+            new BookWordTotal(2, "翠苓", id, "みどり", "ミドリ", 1),
+        ], totals);
+        Assert.Empty(await _store.GetBookWordsAsync([]));
+        Assert.Empty(await _store.GetBookWordsAsync([9]));
+        Assert.Equal(5, (await _store.GetBookWordsAsync(Enumerable.Range(10, 1200).Append(1).Append(2).Append(3).ToList())).Count);
+    }
+
+    /// <summary>
+    /// What reading a series' book words costs a page. Ten volumes of 60 pages, with 200 book words in the series and
+    /// six rows on each page, more than the 30 a volume of 薬屋 defines
+    /// </summary>
+    [Fact]
+    public async Task GetBookWords_ForATenVolumeSeries_IsFast()
+    {
+        const int files = 10, pages = 60, words = 200, rowsPerPage = 6;
+        var random = new Random(3);
+        await using (var connection = await OpenAsync())
+        {
+            await using var transaction = connection.BeginTransaction();
+            await using var word = connection.CreateCommand();
+            word.Transaction = transaction;
+            word.CommandText = """
+                INSERT INTO word (lemma, pos, is_proper, reading, readings, senses, lexicon_version, entries)
+                VALUES ($lemma, '名詞', 1, 'よみ', '[]', '[]', 'book', '[]')
+                """;
+            var lemma = word.Parameters.Add("$lemma", SqliteType.Text);
+            for (var w = 0; w < words; w++)
+            {
+                lemma.Value = $"名{w}";
+                await word.ExecuteNonQueryAsync();
+            }
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO unit (kind, manga_file_id, page, source_stamp, state, priority, requested_utc)
+                VALUES ('epub', $file, $page, 's', 'done', 0, 0) RETURNING id
+                """;
+            var file = command.Parameters.Add("$file", SqliteType.Integer);
+            var page = command.Parameters.Add("$page", SqliteType.Integer);
+
+            await using var row = connection.CreateCommand();
+            row.Transaction = transaction;
+            row.CommandText = """
+                INSERT OR IGNORE INTO book_word (unit_id, text, reading, printed, count) VALUES ($unit, $text, 'よみ', 'ヨミ', 1)
+                """;
+            var unit = row.Parameters.Add("$unit", SqliteType.Integer);
+            var text = row.Parameters.Add("$text", SqliteType.Text);
+            for (var f = 1; f <= files; f++)
+            for (var p = 0; p < pages; p++)
+            {
+                file.Value = f;
+                page.Value = p;
+                unit.Value = Convert.ToInt64(await command.ExecuteScalarAsync());
+                for (var r = 0; r < rowsPerPage; r++)
+                {
+                    text.Value = $"名{random.Next(words)}";
+                    await row.ExecuteNonQueryAsync();
+                }
+            }
+            await transaction.CommitAsync();
+        }
+
+        // A file id with no rows makes each run a new set of files, so it misses the cache
+        async Task<List<double>> TimeAsync(Func<int, List<int>> filesFor)
+        {
+            var times = new List<double>();
+            for (var run = 0; run < 7; run++)
+            {
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var set = BookWordSet.From(await _store.GetBookWordsAsync(filesFor(run)), 1);
+                watch.Stop();
+                Assert.Equal(words, set.Words.Count);
+                // The first run warms the pool and the page cache
+                if (run > 0) times.Add(watch.Elapsed.TotalMilliseconds);
+            }
+            times.Sort();
+            return times;
+        }
+
+        var missed = await TimeAsync(run => [.. Enumerable.Range(1, files), 1000 + run]);
+        var cached = await TimeAsync(_ => [.. Enumerable.Range(1, files)]);
+
+        _output.WriteLine($"Book words of a ten-volume series, read and reduced: median {missed[missed.Count / 2]:0.0} ms, " +
+                          $"max {missed[^1]:0.0} ms. From the cache: median {cached[cached.Count / 2]:0.00} ms");
+        Assert.True(missed[missed.Count / 2] < 100, $"The book word read took {missed[missed.Count / 2]:0} ms");
+        Assert.True(cached[cached.Count / 2] < missed[missed.Count / 2]);
+    }
+
+    [Fact]
+    public async Task GetBookWords_FromTheCache_IsDroppedWhenAPageOfOneOfTheFilesIsSaved()
+    {
+        var piece = (await _store.UpsertWordsAsync([Word("翠")], Lexicon))[0];
+        await SaveMarkedPageAsync(1, 0, BookWordPage(piece));
+        await SaveMarkedPageAsync(2, 0, []);
+        await SaveMarkedPageAsync(3, 0, []);
+        Assert.Equal(2, (await _store.GetBookWordsAsync([1, 2])).Count);
+        Assert.Empty(await _store.GetBookWordsAsync([3]));
+
+        // Page 1 of file 2 gains 馬閃, and file 3's cached answer isn't touched by it
+        var unit = (await _store.GetUnitAsync(2, 1))!;
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [BookWordPage(piece)[1]]));
+
+        Assert.Equal(["翠苓", "馬閃", "翠苓", "馬閃"], (await _store.GetBookWordsAsync([2, 1])).Select(t => t.Text));
+        Assert.Empty(await _store.GetBookWordsAsync([3]));
+
+        await _store.DeleteFilesAsync([1]);
+        Assert.Equal(2, (await _store.GetBookWordsAsync([1, 2])).Count);
+        await _store.SeedFileAsync(2, 1, Stamp, 0);
+        Assert.Empty(await _store.GetBookWordsAsync([1, 2]));
+    }
+
+    #endregion
+
     #region Reading choices
 
     [Fact]

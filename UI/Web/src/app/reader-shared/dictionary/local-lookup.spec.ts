@@ -1,6 +1,7 @@
 import {DictionaryLookupResult, EpubPageTokens, EpubPageWord, Sense} from '../../_models/dictionary/dictionary';
 import parity from './fixtures/lookup-parity.json';
 import {carriesSenses, localLookup, LocalLookupRequest} from './local-lookup';
+import {blockMatches, subAt, tokenAt} from './tokens';
 
 /**
  * Written by the server's ParityFixture_MatchesThePageResponseAndTheLookupAnswers test from its own page response
@@ -35,6 +36,29 @@ describe('localLookup', () => {
     expect(answered.some(t => (t.result!.partOf ?? []).length > 1)).toBe(true);
     expect(answered.some(t => t.request.phrase !== null)).toBe(true);
     expect(answered.some(t => t.result!.word.isProper)).toBe(true);
+  });
+
+  it('covers a word the book defines, marked, by its book hint, by its series hint and by its parts', () => {
+    // A joined token is a compound whose word has empty entries and a hint
+    const bookWords = new Set(fixture.page.blocks
+      .flatMap(b => b.tokens)
+      .filter(t => t[4] !== null && t[2] !== null && fixture.page.words[t[2]]?.entries?.length === 0 &&
+        fixture.page.words[t[2]]?.hint !== undefined)
+      .map(t => t[2]!));
+    const joined = fixture.taps.filter(t => t.result !== null && t.request.sub === null && bookWords.has(t.result.word.id));
+    expect(joined.map(t => t.result!.readings!.source).sort()).toEqual(['book', 'furigana', 'series']);
+    expect(joined.every(t => t.result!.parts.length > 0 && t.result!.word.occurrenceReading === null)).toBe(true);
+    expect(fixture.taps.some(t => t.result !== null && t.request.sub !== null &&
+      t.result.parts.some(p => p.surface === '翠'))).toBe(true);
+
+    // The joined token covers both pieces, so the reader's block length and token spans stay the server's
+    const block = fixture.page.blocks.find(b => b.index === 11)!;
+    expect(block.length).toBe(fixture.texts['11'].length);
+    expect(block.tokens.map(t => [t[0], t[1]])).toEqual([[0, 2], [2, 3], [3, 5], [5, 6]]);
+    expect(blockMatches(block, fixture.texts['11'].length)).toBe(true);
+    const tapped = tokenAt(block.tokens, 4)!;
+    expect([tapped[0], tapped[1]]).toEqual([3, 5]);
+    expect(subAt(tapped, 4)?.index).toBe(1);
   });
 
   for (const {request, result} of fixture.taps) {

@@ -135,12 +135,31 @@ public class ReadingDatabase
         ) WITHOUT ROWID;
         """;
 
+    /// <summary>
+    /// What version 5 adds. book_word has a row per page, text and reading for each word the page's furigana defines
+    /// over several tokens, by <see cref="BookWords"/>. reading is hiragana, printed the form the page prints most
+    /// often for it, and count how many spans define it. It's keyed by unit first like reading_mark, so saving a page
+    /// replaces its rows through the key, and a series' book words read each file's units through unit's
+    /// (kind, manga_file_id, page) key and then each unit's rows
+    /// </summary>
+    internal const string Version5Schema = """
+        CREATE TABLE IF NOT EXISTS book_word (
+            unit_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            reading TEXT NOT NULL,
+            printed TEXT NOT NULL,
+            count INTEGER NOT NULL,
+            PRIMARY KEY (unit_id, text, reading)
+        ) WITHOUT ROWID;
+        """;
+
     private static readonly IReadOnlyList<Func<ReadingDatabase, SqliteConnection, CancellationToken, Task>> Migrations =
     [
         (_, connection, ct) => CreateTablesAsync(connection, ct),
         (database, connection, ct) => database.ShrinkAsync(connection, ct),
         (_, connection, ct) => AddReadingMarksAsync(connection, ct),
         (_, connection, ct) => AddEntriesAndChoicesAsync(connection, ct),
+        (_, connection, ct) => AddBookWordsAsync(connection, ct),
     ];
 
     private readonly string _connectionString;
@@ -284,7 +303,7 @@ public class ReadingDatabase
 
         // A file at version 1 or later holds tokenized books, and the version 2 rewrite or a compaction can take
         // minutes. Callers other than the one that started this are turned away meanwhile instead of waiting. Versions 3
-        // and 4 only add empty tables and a column, so callers wait for them
+        // to 5 only add empty tables and a column, so callers wait for them
         var rewrites = version == 1;
         _rewriting = rewrites || await NeedsVacuumAsync(connection, ct);
         _initDecided.TrySetResult();
@@ -476,6 +495,24 @@ public class ReadingDatabase
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = Version4Schema + "\nPRAGMA user_version = 4;";
+        await command.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+
+    /// <summary>
+    /// Version 5. Adds book_word, empty. Pages tokenized before it get their rows when they're tokenized again, so
+    /// nothing existing is rewritten and the step is one transaction
+    /// </summary>
+    private static async Task AddBookWordsAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        // The version is read again inside the write transaction, so a second process opening the same file can't
+        // run the step twice
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        if (await UserVersionAsync(connection, transaction, ct) != 4) return;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = Version5Schema + "\nPRAGMA user_version = 5;";
         await command.ExecuteNonQueryAsync(ct);
         await transaction.CommitAsync(ct);
     }

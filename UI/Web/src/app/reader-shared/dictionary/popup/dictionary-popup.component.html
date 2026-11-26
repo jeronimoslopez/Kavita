@@ -117,6 +117,8 @@
               </li>
             }
           </ol>
+        } @else if (fromBook()) {
+          <p class="dp-no-entry" data-testid="popup-book-word">{{ t('book-word') }}</p>
         } @else {
           <p class="dp-no-entry" data-testid="popup-no-entry">{{ t('no-entry') }}</p>
         }

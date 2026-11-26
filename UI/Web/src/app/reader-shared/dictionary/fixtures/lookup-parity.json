@@ -383,6 +383,106 @@
             ]
           ]
         ]
+      },
+      {
+        "index": 11,
+        "length": 6,
+        "tokens": [
+          [
+            0,
+            2,
+            98,
+            null,
+            [
+              [
+                0,
+                1,
+                82,
+                "みどり"
+              ],
+              [
+                1,
+                2,
+                83,
+                null
+              ]
+            ]
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            98,
+            null,
+            [
+              [
+                3,
+                4,
+                82,
+                "みどり"
+              ],
+              [
+                4,
+                5,
+                83,
+                null
+              ]
+            ]
+          ],
+          [
+            5,
+            6,
+            null,
+            null,
+            null
+          ]
+        ],
+        "ruby": [
+          [
+            0,
+            2,
+            "スイレイ"
+          ]
+        ]
+      },
+      {
+        "index": 12,
+        "length": 3,
+        "tokens": [
+          [
+            0,
+            2,
+            99,
+            null,
+            [
+              [
+                0,
+                1,
+                84,
+                "うま"
+              ],
+              [
+                1,
+                2,
+                null,
+                "せん"
+              ]
+            ]
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ]
+        ]
       }
     ],
     "words": {
@@ -1045,6 +1145,103 @@
           "printed": "ガオシュン",
           "source": "book"
         }
+      },
+      "82": {
+        "lemma": "翠",
+        "reading": "みどり",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [
+          "みどり"
+        ],
+        "senses": [
+          {
+            "key": "9200:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "green"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 9200,
+            "common": false,
+            "readings": [
+              "みどり"
+            ]
+          }
+        ]
+      },
+      "83": {
+        "lemma": "苓",
+        "reading": "れい",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [],
+        "senses": [],
+        "entries": []
+      },
+      "84": {
+        "lemma": "馬",
+        "reading": "うま",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "うま"
+        ],
+        "senses": [
+          {
+            "key": "9300:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "horse"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 9300,
+            "common": true,
+            "readings": [
+              "うま"
+            ]
+          }
+        ]
+      },
+      "98": {
+        "lemma": "翠苓",
+        "reading": "すいれい",
+        "jlpt": null,
+        "pos": "名詞",
+        "isProper": true,
+        "readings": [],
+        "senses": [],
+        "entries": [],
+        "hint": {
+          "reading": "すいれい",
+          "printed": "スイレイ",
+          "source": "book"
+        }
+      },
+      "99": {
+        "lemma": "馬閃",
+        "reading": "ばせん",
+        "jlpt": null,
+        "pos": "名詞",
+        "isProper": true,
+        "readings": [],
+        "senses": [],
+        "entries": [],
+        "hint": {
+          "reading": "ばせん",
+          "printed": "バセン",
+          "source": "series"
+        }
       }
     },
     "analysis": [
@@ -1082,7 +1279,9 @@
     "7": "上手に言った",
     "8": "今日と今日",
     "9": "小姐と高順",
-    "10": "瞬き星"
+    "10": "瞬き星",
+    "11": "翠苓は翠苓と",
+    "12": "馬閃が"
   },
   "taps": [
     {
@@ -3322,6 +3521,347 @@
           ]
         }
       }
+    },
+    {
+      "request": {
+        "block": 11,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 98,
+          "surface": "翠苓",
+          "lemma": "翠苓",
+          "pos": "名詞",
+          "isProper": true,
+          "occurrenceReading": null,
+          "reading": "すいれい",
+          "readings": [],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 82,
+            "surface": "翠",
+            "lemma": "翠",
+            "reading": "みどり",
+            "senses": [
+              {
+                "key": "9200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "green"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 83,
+            "surface": "苓",
+            "lemma": "苓",
+            "reading": "れい",
+            "senses": []
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "furigana",
+          "shown": "スイレイ",
+          "pick": null,
+          "bookOnly": true,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 11,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 98,
+          "surface": "翠苓",
+          "lemma": "翠苓",
+          "pos": "名詞",
+          "isProper": true,
+          "occurrenceReading": null,
+          "reading": "すいれい",
+          "readings": [],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 82,
+            "surface": "翠",
+            "lemma": "翠",
+            "reading": "みどり",
+            "senses": [
+              {
+                "key": "9200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "green"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 83,
+            "surface": "苓",
+            "lemma": "苓",
+            "reading": "れい",
+            "senses": []
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "book",
+          "shown": "スイレイ",
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 11,
+        "s": 3,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 82,
+          "surface": "翠",
+          "lemma": "翠",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "みどり",
+          "reading": "みどり",
+          "readings": [
+            "みどり"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "9200:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "green"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 82,
+            "surface": "翠",
+            "lemma": "翠",
+            "reading": "みどり",
+            "senses": [
+              {
+                "key": "9200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "green"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 83,
+            "surface": "苓",
+            "lemma": "苓",
+            "reading": "れい",
+            "senses": []
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "みどり",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 9200,
+              "readings": [
+                "みどり"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9200:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "green"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 11,
+        "s": 3,
+        "sub": 1,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 83,
+          "surface": "苓",
+          "lemma": "苓",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": null,
+          "reading": "れい",
+          "readings": [],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 82,
+            "surface": "翠",
+            "lemma": "翠",
+            "reading": "みどり",
+            "senses": [
+              {
+                "key": "9200:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "green"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 83,
+            "surface": "苓",
+            "lemma": "苓",
+            "reading": "れい",
+            "senses": []
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 11,
+        "s": 1,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 12,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 99,
+          "surface": "馬閃",
+          "lemma": "馬閃",
+          "pos": "名詞",
+          "isProper": true,
+          "occurrenceReading": null,
+          "reading": "ばせん",
+          "readings": [],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 84,
+            "surface": "馬",
+            "lemma": "馬",
+            "reading": "うま",
+            "senses": [
+              {
+                "key": "9300:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "horse"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "series",
+          "shown": "バセン",
+          "pick": null,
+          "bookOnly": false,
+          "groups": []
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 12,
+        "s": 0,
+        "sub": 1,
+        "phrase": null
+      },
+      "result": null
     }
   ]
 }

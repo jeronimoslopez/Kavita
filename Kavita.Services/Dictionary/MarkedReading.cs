@@ -148,8 +148,8 @@ public static class MarkedReading
     /// <summary>
     /// Hiragana, katakana and the long vowel mark, without the katakana middle dot
     /// </summary>
-    private static bool IsKana(char c) => c is (>= 'ぁ' and <= 'ゖ') or (>= '゙' and <= 'ゟ') or
+    internal static bool IsKana(char c) => c is (>= 'ぁ' and <= 'ゖ') or (>= '゙' and <= 'ゟ') or
         (>= 'ァ' and <= 'ヺ') or (>= 'ー' and <= 'ヿ') or (>= 'ㇰ' and <= 'ㇿ');
 
-    private static bool IsKanaReading(string reading) => reading.Length > 0 && reading.All(IsKana);
+    internal static bool IsKanaReading(string reading) => reading.Length > 0 && reading.All(IsKana);
 }

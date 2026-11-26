@@ -126,6 +126,15 @@ export class DictionaryPopupComponent {
       pos: posLabels(s.sense.pos).join(', '),
     }));
   });
+  /**
+   * A word with no senses and no groups whose reading the book's furigana or the book's or series' book words give,
+   * such as a name the book marks, which the popup calls a word from this book in place of "no dictionary entry"
+   */
+  protected readonly fromBook = computed(() => {
+    const readings = this.readings();
+    if (readings === null || readings.groups.length > 0 || (this.result()?.senses.length ?? 0) > 0) return false;
+    return readings.source === 'furigana' || readings.source === 'book' || readings.source === 'series';
+  });
   /** The reading the analysis chose, only when it isn't the dictionary's usual one */
   protected readonly aiReading = computed(() => {
     const result = this.result();

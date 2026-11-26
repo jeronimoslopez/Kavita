@@ -53,17 +53,18 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         var file = await GetEpubFileAsync(chapterId, ct);
         if (file == null) return null;
 
-        var unit = await readingStore.GetUnitAsync(file.FileId, page, ct);
-        if (!IsServed(unit))
+        var stored = await readingStore.GetUnitAsync(file.FileId, page, ct);
+        if (!IsServed(stored))
         {
             // A missing or failed unit won't be tokenized however high it's raised, so only a pending one is worth a write
-            if (unit is { State: ReadingUnitState.Pending })
+            if (stored is { State: ReadingUnitState.Pending })
             {
                 await readingStore.RaiseUnitPriorityAsync(file.FileId, page, ReadingPriority.OpenChapter, ct);
                 workerSignal.Wake();
             }
             return null;
         }
+        var (unit, bookWords, seriesFiles) = await JoinBookWordsAsync(file, stored, ct);
 
         var topLevelIds = unit.Blocks.SelectMany(b => b.Tokens).Select(t => t.W).OfType<long>().ToHashSet();
         var wordIds = unit.Blocks
@@ -78,8 +79,11 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
 
         // Only a top-level token's lookup reads a hint or a choice, so only its words carry them
         var tapped = words.Values.Where(w => topLevelIds.Contains(w.Id)).ToList();
-        var hints = await GetHintsAsync(file, tapped, ct);
+        var hints = await GetHintsAsync(file, seriesFiles, bookWords, tapped, ct);
         var choices = await readingStore.GetReadingChoicesAsync(userId, file.SeriesId, tapped.Select(w => w.Id).ToList(), ct);
+        var tokenSpans = unit.Blocks
+            .SelectMany(b => b.Tokens.Select(t => (b.Index, t.S, t.E)))
+            .ToHashSet();
 
         return new EpubPageTokensDto
         {
@@ -94,8 +98,9 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
                 w.IsProper, w.Readings.ToList(), w.Senses.ToList(), w.Entries?.ToList(),
                 hints.GetValueOrDefault(w.Id), choices.TryGetValue(w.Id, out var choice) ? choice : null)),
             // In stored order, so the reader's first match for an occurrence is the row LookupAsync picks
+            // A row of a token a book word joined no longer matches a top-level token, so it's left out
             Analysis = analysis
-                .Where(a => a.State == AnalysisState.Done)
+                .Where(a => a.State == AnalysisState.Done && tokenSpans.Contains((a.Block, a.S, a.E)))
                 .Select(a => new AnalysisEntryDto(a.Block, a.S, a.SenseKey, a.Reading, a.Generator ?? string.Empty))
                 .ToList(),
         };
@@ -107,8 +112,9 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         var file = await GetEpubFileAsync(request.ChapterId, ct);
         if (file == null) return null;
 
-        var unit = await readingStore.GetUnitAsync(file.FileId, request.Page, ct);
-        if (!IsServed(unit)) return null;
+        var stored = await readingStore.GetUnitAsync(file.FileId, request.Page, ct);
+        if (!IsServed(stored)) return null;
+        var (unit, bookWords, seriesFiles) = await JoinBookWordsAsync(file, stored, ct);
 
         var block = unit.Blocks.FirstOrDefault(b => b.Index == request.Block);
         if (block == null) return null;
@@ -149,10 +155,10 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (request.Sub == null)
         {
             var row = (await readingStore.GetUnitAnalysisAsync(unit.Id, ct))
-                .FirstOrDefault(a => a.Block == block.Index && a.S == token.S && a.State == AnalysisState.Done);
+                .FirstOrDefault(a => a.Block == block.Index && a.S == token.S && a.E == token.E && a.State == AnalysisState.Done);
             if (row != null) answer = new DictionaryAnalysisDto(row.SenseKey, row.Reading, row.Generator ?? string.Empty);
 
-            var hints = await GetHintsAsync(file, [word], ct);
+            var hints = await GetHintsAsync(file, seriesFiles, bookWords, [word], ct);
             var choices = await readingStore.GetReadingChoicesAsync(userId, file.SeriesId, [word.Id], ct);
             inputs = ReadingResolver.ForToken(block, token, word, choices.TryGetValue(word.Id, out var choice) ? choice : null,
                 hints.GetValueOrDefault(word.Id));
@@ -227,14 +233,34 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         readingStore.ClearReadingChoiceAsync(userId, seriesId, wordId, ct);
 
     /// <summary>
-    /// Each word's hint by <see cref="ReadingHints"/>, from the chapter's file first and then from every EPUB file of
-    /// its series. Only the words the file gives no hint go to the series' query
+    /// Applies the series' book words to the unit's blocks, the one place the page response and a lookup get their
+    /// tokens from, so both see the same joined tokens
+    /// </summary>
+    /// <returns>The joined unit, the book words, and every EPUB file of the series</returns>
+    private async Task<(ReadingUnit Unit, BookWordSet BookWords, IReadOnlyList<int> SeriesFiles)> JoinBookWordsAsync(
+        EpubFile file, ReadingUnit unit, CancellationToken ct)
+    {
+        var seriesFiles = await GetSeriesEpubFileIdsAsync(file.SeriesId, ct);
+        var set = BookWordSet.From(await readingStore.GetBookWordsAsync(seriesFiles, ct), file.FileId);
+        return (BookWordJoin.Apply(unit, set), set, seriesFiles);
+    }
+
+    /// <summary>
+    /// Each word's hint. A book word takes the one its book_word counts give. Every other word takes the one
+    /// <see cref="ReadingHints"/> gives, from the chapter's file first and then from every EPUB file of its series,
+    /// and only the words the file gives no hint go to the series' query
     /// </summary>
     /// <returns>A hint per word that gets one</returns>
-    private async Task<Dictionary<long, ReadingHintDto>> GetHintsAsync(EpubFile file, IReadOnlyList<StoredWord> words,
-        CancellationToken ct)
+    private async Task<Dictionary<long, ReadingHintDto>> GetHintsAsync(EpubFile file, IReadOnlyList<int> seriesFiles,
+        BookWordSet bookWords, IReadOnlyList<StoredWord> tapped, CancellationToken ct)
     {
         var result = new Dictionary<long, ReadingHintDto>();
+        var words = new List<StoredWord>();
+        foreach (var word in tapped)
+        {
+            if (bookWords.Hints.TryGetValue(word.Id, out var bookHint)) result[word.Id] = bookHint;
+            else words.Add(word);
+        }
         if (words.Count == 0) return result;
 
         var groups = words.ToDictionary(w => w.Id, ReadingGroups.Of);
@@ -248,7 +274,6 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         }
         if (rest.Count == 0) return result;
 
-        var seriesFiles = await GetSeriesEpubFileIdsAsync(file.SeriesId, ct);
         var series = await readingStore.GetReadingMarksAsync(seriesFiles, rest.Select(w => w.Id).ToList(), markedOnly: true, ct);
         foreach (var word in rest)
         {
