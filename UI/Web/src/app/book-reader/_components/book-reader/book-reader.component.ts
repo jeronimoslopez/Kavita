@@ -81,6 +81,7 @@ import {
   ReaderDictionaryController
 } from "../../../reader-shared/dictionary/reader-dictionary.controller";
 import {DictionaryClick, dictionaryClickAction} from "./dictionary-click-action";
+import {isCurrentPageLoad, PageLoad} from "./page-load";
 
 
 interface HistoryPoint {
@@ -1351,8 +1352,12 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
     this.isLoading.set(true);
     this.cdRef.markForCheck();
 
-    const loaded = {chapterId: this.chapterId, page: this.pageNum()};
+    const loaded: PageLoad = {chapterId: this.chapterId, page: this.pageNum()};
     this.bookService.getBookPage(loaded.chapterId, loaded.page).subscribe(content => {
+      // Fast paging leaves several requests in flight. A late one would otherwise put an earlier page's text under
+      // the current page number, and the request for the current page is still on its way
+      if (!isCurrentPageLoad(loaded, this.chapterId, this.pageNum())) return;
+
       this.isSingleImagePage = this.checkSingleImagePage(content); // This needs be performed before we set this.page to avoid image jumping
       this.updateSingleImagePageStyles();
 
@@ -1556,7 +1561,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
    * @param loaded The chapter and page the HTML was fetched for. A load that a later one superseded while it waited
    * for images doesn't hand its page to the dictionary
    */
-  setupPage(part?: string | undefined, scrollTop?: number | undefined, loaded?: {chapterId: number, page: number}) {
+  setupPage(part?: string | undefined, scrollTop?: number | undefined, loaded?: PageLoad) {
     this.isLoading.set(false);
     this.cdRef.markForCheck();
 
@@ -1584,7 +1589,7 @@ export class BookReaderComponent implements OnInit, AfterViewInit, OnDestroy, Af
       this.setupAnnotationElements();
     });
 
-    if (this.dictionaryActive && loaded !== undefined && loaded.chapterId === this.chapterId && loaded.page === this.pageNum()) {
+    if (this.dictionaryActive && loaded !== undefined && isCurrentPageLoad(loaded, this.chapterId, this.pageNum())) {
       this.dictionary.setPage(loaded.chapterId, loaded.page);
     }
   }
