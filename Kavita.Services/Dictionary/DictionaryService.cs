@@ -45,41 +45,54 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     /// </summary>
     private const int MaxSeedRows = 16384;
 
-    public async Task<EpubPageTokensDto?> GetEpubPageAsync(int chapterId, int page, CancellationToken ct = default)
+    /// <remarks>
+    /// The answer carries the requesting user's saved choices, so it's built per user and nothing caches it
+    /// </remarks>
+    public async Task<EpubPageTokensDto?> GetEpubPageAsync(int userId, int chapterId, int page, CancellationToken ct = default)
     {
-        var fileId = await GetEpubFileIdAsync(chapterId, ct);
-        if (fileId == null) return null;
+        var file = await GetEpubFileAsync(chapterId, ct);
+        if (file == null) return null;
 
-        var unit = await readingStore.GetUnitAsync(fileId.Value, page, ct);
+        var unit = await readingStore.GetUnitAsync(file.FileId, page, ct);
         if (!IsServed(unit))
         {
             // A missing or failed unit won't be tokenized however high it's raised, so only a pending one is worth a write
             if (unit is { State: ReadingUnitState.Pending })
             {
-                await readingStore.RaiseUnitPriorityAsync(fileId.Value, page, ReadingPriority.OpenChapter, ct);
+                await readingStore.RaiseUnitPriorityAsync(file.FileId, page, ReadingPriority.OpenChapter, ct);
                 workerSignal.Wake();
             }
             return null;
         }
 
+        var topLevelIds = unit.Blocks.SelectMany(b => b.Tokens).Select(t => t.W).OfType<long>().ToHashSet();
         var wordIds = unit.Blocks
             .SelectMany(b => b.Tokens)
-            .SelectMany(t => (t.Sub ?? []).Select(p => p.W).Prepend(t.W))
+            .SelectMany(t => (t.Sub ?? []).Select(p => p.W))
             .Concat(unit.Blocks.SelectMany(b => b.Phrases).Select(p => (long?) p.W))
             .OfType<long>()
+            .Concat(topLevelIds)
             .ToHashSet();
         var words = await readingStore.GetWordsAsync(wordIds, ct);
         var analysis = await readingStore.GetUnitAnalysisAsync(unit.Id, ct);
 
+        // Only a top-level token's lookup reads a hint or a choice, so only its words carry them
+        var tapped = words.Values.Where(w => topLevelIds.Contains(w.Id)).ToList();
+        var hints = await GetHintsAsync(file, tapped, ct);
+        var choices = await readingStore.GetReadingChoicesAsync(userId, file.SeriesId, tapped.Select(w => w.Id).ToList(), ct);
+
         return new EpubPageTokensDto
         {
             Version = unit.TokenizerVersion ?? string.Empty,
+            SeriesId = file.SeriesId,
             Blocks = unit.Blocks
                 .Select(b => new EpubPageBlockDto(b.Index, b.Text.Length, b.Tokens.ToList(),
-                    b.Phrases.Count == 0 ? null : b.Phrases.ToList(), b.Ruby.Count == 0 ? null : b.Ruby.ToList()))
+                    b.Phrases.Count == 0 ? null : b.Phrases.ToList(), b.Ruby.Count == 0 ? null : b.Ruby.ToList(),
+                    b.Blind.Count == 0 ? null : b.Blind.ToList()))
                 .ToList(),
             Words = words.Values.ToDictionary(w => w.Id, w => new EpubPageWordDto(w.Lemma, w.Reading, w.Jlpt, w.Pos,
-                w.IsProper, w.Readings.ToList(), w.Senses.ToList())),
+                w.IsProper, w.Readings.ToList(), w.Senses.ToList(), w.Entries?.ToList(),
+                hints.GetValueOrDefault(w.Id), choices.TryGetValue(w.Id, out var choice) ? choice : null)),
             // In stored order, so the reader's first match for an occurrence is the row LookupAsync picks
             Analysis = analysis
                 .Where(a => a.State == AnalysisState.Done)
@@ -88,18 +101,19 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         };
     }
 
-    public async Task<DictionaryLookupResultDto?> LookupAsync(DictionaryLookupRequestDto request, CancellationToken ct = default)
+    public async Task<DictionaryLookupResultDto?> LookupAsync(int userId, DictionaryLookupRequestDto request,
+        CancellationToken ct = default)
     {
-        var fileId = await GetEpubFileIdAsync(request.ChapterId, ct);
-        if (fileId == null) return null;
+        var file = await GetEpubFileAsync(request.ChapterId, ct);
+        if (file == null) return null;
 
-        var unit = await readingStore.GetUnitAsync(fileId.Value, request.Page, ct);
+        var unit = await readingStore.GetUnitAsync(file.FileId, request.Page, ct);
         if (!IsServed(unit)) return null;
 
         var block = unit.Blocks.FirstOrDefault(b => b.Index == request.Block);
         if (block == null) return null;
 
-        await readingStore.RaiseAnalysisPriorityAsync(fileId.Value, request.Page, request.Block, ReadingPriority.Tapped, ct);
+        await readingStore.RaiseAnalysisPriorityAsync(file.FileId, request.Page, request.Block, ReadingPriority.Tapped, ct);
 
         if (request.Phrase is { } phraseIndex) return await LookupPhraseAsync(block, phraseIndex, request.S, ct);
 
@@ -131,11 +145,21 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         if (!words.TryGetValue(target.W.Value, out var word)) return null;
 
         DictionaryAnalysisDto? answer = null;
+        ReadingInputs inputs;
         if (request.Sub == null)
         {
             var row = (await readingStore.GetUnitAnalysisAsync(unit.Id, ct))
                 .FirstOrDefault(a => a.Block == block.Index && a.S == token.S && a.State == AnalysisState.Done);
             if (row != null) answer = new DictionaryAnalysisDto(row.SenseKey, row.Reading, row.Generator ?? string.Empty);
+
+            var hints = await GetHintsAsync(file, [word], ct);
+            var choices = await readingStore.GetReadingChoicesAsync(userId, file.SeriesId, [word.Id], ct);
+            inputs = ReadingResolver.ForToken(block, token, word, choices.TryGetValue(word.Id, out var choice) ? choice : null,
+                hints.GetValueOrDefault(word.Id));
+        }
+        else
+        {
+            inputs = ReadingResolver.ForPart(block, target, word);
         }
 
         return new DictionaryLookupResultDto
@@ -163,6 +187,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
                         FirstGloss(phraseWord));
                 })
                 .ToList(),
+            Readings = ReadingResolver.Resolve(inputs),
         };
     }
 
@@ -182,7 +207,55 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
             Word = new DictionaryWordDto(word.Id, Slice(block.Text, phrase.S, phrase.E), word.Lemma, word.Pos,
                 word.IsProper, null, word.Reading, word.Readings.ToList(), word.Jlpt),
             Senses = word.Senses.ToList(),
+            Readings = ReadingResolver.Resolve(ReadingResolver.ForPhrase(word)),
         };
+    }
+
+    public async Task SaveReadingChoiceAsync(int userId, ReadingChoiceDto choice, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(choice.Reading)) throw new KavitaException("reading is required");
+
+        var words = await readingStore.GetWordsAsync([choice.WordId], ct);
+        if (!words.TryGetValue(choice.WordId, out var word)) throw new KavitaException($"Word {choice.WordId} doesn't exist");
+        if (!ReadingGroups.AnyHas(ReadingGroups.Of(word), choice.Reading))
+            throw new KavitaException($"{choice.Reading} isn't a reading of one of {word.Lemma}'s groups");
+
+        await readingStore.SaveReadingChoiceAsync(userId, choice.SeriesId, choice.WordId, choice.Reading, ct);
+    }
+
+    public Task ClearReadingChoiceAsync(int userId, int seriesId, long wordId, CancellationToken ct = default) =>
+        readingStore.ClearReadingChoiceAsync(userId, seriesId, wordId, ct);
+
+    /// <summary>
+    /// Each word's hint by <see cref="ReadingHints"/>, from the chapter's file first and then from every EPUB file of
+    /// its series. Only the words the file gives no hint go to the series' query
+    /// </summary>
+    /// <returns>A hint per word that gets one</returns>
+    private async Task<Dictionary<long, ReadingHintDto>> GetHintsAsync(EpubFile file, IReadOnlyList<StoredWord> words,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<long, ReadingHintDto>();
+        if (words.Count == 0) return result;
+
+        var groups = words.ToDictionary(w => w.Id, ReadingGroups.Of);
+        var book = await readingStore.GetReadingMarksAsync(file.FileId, words.Select(w => w.Id).ToList(), markedOnly: true, ct);
+        var rest = new List<StoredWord>();
+        foreach (var word in words)
+        {
+            var totals = book.TryGetValue(word.Id, out var found) ? found : null;
+            if (ReadingHints.Of(word.IsProper, groups[word.Id], totals, null) is { } hint) result[word.Id] = hint;
+            else rest.Add(word);
+        }
+        if (rest.Count == 0) return result;
+
+        var seriesFiles = await GetSeriesEpubFileIdsAsync(file.SeriesId, ct);
+        var series = await readingStore.GetReadingMarksAsync(seriesFiles, rest.Select(w => w.Id).ToList(), markedOnly: true, ct);
+        foreach (var word in rest)
+        {
+            var totals = series.TryGetValue(word.Id, out var found) ? found : null;
+            if (ReadingHints.Of(word.IsProper, groups[word.Id], null, totals) is { } hint) result[word.Id] = hint;
+        }
+        return result;
     }
 
     /// <summary>
@@ -505,13 +578,13 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         }
     }
 
-    /// <returns>The chapter's first EPUB file, or null when it has none</returns>
-    private async Task<int?> GetEpubFileIdAsync(int chapterId, CancellationToken ct)
+    /// <returns>The chapter's first EPUB file with the chapter's series, or null when it has none</returns>
+    private async Task<EpubFile?> GetEpubFileAsync(int chapterId, CancellationToken ct)
     {
         return await unitOfWork.DataContext.MangaFile
             .Where(f => f.ChapterId == chapterId && f.Format == MangaFormat.Epub)
             .OrderBy(f => f.Id)
-            .Select(f => (int?) f.Id)
+            .Select(f => new EpubFile(f.Id, f.Chapter.Volume.SeriesId))
             .FirstOrDefaultAsync(ct);
     }
 
@@ -556,6 +629,8 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
     /// <param name="PendingCounts">Queued rows per block, read only when the queue read was cut short</param>
     private sealed record PassageUnit(long Id, IReadOnlyDictionary<int, string> Blocks,
         IReadOnlyDictionary<int, int>? PendingCounts);
+
+    private sealed record EpubFile(int FileId, int SeriesId);
 
     private sealed record PassageDraft(string Text, List<AnalysisItemDto> Items, List<long> Unusable);
 

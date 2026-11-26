@@ -22,9 +22,22 @@ using Xunit.Abstractions;
 
 namespace Kavita.Services.Tests.Dictionary;
 
-public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDbTest(outputHelper)
+public class DictionaryServiceTests : AbstractDbTest
 {
+    private const int UserId = 9;
+
     private readonly IReadingStore _store = Substitute.For<IReadingStore>();
+
+    public DictionaryServiceTests(ITestOutputHelper outputHelper) : base(outputHelper)
+    {
+        // No furigana elsewhere and no saved choices unless a test gives some
+        _store.GetReadingMarksAsync(Arg.Any<int>(), Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<long, WordMarkTotals>());
+        _store.GetReadingMarksAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>()).Returns(new Dictionary<long, WordMarkTotals>());
+        _store.GetReadingChoicesAsync(Arg.Any<int>(), Arg.Any<int>(), Arg.Any<IReadOnlyCollection<long>>(),
+            Arg.Any<CancellationToken>()).Returns(new Dictionary<long, string>());
+    }
     private readonly ITokenizeService _tokenizeService = Substitute.For<ITokenizeService>();
     private readonly ITokenizeWorkerSignal _workerSignal = Substitute.For<ITokenizeWorkerSignal>();
     private readonly IEventHub _eventHub = Substitute.For<IEventHub>();
@@ -80,6 +93,26 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
                 .ToDictionary(w => w.Id));
     }
 
+    /// <param name="book">The totals the chapter's file gives</param>
+    /// <param name="series">The totals all the series' files give</param>
+    private void GivenMarks(int fileId, WordMarkTotals[] book, WordMarkTotals[] series)
+    {
+        _store.GetReadingMarksAsync(fileId, Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(call => Only(book, call.ArgAt<IReadOnlyCollection<long>>(1)));
+        _store.GetReadingMarksAsync(Arg.Any<IReadOnlyCollection<int>>(), Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>()).Returns(call => Only(series, call.ArgAt<IReadOnlyCollection<long>>(1)));
+    }
+
+    private static IReadOnlyDictionary<long, WordMarkTotals> Only(WordMarkTotals[] totals, IReadOnlyCollection<long> ids) =>
+        totals.Where(t => ids.Contains(t.WordId)).ToDictionary(t => t.WordId);
+
+    private void GivenChoices(Dictionary<long, string> choices)
+    {
+        _store.GetReadingChoicesAsync(UserId, Arg.Any<int>(), Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>())
+            .Returns(call => choices.Where(c => call.ArgAt<IReadOnlyCollection<long>>(2).Contains(c.Key))
+                .ToDictionary(c => c.Key, c => c.Value));
+    }
+
     private static StoredAnalysis Row(long id, long unitId, int block, int s, int e, long wordId,
         AnalysisState state = AnalysisState.Pending, int priority = ReadingPriority.WholeBook, string? sense = null,
         string? reading = null, string? generator = null)
@@ -118,7 +151,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Row(2, unit.Id, 1, 0, 3, Nihongo.Id, AnalysisState.Pending),
         ]);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
 
         Assert.NotNull(page);
         Assert.Equal("sidecar=1", page.Version);
@@ -142,7 +175,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenPageWithPhrases(book.FirstFile, 2);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
 
         Assert.NotNull(page);
         Assert.Equal([new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id)], page.Blocks[0].Phrases);
@@ -164,7 +197,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         };
         _store.GetUnitAsync(book.FirstFile.Id, 2, Arg.Any<CancellationToken>()).Returns(withRuby);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(page, Web));
 
         Assert.Equal([new RubyDto(3, 4, "つら")], page!.Blocks[0].Ruby);
@@ -180,7 +213,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(page, Web));
 
         var blocks = json.RootElement.GetProperty("blocks");
@@ -201,8 +234,8 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Refresh);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
-        var lookup = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
+        var lookup = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
 
         Assert.NotNull(page);
         Assert.Equal("sidecar=1", page.Version);
@@ -217,7 +250,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Pending);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
 
         Assert.Null(page);
         await _store.Received(1).RaiseUnitPriorityAsync(book.FirstFile.Id, 2, ReadingPriority.OpenChapter, Arg.Any<CancellationToken>());
@@ -232,7 +265,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         if (state != null) GivenTokenizedPage(book.FirstFile, 2, state.Value);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
 
         Assert.Null(page);
         await _store.DidNotReceiveWithAnyArgs().RaiseUnitPriorityAsync(default, default, default, default);
@@ -245,7 +278,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         var notes = await book.Context.Chapter.SingleAsync(c => c.Range == "3");
 
-        Assert.Null(await book.Service.GetEpubPageAsync(notes.Id, 0));
+        Assert.Null(await book.Service.GetEpubPageAsync(UserId, notes.Id, 0));
         await _store.DidNotReceiveWithAnyArgs().GetUnitAsync(default, default, default);
     }
 
@@ -262,7 +295,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Row(1, unit.Id, 0, 3, 5, Karai.Id, AnalysisState.Done, sense: HarshSense.Key, reading: "つらい", generator: "claude-sonnet"),
         ]);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
 
         Assert.NotNull(result);
         Assert.Equal(new DictionaryWordDto(Karai.Id, "辛い", "辛い", "形容詞", false, "つらい", "からい", ["からい", "つらい"], 3)
@@ -283,7 +316,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Row(2, unit.Id, 1, 0, 3, Nihongo.Id, AnalysisState.Pending),
         ]);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 1, 0, null));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 1, 0, null));
 
         Assert.NotNull(result);
         Assert.Equal("日本語", result.Word.Surface);
@@ -304,7 +337,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Row(2, unit.Id, 1, 0, 3, Nihongo.Id, AnalysisState.Done, sense: "2000:1", generator: "claude-sonnet"),
         ]);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 1, 0, 1));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 1, 0, 1));
 
         Assert.NotNull(result);
         Assert.Equal(Go.Id, result.Word.Id);
@@ -326,7 +359,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2);
 
-        Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub)));
+        Assert.Null(await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub)));
     }
 
     private static readonly StoredWord Ki = new(31, "気", "名詞", false, "き", 4, ["き"],
@@ -365,7 +398,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenPageWithPhrases(book.FirstFile, 2);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, sub));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, sub));
 
         Assert.NotNull(result);
         Assert.Equal(expected, result.PartOf.Select(p => p.Index));
@@ -380,7 +413,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null));
 
         Assert.NotNull(result);
         Assert.Empty(result.PartOf);
@@ -395,7 +428,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
             Row(1, unit.Id, 0, 2, 4, Suru.Id, AnalysisState.Done, sense: "3002:1", generator: "claude-sonnet"),
         ]);
 
-        var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 2, null, 0));
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, 2, null, 0));
 
         Assert.NotNull(result);
         Assert.Equal(new DictionaryWordDto(KiGaSuru.Id, "気がした", "気がする", "表現", false, null, "きがする", ["きがする"], null)
@@ -417,7 +450,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenPageWithPhrases(book.FirstFile, 2);
 
-        Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, null, phrase)));
+        Assert.Null(await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, s, null, phrase)));
     }
 
     [Fact]
@@ -426,7 +459,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         GivenTokenizedPage(book.FirstFile, 2, ReadingUnitState.Pending);
 
-        Assert.Null(await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null)));
+        Assert.Null(await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, 0, 3, null)));
         await _store.DidNotReceiveWithAnyArgs().RaiseAnalysisPriorityAsync(default, default, default, default, default);
     }
 
@@ -459,6 +492,55 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         [new SenseDto("6000:1", ["v5r", "vt"], ["to scold"])], "lex1");
     private static readonly StoredWord Tanaka = new(70, "田中", "名詞", true, "たなか", null, ["たなか"],
         [new SenseDto("7000:1", ["n-pr"], ["Tanaka"])], "lex1");
+    private static SenseDto Sense(string key, string gloss, params string[] r) =>
+        new(key, ["n"], [gloss], r.Length == 0 ? null : r);
+
+    /// <summary>
+    /// Three entries with a sense each, as the sidecar gives 瞬く
+    /// </summary>
+    private static readonly StoredWord Blink = new(90, "瞬く", "動詞", false, "しばたたく", null,
+        ["しばたたく", "しばたく", "またたく", "まばたく", "めたたく", "めばたく"],
+        [Sense("2831002:1", "to blink"), Sense("1341200:1", "to twinkle"), Sense("2831001:1", "to wink")], "lex1")
+    {
+        Entries = [new WordEntryDto(2831002, false, ["しばたたく", "しばたく"]), new WordEntryDto(1341200, true, ["またたく", "まばたく"]),
+            new WordEntryDto(2831001, false, ["めたたく", "めばたく"])],
+    };
+    private static readonly StoredWord Hiraku = new(91, "開く", "動詞", false, "ひらく", 5, ["ひらく", "あく"],
+        [Sense("1202440:1", "to open (a door)"), Sense("1586270:1", "to be open")], "lex1")
+    {
+        Entries = [new WordEntryDto(1202440, true, ["ひらく"]), new WordEntryDto(1586270, true, ["あく"])],
+    };
+    private static readonly StoredWord Hoshi = new(92, "星", "名詞", false, "ほし", 5, ["ほし", "せい"],
+        [Sense("1376310:1", "star"), Sense("2100980:1", "star (counter)")], "lex1")
+    {
+        Entries = [new WordEntryDto(1376310, true, ["ほし"]), new WordEntryDto(2100980, false, ["せい"])],
+    };
+    /// <summary>
+    /// じょうず, and an entry whose senses JMdict splits between うわて and かみて, so three groups
+    /// </summary>
+    private static readonly StoredWord Jouzu = new(93, "上手", "名詞", false, "じょうず", 4, ["じょうず", "うわて", "かみて"],
+        [Sense("1353320:1", "skilful"), Sense("1580400:1", "upper part"), Sense("1580400:2", "upstage", "かみて"),
+            Sense("1580400:3", "superior", "うわて")], "lex1")
+    {
+        Entries = [new WordEntryDto(1353320, true, ["じょうず"]), new WordEntryDto(1580400, false, ["うわて", "かみて"])],
+    };
+    /// <summary>
+    /// One entry whose second sense is restricted to こんにち, so two groups
+    /// </summary>
+    private static readonly StoredWord Kyou = new(94, "今日", "名詞", false, "きょう", 5, ["きょう", "こんにち", "こんち"],
+        [Sense("1579110:1", "today"), Sense("1579110:2", "these days", "こんにち")], "lex1")
+    {
+        Entries = [new WordEntryDto(1579110, true, ["きょう", "こんにち", "こんち"])],
+    };
+    private static readonly StoredWord Shoujo = new(95, "小姐", "名詞", false, "しょうじょ", null, ["しょうじょ"],
+        [Sense("9100:1", "young lady")], "lex1") { Entries = [new WordEntryDto(9100, false, ["しょうじょ"])] };
+    private static readonly StoredWord Iu = new(96, "言う", "動詞", false, "いう", 5, ["いう", "ゆう"],
+        [Sense("1587040:1", "to say")], "lex1") { Entries = [new WordEntryDto(1587040, true, ["いう", "ゆう"])] };
+    /// <summary>
+    /// A name the dictionary has no entry for, from a version 3 sidecar, so its entries are empty and not missing
+    /// </summary>
+    private static readonly StoredWord Gaoshun = new(97, "高順", "名詞", true, "たかじゅん", null, [], [], "lex1") { Entries = [] };
+
     /// <summary>
     /// Word ids that tokens and phrases point at and the store doesn't have
     /// </summary>
@@ -492,15 +574,48 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
                 new TokenDto(2, 4, Suru.Id, "した", [new SubTokenDto(2, 3, Suru.Id, "し"), new SubTokenDto(3, 4, null, null)]),
                 new TokenDto(4, 5, null, null, null),
             ]) { Phrases = [new PhraseDto(0, 4, KiGaSuru.Id), new PhraseDto(1, 4, GaSuru.Id), new PhraseDto(0, 2, MissingPhraseWord)] },
-            // 𠮟 is a surrogate pair, so 𠮟る is three UTF-16 units. 田中 is a proper noun. The furigana over both
-            // changes no answer
+            // 𠮟 is a surrogate pair, so 𠮟る is three UTF-16 units. 田中 is a proper noun. Both are stored without
+            // entries, so the furigana over them changes no answer
             new StoredBlock(3, "𠮟る田中",
                 [new TokenDto(0, 3, Shikaru.Id, "しかる", null), new TokenDto(3, 5, Tanaka.Id, "たなか", null)])
                 { Ruby = [new RubyDto(0, 2, "しか"), new RubyDto(3, 5, "タナカ")] },
             new StoredBlock(4, "謎だ", [new TokenDto(0, 1, MissingTokenWord, "なぞ", null), new TokenDto(1, 2, null, null, null)]),
+            // 星 has a series hint, and 瞬く is read by fixed cost alone
+            new StoredBlock(5, "星が瞬く",
+                [new TokenDto(0, 1, Hoshi.Id, "ほし", null), new TokenDto(1, 2, null, null, null), new TokenDto(2, 4, Blink.Id, "しばたたく", null)])
+                { Blind = [2] },
+            // 開く has a book hint
+            new StoredBlock(6, "店を開く",
+                [new TokenDto(0, 1, null, null, null), new TokenDto(1, 2, null, null, null), new TokenDto(2, 4, Hiraku.Id, "ひらく", null)]),
+            // 上手 has the user's saved choice, and 言っ is one group read in dictionary form
+            new StoredBlock(7, "上手に言った",
+            [
+                new TokenDto(0, 2, Jouzu.Id, "じょうず", null), new TokenDto(2, 3, null, null, null),
+                new TokenDto(3, 5, Iu.Id, "いっ", null), new TokenDto(5, 6, null, null, null),
+            ]),
+            // The second 今日 is marked with a reading one of its groups has
+            new StoredBlock(8, "今日と今日",
+                [new TokenDto(0, 2, Kyou.Id, "きょう", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 5, Kyou.Id, "きょう", null)])
+                { Ruby = [new RubyDto(3, 5, "こんにち")] },
+            // 小姐 is marked with a reading none of its groups has, and the name 高順 has a hint from the book
+            new StoredBlock(9, "小姐と高順",
+                [new TokenDto(0, 2, Shoujo.Id, "しょうじょ", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 5, Gaoshun.Id, "たかじゅん", null)])
+                { Ruby = [new RubyDto(0, 2, "ねえちゃん")] },
+            // A compound without a word of its own whose parts have groups
+            new StoredBlock(10, "瞬き星",
+                [new TokenDto(0, 3, null, null, [new SubTokenDto(0, 2, Blink.Id, "またたき"), new SubTokenDto(2, 3, Hoshi.Id, "ぼし")])]),
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
-        GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka);
+        GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
+            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun);
+        GivenMarks(file.Id,
+            book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
+                new WordMarkTotals(Gaoshun.Id, 3, [new ReadingMarkTotal("がおしゅん", "ガオシュン", 1)]),
+                new WordMarkTotals(Tanaka.Id, 1, [new ReadingMarkTotal("たなか", "タナカ", 1)]),
+                new WordMarkTotals(Jouzu.Id, 5, [new ReadingMarkTotal("じょうず", "じょうず", 2)])],
+            series: [new WordMarkTotals(Hoshi.Id, 10, [new ReadingMarkTotal("せい", "せい", 3)]),
+                new WordMarkTotals(Hiraku.Id, 40, [new ReadingMarkTotal("ひらく", "ひらく", 30)])]);
+        GivenChoices(new Dictionary<long, string> { [Jouzu.Id] = "うわて" });
         _store.GetUnitAnalysisAsync(unit.Id, Arg.Any<CancellationToken>()).Returns([
             Row(1, unit.Id, 0, 3, 7, Karai.Id, AnalysisState.Done, sense: HarshSense.Key, reading: "つらい", generator: "claude-sonnet"),
             Row(2, unit.Id, 0, 0, 3, Totemo.Id, AnalysisState.Pending),
@@ -520,7 +635,7 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         (0, 3, 0, null), // null, the token has no parts
         (0, 7, null, null), // null, punctuation has no word
         (0, 1, null, null), // null, no token starts there
-        (9, 0, null, null), // null, no such block
+        (99, 0, null, null), // null, no such block
         (1, 0, null, null), // a compound with its parts
         (1, 0, 0, null), // a part, keeping the parts
         (1, 0, 1, null),
@@ -544,6 +659,17 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         (3, 0, null, null), // a surface with a surrogate pair
         (3, 3, null, null), // a proper noun
         (4, 0, null, null), // null, the token's word is missing
+        (5, 0, null, null), // a series hint
+        (5, 2, null, null), // three groups and a blind token, so a guess
+        (6, 2, null, null), // a book hint, which the series' other reading doesn't override
+        (7, 0, null, null), // the user's saved choice, which beats a book hint
+        (7, 3, null, null), // one group, read in dictionary form
+        (8, 0, null, null), // groups split by restricted senses, by the tokenizer
+        (8, 3, null, null), // furigana that one group has
+        (9, 0, null, null), // furigana no group has
+        (9, 3, null, null), // a name with empty entries and a book hint
+        (10, 0, 0, null), // a part with groups, by its own reading
+        (10, 0, 1, null), // a part whose reading no group has
     ];
 
     /// <summary>
@@ -556,11 +682,11 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var book = await Setup();
         var unit = GivenParityPage(book.FirstFile, 2);
 
-        var page = await book.Service.GetEpubPageAsync(book.First.Id, 2);
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
         var taps = new JsonArray();
         foreach (var (block, s, sub, phrase) in ParityTaps)
         {
-            var result = await book.Service.LookupAsync(new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub, phrase));
+            var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub, phrase));
             taps.Add(new JsonObject
             {
                 ["request"] = new JsonObject { ["block"] = block, ["s"] = s, ["sub"] = sub, ["phrase"] = phrase },
@@ -588,6 +714,180 @@ public class DictionaryServiceTests(ITestOutputHelper outputHelper) : AbstractDb
         var stored = (await File.ReadAllTextAsync(ParityFixturePath)).ReplaceLineEndings("\n");
         Assert.True(stored == json, "The page response or a lookup answer changed. Run the test with " +
                                     "KAVITA_UPDATE_FIXTURES=1 to write the fixture, then run the UI's local-lookup spec");
+    }
+
+    #endregion
+
+    #region Readings
+
+    private async Task<ReadingsDto> ReadingsAt(Book book, int block, int s, int? sub = null)
+    {
+        var result = await book.Service.LookupAsync(UserId, new DictionaryLookupRequestDto(book.First.Id, 2, block, s, sub));
+        Assert.NotNull(result);
+        return result.Readings;
+    }
+
+    [Fact]
+    public async Task GetEpubPage_CarriesTheSeriesBlindOffsetsEntriesHintsAndTheUsersChoices()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
+
+        Assert.NotNull(page);
+        Assert.Equal(book.Series.Id, page.SeriesId);
+        Assert.Equal([2], page.Blocks.Single(b => b.Index == 5).Blind);
+        Assert.Null(page.Blocks.Single(b => b.Index == 6).Blind);
+        Assert.Equal(3, page.Words[Blink.Id].Entries!.Count);
+        Assert.Equal(["こんにち"], page.Words[Kyou.Id].Senses[1].R!);
+        Assert.Null(page.Words[Karai.Id].Entries);
+        Assert.Empty(page.Words[Gaoshun.Id].Entries!);
+        Assert.Equal(new ReadingHintDto("あく", "あく", ReadingSource.Book), page.Words[Hiraku.Id].Hint);
+        Assert.Equal(new ReadingHintDto("せい", "せい", ReadingSource.Series), page.Words[Hoshi.Id].Hint);
+        Assert.Equal(new ReadingHintDto("がおしゅん", "ガオシュン", ReadingSource.Book), page.Words[Gaoshun.Id].Hint);
+        Assert.Null(page.Words[Blink.Id].Hint);
+        Assert.Equal("うわて", page.Words[Jouzu.Id].Choice);
+        Assert.Null(page.Words[Blink.Id].Choice);
+        // Only words the file gives no hint go to the series
+        await _store.Received(1).GetReadingMarksAsync(Arg.Any<IReadOnlyCollection<int>>(),
+            Arg.Is<IReadOnlyCollection<long>>(ids => !ids.Contains(Hiraku.Id) && ids.Contains(Hoshi.Id)), true, Arg.Any<CancellationToken>());
+        await _store.Received(1).GetReadingChoicesAsync(UserId, book.Series.Id, Arg.Any<IReadOnlyCollection<long>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetEpubPage_AsksTheSeriesForTheSeriesEpubFilesOnly()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
+
+        await _store.Received(1).GetReadingMarksAsync(
+            Arg.Is<IReadOnlyCollection<int>>(f => f.Order().SequenceEqual(new[] { book.FirstFile.Id, book.SecondFile.Id }.Order())),
+            Arg.Any<IReadOnlyCollection<long>>(), true, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task GetEpubPage_WritesEntriesHintAndChoiceOnlyWhenTheWordHasThem()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var page = await book.Service.GetEpubPageAsync(UserId, book.First.Id, 2);
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(page, Web));
+
+        var words = json.RootElement.GetProperty("words");
+        Assert.False(words.GetProperty(Karai.Id.ToString()).TryGetProperty("entries", out _));
+        Assert.False(words.GetProperty(Karai.Id.ToString()).TryGetProperty("hint", out _));
+        Assert.False(words.GetProperty(Karai.Id.ToString()).TryGetProperty("choice", out _));
+        Assert.Equal("[]", words.GetProperty(Gaoshun.Id.ToString()).GetProperty("entries").GetRawText());
+        Assert.Equal("""{"reading":"あく","printed":"あく","source":"book"}""",
+            words.GetProperty(Hiraku.Id.ToString()).GetProperty("hint").GetRawText());
+        Assert.Equal(book.Series.Id, json.RootElement.GetProperty("seriesId").GetInt32());
+    }
+
+    [Fact]
+    public async Task Lookup_ResolvesTheReadingsOfTheTappedWord()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var blink = await ReadingsAt(book, 5, 2);
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Tokenizer, "しばたたく"), (blink.Level, blink.Source, blink.Pick));
+        Assert.Equal([2831002L, 1341200L, 2831001L], blink.Groups.Select(g => g.Seq));
+
+        var star = await ReadingsAt(book, 5, 0);
+        Assert.Equal((ReadingLevel.Likely, ReadingSource.Series, "せい"), (star.Level, star.Source, star.Pick));
+
+        var open = await ReadingsAt(book, 6, 2);
+        Assert.Equal((ReadingSource.Book, "あく"), (open.Source, open.Pick));
+
+        var skilful = await ReadingsAt(book, 7, 0);
+        Assert.Equal((ReadingLevel.Likely, ReadingSource.Choice, "うわて"), (skilful.Level, skilful.Source, skilful.Pick));
+        Assert.Equal(["うわて"], skilful.Groups[0].Readings);
+        Assert.Equal(3, skilful.Groups.Count);
+
+        var say = await ReadingsAt(book, 7, 3);
+        Assert.Equal(new ReadingsDto(ReadingLevel.Certain, ReadingSource.Dictionary, null, "いう", false, say.Groups), say);
+
+        var marked = await ReadingsAt(book, 8, 3);
+        Assert.Equal(new ReadingsDto(ReadingLevel.Certain, ReadingSource.Furigana, "こんにち", "こんにち", false, marked.Groups), marked);
+        Assert.Equal(2, Assert.Single(marked.Groups).Senses.Count);
+
+        var unmarked = await ReadingsAt(book, 8, 0);
+        Assert.Equal((ReadingSource.Tokenizer, "きょう", 2), (unmarked.Source, unmarked.Pick, unmarked.Groups.Count));
+
+        var lady = await ReadingsAt(book, 9, 0);
+        Assert.Equal(new ReadingsDto(ReadingLevel.Certain, ReadingSource.Furigana, "ねえちゃん", null, true, lady.Groups), lady);
+        Assert.Empty(lady.Groups);
+
+        var name = await ReadingsAt(book, 9, 3);
+        Assert.Equal(new ReadingsDto(ReadingLevel.Likely, ReadingSource.Book, "ガオシュン", null, false, name.Groups), name);
+    }
+
+    [Fact]
+    public async Task Lookup_OfAWordStoredWithoutEntriesIgnoresItsFuriganaAndHint()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+
+        var tanaka = await ReadingsAt(book, 3, 3);
+
+        Assert.Equal(ReadingsDto.None with { Groups = tanaka.Groups }, tanaka);
+        Assert.Empty(tanaka.Groups);
+    }
+
+    [Fact]
+    public async Task Lookup_OfAPartUsesItsOwnReadingAndNoChoiceOrHint()
+    {
+        var book = await Setup();
+        GivenParityPage(book.FirstFile, 2);
+        GivenChoices(new Dictionary<long, string> { [Blink.Id] = "めたたく" });
+
+        var part = await ReadingsAt(book, 10, 0, 0);
+        var star = await ReadingsAt(book, 10, 0, 1);
+
+        Assert.Equal((ReadingLevel.Likely, ReadingSource.Tokenizer, "またたく"), (part.Level, part.Source, part.Pick));
+        // ぼし is in no group, and the series hint for 星 doesn't count for a part
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Dictionary, "ほし"), (star.Level, star.Source, star.Pick));
+    }
+
+    [Fact]
+    public async Task SaveReadingChoice_StoresAnyReadingOfAnyGroup()
+    {
+        var book = await Setup();
+        GivenWords(Blink);
+
+        await book.Service.SaveReadingChoiceAsync(UserId, new ReadingChoiceDto(book.Series.Id, Blink.Id, "まばたく"));
+
+        await _store.Received(1).SaveReadingChoiceAsync(UserId, book.Series.Id, Blink.Id, "まばたく", Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(90, "まじまじ")] // not a reading of 瞬く
+    [InlineData(90, "")]
+    [InlineData(777, "またたく")] // no such word
+    [InlineData(11, "からい")] // 辛い is stored without entries, so it has no groups
+    public async Task SaveReadingChoice_RefusesAReadingNoGroupHas(long wordId, string reading)
+    {
+        var book = await Setup();
+        GivenWords(Blink, Karai);
+
+        await Assert.ThrowsAsync<KavitaException>(() =>
+            book.Service.SaveReadingChoiceAsync(UserId, new ReadingChoiceDto(book.Series.Id, wordId, reading)));
+        await _store.DidNotReceiveWithAnyArgs().SaveReadingChoiceAsync(default, default, default, default!, default);
+    }
+
+    [Fact]
+    public async Task ClearReadingChoice_ClearsTheUsersRow()
+    {
+        var book = await Setup();
+
+        await book.Service.ClearReadingChoiceAsync(UserId, book.Series.Id, Blink.Id);
+
+        await _store.Received(1).ClearReadingChoiceAsync(UserId, book.Series.Id, Blink.Id, Arg.Any<CancellationToken>());
     }
 
     #endregion
