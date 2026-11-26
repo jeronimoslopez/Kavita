@@ -559,25 +559,39 @@ public class ReadingDatabaseTests : IDisposable
         Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
     }
 
-    public static TheoryData<string, string> MarkTotals => new()
+    public static TheoryData<string> UseTotals => new()
     {
-        // One file, as the one-file overload asks
-        { ReadingStore.ReadingMarkTotalsSql("$f0", "$w0, $w1, $w2"), "SEARCH m USING PRIMARY KEY (unit_id=? AND word_id=?)" },
-        { ReadingStore.WordUseTotalsSql("$f0", "$w0, $w1, $w2"), "SEARCH w USING PRIMARY KEY (unit_id=? AND word_id=?)" },
-        // Several files
-        { ReadingStore.ReadingMarkTotalsSql("$f0, $f1", "$w0, $w1, $w2"), "SEARCH m USING PRIMARY KEY (unit_id=? AND word_id=?)" },
-        { ReadingStore.WordUseTotalsSql("$f0, $f1", "$w0, $w1, $w2"), "SEARCH w USING PRIMARY KEY (unit_id=? AND word_id=?)" },
+        // One file, as the one-file overload asks, and several
+        ReadingStore.WordUseTotalsSql("$f0", "$w0, $w1, $w2"),
+        ReadingStore.WordUseTotalsSql("$f0, $f1", "$w0, $w1, $w2"),
     };
 
     [Theory]
-    [MemberData(nameof(MarkTotals))]
-    public async Task MarkTotals_ReadTheFilesUnitsAndThenEachUnitsRowsForTheWords(string sql, string rows)
+    [MemberData(nameof(UseTotals))]
+    public async Task UseTotals_ReadTheFilesUnitsAndThenEachUnitsRowsForTheWords(string sql)
     {
         var plan = await PlanAsync(sql);
 
         Assert.Contains(plan, step => step.StartsWith("SEARCH u USING") &&
                                       step.EndsWith("INDEX sqlite_autoindex_unit_1 (kind=? AND manga_file_id=?)"));
-        Assert.Contains(rows, plan);
+        Assert.Contains("SEARCH w USING PRIMARY KEY (unit_id=? AND word_id=?)", plan);
+        Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
+    }
+
+    public static TheoryData<string> MarkTotals => new()
+    {
+        ReadingStore.ReadingMarkTotalsSql("$f0", "$w0, $w1, $w2"),
+        ReadingStore.ReadingMarkTotalsSql("$f0, $f1", "$w0, $w1, $w2"),
+    };
+
+    [Theory]
+    [MemberData(nameof(MarkTotals))]
+    public async Task MarkTotals_ReadEachWordsMarksAndThenTheirUnitsById(string sql)
+    {
+        var plan = await PlanAsync(sql);
+
+        Assert.Equal("SEARCH m USING INDEX ix_reading_mark_word (word_id=?)", plan[0]);
+        Assert.Contains("SEARCH u USING INTEGER PRIMARY KEY (rowid=?)", plan);
         Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
     }
 

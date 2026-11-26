@@ -87,22 +87,24 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     /// <summary>
     /// The marked readings of some words over the units of some files, summed per word, reading and printed form.
-    /// It reads the files' units through unit's (kind, manga_file_id, page) key and each unit's rows for the words
-    /// through reading_mark's key. Public so the tests can check the plan
+    /// Furigana marks few of a book's words, so it reads each word's rows through ix_reading_mark_word and then each
+    /// row's unit by id. CROSS JOIN keeps that order, where the planner would otherwise read every unit of the files
+    /// and look each word up in each. Public so the tests can check the plan
     /// </summary>
     /// <param name="files">The IN list of file id parameters</param>
     /// <param name="words">The IN list of word id parameters</param>
     public static string ReadingMarkTotalsSql(string files, string words) => $"""
         SELECT m.word_id, m.reading, m.printed, SUM(m.count)
-        FROM unit u
-        JOIN reading_mark m ON m.unit_id = u.id
-        WHERE u.kind = $kind AND u.manga_file_id IN ({files}) AND m.word_id IN ({words})
+        FROM reading_mark m
+        CROSS JOIN unit u ON u.id = m.unit_id
+        WHERE m.word_id IN ({words}) AND u.kind = $kind AND u.manga_file_id IN ({files})
         GROUP BY m.word_id, m.reading, m.printed
         """;
 
     /// <summary>
-    /// The uses of some words over the units of some files, summed per word, read the way
-    /// <see cref="ReadingMarkTotalsSql"/> reads. Public so the tests can check the plan
+    /// The uses of some words over the units of some files, summed per word. Common words are on nearly every page, so
+    /// it reads the files' units through unit's (kind, manga_file_id, page) key and each unit's rows for the words
+    /// through word_use's key. Public so the tests can check the plan
     /// </summary>
     public static string WordUseTotalsSql(string files, string words) => $"""
         SELECT w.word_id, SUM(w.uses)
@@ -516,35 +518,46 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
     }
 
     public Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(int mangaFileId,
-        IReadOnlyCollection<long> wordIds, CancellationToken ct = default) =>
-        GetReadingMarksAsync([mangaFileId], wordIds, ct);
+        IReadOnlyCollection<long> wordIds, bool markedOnly = false, CancellationToken ct = default) =>
+        GetReadingMarksAsync([mangaFileId], wordIds, markedOnly, ct);
 
     public async Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(
-        IReadOnlyCollection<int> mangaFileIds, IReadOnlyCollection<long> wordIds, CancellationToken ct = default)
+        IReadOnlyCollection<int> mangaFileIds, IReadOnlyCollection<long> wordIds, bool markedOnly = false,
+        CancellationToken ct = default)
     {
         if (mangaFileIds.Count == 0 || wordIds.Count == 0) return new Dictionary<long, WordMarkTotals>();
 
         var uses = new Dictionary<long, int>();
         var marks = new Dictionary<(long WordId, string Reading, string Printed), int>();
         await using var connection = await database.OpenConnectionAsync(ct);
-        // One snapshot for every batch, so a page saved meanwhile counts in both tables or in neither
+        // One snapshot for every read, so a page saved meanwhile counts in both tables or in neither
         await using var snapshot = connection.BeginTransaction(deferred: true);
-        foreach (var files in mangaFileIds.Distinct().Chunk(MarkBatchSize))
+        var fileBatches = mangaFileIds.Distinct().Chunk(MarkBatchSize).ToList();
+        foreach (var files in fileBatches)
         foreach (var words in wordIds.Distinct().Chunk(MarkBatchSize))
         {
             await using var command = connection.CreateCommand();
             command.Transaction = snapshot;
             command.Parameters.AddWithValue("$kind", Epub);
-            var fileList = AddInList(command, "f", files);
-            var wordList = AddInList(command, "w", words);
-            command.CommandText = ReadingMarkTotalsSql(fileList, wordList) + ";\n" + WordUseTotalsSql(fileList, wordList);
+            command.CommandText = ReadingMarkTotalsSql(AddInList(command, "f", files), AddInList(command, "w", words));
             await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 var key = (reader.GetInt64(0), reader.GetString(1), reader.GetString(2));
                 marks[key] = marks.GetValueOrDefault(key) + reader.GetInt32(3);
             }
-            await reader.NextResultAsync(ct);
+        }
+
+        // Counting uses reads every page of the files, so a caller that only needs the marked words' uses skips the rest
+        var usesFor = markedOnly ? marks.Keys.Select(m => m.WordId).Distinct().ToList() : wordIds.Distinct().ToList();
+        foreach (var files in fileBatches)
+        foreach (var words in usesFor.Chunk(MarkBatchSize))
+        {
+            await using var command = connection.CreateCommand();
+            command.Transaction = snapshot;
+            command.Parameters.AddWithValue("$kind", Epub);
+            command.CommandText = WordUseTotalsSql(AddInList(command, "f", files), AddInList(command, "w", words));
+            await using var reader = await command.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct))
             {
                 var wordId = reader.GetInt64(0);

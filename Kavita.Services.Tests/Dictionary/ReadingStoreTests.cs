@@ -1637,6 +1637,83 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(3, totals[w.Name].Readings.Single().Count);
     }
 
+    /// <summary>
+    /// What the hints for one page cost: the page's 400 words asked of its file, and then of all ten files of its
+    /// series, the two reads <see cref="DictionaryService"/> makes. Ten volumes of 60 pages, each page using 400 of
+    /// 4,000 words. The first case lets any word be marked, on one use in ten, which is far more furigana than a book
+    /// prints. The second marks one word in 20, on half its uses, closer to a book that marks rare words and names
+    /// </summary>
+    [Theory]
+    [InlineData(1, 10)]
+    [InlineData(20, 2)]
+    public async Task GetReadingMarks_ForAPageOf400WordsInATenVolumeSeries_IsFast(int markedWordEvery, int markedUseEvery)
+    {
+        const int files = 10, pages = 60, wordsPerPage = 400, vocabulary = 4000;
+        var random = new Random(12);
+        await using (var connection = await OpenAsync())
+        {
+            await using var transaction = connection.BeginTransaction();
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO unit (kind, manga_file_id, page, source_stamp, state, priority, requested_utc)
+                VALUES ('epub', $file, $page, 's', 'done', 0, 0) RETURNING id
+                """;
+            var file = command.Parameters.Add("$file", SqliteType.Integer);
+            var page = command.Parameters.Add("$page", SqliteType.Integer);
+
+            await using var use = connection.CreateCommand();
+            use.Transaction = transaction;
+            use.CommandText = "INSERT INTO word_use (unit_id, word_id, uses) VALUES ($unit, $word, $uses)";
+            var useUnit = use.Parameters.Add("$unit", SqliteType.Integer);
+            var useWord = use.Parameters.Add("$word", SqliteType.Integer);
+            var uses = use.Parameters.Add("$uses", SqliteType.Integer);
+
+            await using var mark = connection.CreateCommand();
+            mark.Transaction = transaction;
+            mark.CommandText = "INSERT INTO reading_mark (unit_id, word_id, reading, printed, count) VALUES ($unit, $word, 'よみ', 'ヨミ', 1)";
+            var markUnit = mark.Parameters.Add("$unit", SqliteType.Integer);
+            var markWord = mark.Parameters.Add("$word", SqliteType.Integer);
+
+            for (var f = 1; f <= files; f++)
+            for (var p = 0; p < pages; p++)
+            {
+                file.Value = f;
+                page.Value = p;
+                var unitId = Convert.ToInt64(await command.ExecuteScalarAsync());
+                useUnit.Value = markUnit.Value = unitId;
+                foreach (var w in Enumerable.Range(1, vocabulary).OrderBy(_ => random.Next()).Take(wordsPerPage))
+                {
+                    useWord.Value = markWord.Value = w;
+                    uses.Value = random.Next(1, 4);
+                    await use.ExecuteNonQueryAsync();
+                    if (w % markedWordEvery == 0 && random.Next(markedUseEvery) == 0) await mark.ExecuteNonQueryAsync();
+                }
+            }
+            await transaction.CommitAsync();
+        }
+
+        var pageWords = Enumerable.Range(1, vocabulary).OrderBy(_ => random.Next()).Take(wordsPerPage).Select(w => (long) w).ToList();
+        var seriesFiles = Enumerable.Range(1, files).ToList();
+        var times = new List<double>();
+        for (var run = 0; run < 6; run++)
+        {
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var book = await _store.GetReadingMarksAsync(1, pageWords, markedOnly: true);
+            var series = await _store.GetReadingMarksAsync(seriesFiles, pageWords, markedOnly: true);
+            watch.Stop();
+            Assert.NotEmpty(book);
+            Assert.True(series.Values.Sum(t => t.Uses) > book.Values.Sum(t => t.Uses));
+            // The first run warms the pool and the page cache
+            if (run > 0) times.Add(watch.Elapsed.TotalMilliseconds);
+        }
+
+        times.Sort();
+        _output.WriteLine($"Hint reads, marks on 1/{markedWordEvery} of words and 1/{markedUseEvery} of their uses: median {times[times.Count / 2]:0.0} ms, " +
+                         $"min {times[0]:0.0} ms, max {times[^1]:0.0} ms");
+        Assert.True(times[times.Count / 2] < 500, $"The hint reads took {times[times.Count / 2]:0} ms");
+    }
+
     #endregion
 
     #region Reading choices
