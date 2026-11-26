@@ -426,7 +426,28 @@ public class TokenizeService : ITokenizeService
                     partEnd = part.E;
                 }
             }
+
+            foreach (var phrase in answer.Phrases ?? []) CheckPhrase(block, answer.Tokens, phrase, wordCount);
         }
+    }
+
+    /// <summary>
+    /// A phrase starts where one token starts, ends where a later token ends, and names a word
+    /// </summary>
+    private static void CheckPhrase(EpubTextBlock block, IList<TokenDto> tokens, PhraseDto phrase, int wordCount)
+    {
+        var first = -1;
+        var last = -1;
+        for (var i = 0; i < tokens.Count; i++)
+        {
+            if (tokens[i].S == phrase.S) first = i;
+            if (tokens[i].E == phrase.E) last = i;
+        }
+
+        if (first < 0 || last <= first)
+            throw new InvalidDataException($"Phrase [{phrase.S}, {phrase.E}] in block {block.Index} doesn't cover two or more whole tokens");
+        if (phrase.W < 0 || phrase.W >= wordCount)
+            throw new InvalidDataException($"Phrase [{phrase.S}, {phrase.E}] in block {block.Index} points at word {phrase.W} of {wordCount}");
     }
 
     /// <param name="min">The earliest the span may start, which is where the one before it ended</param>
@@ -458,7 +479,8 @@ public class TokenizeService : ITokenizeService
                 });
             }
 
-            stored.Add(new StoredBlock(block.Index, block.Text, tokens));
+            var phrases = (response.Blocks[i].Phrases ?? []).Select(p => p with { W = wordIds[(int) p.W] }).ToList();
+            stored.Add(new StoredBlock(block.Index, block.Text, tokens) { Phrases = phrases });
         }
 
         return stored;

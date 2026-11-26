@@ -429,6 +429,10 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         Assert.Null(stored[17].Tokens[0].Sub![0].W);
         Assert.Equal(102, stored[18].Tokens[0].W);
         Assert.Empty(stored[20].Tokens);
+        // Phrase word indices count from the start of their own answer too
+        Assert.Equal([new PhraseDto(0, 3, 101)], stored[0].Phrases);
+        Assert.Equal([new PhraseDto(0, 3, 103)], stored[16].Phrases);
+        Assert.Empty(stored[20].Phrases);
     }
 
     private static IEnumerable<string> SentIds(Flurl.Http.FlurlCall call)
@@ -438,8 +442,9 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     }
 
     /// <summary>
-    /// An answer with two words where every block's one token points at word 0, and its part at word 0 too, except in
-    /// <paramref name="nullWordBlock"/>, whose token and part point at no word
+    /// An answer with two words where every block's first token points at word 0, and its part at word 0 too, except in
+    /// <paramref name="nullWordBlock"/>, whose token and part point at no word. A second token follows with no word, and
+    /// a phrase over both points at word 1
     /// </summary>
     private static object OneWordAnswer(IEnumerable<int> blockIds, string lemma, int? nullWordBlock = null)
     {
@@ -457,10 +462,86 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
                 return new
                 {
                     id = id.ToString(CultureInfo.InvariantCulture),
-                    tokens = new object[] { new object?[] { 0, 2, w, null, new object[] { new object?[] { 0, 1, w, null } } } },
+                    tokens = new object[]
+                    {
+                        new object?[] { 0, 2, w, null, new object[] { new object?[] { 0, 1, w, null } } },
+                        new object?[] { 2, 3, null, null, null },
+                    },
+                    phrases = new[] { new[] { 0, 3, 1 } },
                 };
             }),
         };
+    }
+
+    /// <summary>
+    /// 気がした as 気, が, し and た, with the words 気, する and 気がする. Block 0 has a phrase over its first three tokens,
+    /// and block 1 comes from a version 1 sidecar with no phrases key
+    /// </summary>
+    private static object PhraseAnswer(object phrase) => new
+    {
+        version = "lexicon=x;sidecar=2",
+        words = new[]
+        {
+            new { lemma = "気", pos = "名詞", isProper = false, reading = "き", jlpt = (int?) null, readings = new[] { "き" }, senses = Array.Empty<object>() },
+            new { lemma = "する", pos = "動詞", isProper = false, reading = "する", jlpt = (int?) null, readings = new[] { "する" }, senses = Array.Empty<object>() },
+            new { lemma = "気がする", pos = "表現", isProper = false, reading = "きがする", jlpt = (int?) null, readings = new[] { "きがする" }, senses = Array.Empty<object>() },
+        },
+        blocks = new object[]
+        {
+            new
+            {
+                id = "0",
+                tokens = new object[]
+                {
+                    new object?[] { 0, 1, 0, "き", null }, new object?[] { 1, 2, null, null, null },
+                    new object?[] { 2, 3, 1, "し", null }, new object?[] { 3, 4, null, null, null },
+                },
+                phrases = new[] { phrase },
+            },
+            new { id = "1", tokens = new object[] { new object?[] { 0, 1, 0, "き", null } } },
+        },
+    };
+
+    [Fact]
+    public async Task ProcessUnit_MapsPhraseWordIndicesToStoreIdsAndSavesTheirWords()
+    {
+        var (_, service, files) = await Setup();
+        _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 0, Arg.Any<CancellationToken>())
+            .Returns([Block(0, "気がした"), Block(1, "気")]);
+        _httpTest.RespondWithJson(PhraseAnswer(new[] { 0, 3, 2 }));
+        ReturnWordIds();
+
+        var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
+
+        Assert.Equal(TokenizeUnitOutcome.UnitDone, result.Outcome);
+        // No token points at 気がする, and it's saved with the rest
+        await _store.Received(1).UpsertWordsAsync(Arg.Is<IReadOnlyList<SidecarWordDto>>(w => w.Count == 3 && w[2].Pos == "表現"),
+            "x", Arg.Any<CancellationToken>());
+        var (stored, _) = SavedUnit();
+        Assert.Equal([new PhraseDto(0, 3, 102)], stored[0].Phrases);
+        Assert.Empty(stored[1].Phrases);
+    }
+
+    [Theory]
+    [InlineData(0, 1, 2)] // a single token
+    [InlineData(0, 5, 2)] // ends past every token
+    [InlineData(1, 1, 2)] // empty
+    [InlineData(2, 0, 2)] // ends before it starts
+    [InlineData(0, 3, 3)] // the answer has three words
+    [InlineData(0, 3, -1)]
+    public async Task ProcessUnit_BadPhrase_CountsAnAttemptAndSavesNothing(int s, int e, int w)
+    {
+        var (_, service, files) = await Setup();
+        _pages.GetEpubPageBlocksAsync(files.Chapter1.FilePath, 0, Arg.Any<CancellationToken>())
+            .Returns([Block(0, "気がした"), Block(1, "気")]);
+        _httpTest.RespondWithJson(PhraseAnswer(new[] { s, e, w }));
+        ReturnWordIds();
+
+        var result = await service.ProcessUnitAsync(Unit(files.Chapter1), SidecarUrl);
+
+        Assert.Equal(TokenizeUnitOutcome.UnitFailed, result.Outcome);
+        await _store.Received(1).RecordFailedAttemptAsync(7, TokenizeService.MaxUnitAttempts, Arg.Any<CancellationToken>());
+        await _store.DidNotReceiveWithAnyArgs().SaveTokenizedUnitAsync(default, default!, default!, default!);
     }
 
     [Fact]

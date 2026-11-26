@@ -498,6 +498,30 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveTokenizedUnit_APhraseGetsNoRowEvenWhenItsWordIsAmbiguous()
+    {
+        var (hot, cold, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+
+        StoredBlock[] blocks =
+        [
+            Block(0, "abcd", Token(0, 1, plain), Token(1, 2, null), Token(2, 3, cold), Token(3, 4, null))
+                with { Phrases = [new PhraseDto(0, 3, hot)] },
+        ];
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        Assert.Equal([(0, 2, 3, cold)], (await _store.GetUnitAnalysisAsync(unit.Id)).Select(r => (r.Block, r.S, r.E, r.WordId)));
+        Assert.Equal([new PhraseDto(0, 3, hot)], (await _store.GetUnitAsync(1, 0))!.Blocks[0].Phrases);
+
+        // A request made after the save builds its rows from the stored blocks, and passes over the phrase the same way
+        await _store.ClearAnalysisAsync([1]);
+        await _store.RequestAnalysisAsync([1], ReadingPriority.NextChapter);
+        Assert.Equal([cold], (await _store.GetUnitAnalysisAsync(unit.Id)).Select(r => r.WordId));
+    }
+
+    [Fact]
     public async Task AmbiguousWords_MatchSidecarWordDtoIsAmbiguous()
     {
         var sample = JsonSerializer.Deserialize<TokenizeResponseDto>(File.ReadAllText(
@@ -1024,6 +1048,42 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(word.Senses.Select(s => s.Key), read.Senses.Select(s => s.Key));
     }
 
+    [Fact]
+    public async Task StoredForm_KeepsPhrasesAndLeavesTheKeyOutOfABlockWithout()
+    {
+        var (hot, _, plain) = await SeedWordsAsync();
+        await _store.SeedFileAsync(1, 1, Stamp, 0);
+        var unit = (await _store.GetUnitAsync(1, 0))!;
+        StoredBlock[] blocks =
+        [
+            Block(0, "気がした", Token(0, 1, plain, "き"), Token(1, 2, null), Token(2, 3, plain, "し"), Token(3, 4, null))
+                with { Phrases = [new PhraseDto(0, 3, hot), new PhraseDto(1, 3, plain)] },
+            Block(1, "猫", Token(0, 1, plain)),
+        ];
+
+        Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, blocks));
+
+        var stored = (await _store.GetUnitAsync(1, 0))!.Blocks;
+        Assert.Equal([new PhraseDto(0, 3, hot), new PhraseDto(1, 3, plain)], stored[0].Phrases);
+        Assert.Empty(stored[1].Phrases);
+        var json = await DecompressedBlocksAsync(unit.Id);
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal($"[[0,3,{hot}],[1,3,{plain}]]", document.RootElement[0].GetProperty("phrases").GetRawText());
+        Assert.False(document.RootElement[1].TryGetProperty("phrases", out _));
+    }
+
+    private async Task<string> DecompressedBlocksAsync(long unitId)
+    {
+        await using var connection = await OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT blocks FROM unit WHERE id = {unitId}";
+        var blob = (byte[]) (await command.ExecuteScalarAsync())!;
+        using var brotli = new System.IO.Compression.BrotliStream(new MemoryStream(blob, 1, blob.Length - 1),
+            System.IO.Compression.CompressionMode.Decompress);
+        using var reader = new StreamReader(brotli);
+        return await reader.ReadToEndAsync();
+    }
+
     private async Task SetRawBlocksAsync(long unitId, object value)
     {
         await using var connection = await OpenAsync();
@@ -1050,6 +1110,8 @@ public class ReadingStoreTests : IDisposable
         var block = (await _store.GetUnitAsync(1, 0))!.Blocks.Single();
         Assert.Equal("食べ物", block.Text);
         Assert.Equal(Token(0, 3, hot, "たべもの"), block.Tokens.Single());
+        // Blocks written before phrases existed have no phrases key
+        Assert.Empty(block.Phrases);
 
         // The other two reads of blocks take the same form
         await _store.RequestAnalysisAsync([1], 0);

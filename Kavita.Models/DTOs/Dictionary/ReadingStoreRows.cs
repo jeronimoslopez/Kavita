@@ -81,7 +81,14 @@ public sealed record ReadingUnit(long Id, ReadingUnitKind Kind, int MangaFileId,
 /// </summary>
 /// <param name="Index">The block's <c>data-kb</c> value</param>
 /// <param name="Tokens">Word ids in <see cref="TokenDto.W"/> are reading.db word ids</param>
-public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens);
+public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto> Tokens)
+{
+    /// <summary>
+    /// Word ids in <see cref="PhraseDto.W"/> are reading.db word ids. Empty for a block tokenized by a sidecar that
+    /// sends no phrases. Phrases never get analysis rows
+    /// </summary>
+    public IReadOnlyList<PhraseDto> Phrases { get; init; } = [];
+}
 
 /// <summary>
 /// A row of reading.db's word table

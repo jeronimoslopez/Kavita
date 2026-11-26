@@ -26,12 +26,13 @@ public sealed record TokenizeResponseDto
 {
     /// <summary>
     /// Names the tokenizer, dictionary, word rules and lexicon that made this answer, such as
-    /// <c>sudachipy=..;sudachidict_full=..;modes=C/A;words=6;lexicon=..;sidecar=1</c>
+    /// <c>sudachipy=..;sudachidict_full=..;modes=C/A;words=6;lexicon=..;sidecar=2</c>
     /// </summary>
     [JsonPropertyName("version")]
     public string Version { get; init; } = string.Empty;
     /// <summary>
-    /// Every word the tokens point at. A token's <see cref="TokenDto.W"/> is an index into this list
+    /// Every word the tokens and phrases point at. A token's <see cref="TokenDto.W"/> and a phrase's
+    /// <see cref="PhraseDto.W"/> are indices into this list
     /// </summary>
     [JsonPropertyName("words")]
     public IList<SidecarWordDto> Words { get; init; } = [];
@@ -48,6 +49,12 @@ public sealed record TokenizedBlockDto
     public string Id { get; init; } = string.Empty;
     [JsonPropertyName("tokens")]
     public IList<TokenDto> Tokens { get; init; } = [];
+    /// <summary>
+    /// The block's dictionary expressions, each over two or more whole tokens. A version 1 sidecar sends none, and the
+    /// list is empty then
+    /// </summary>
+    [JsonPropertyName("phrases")]
+    public IList<PhraseDto> Phrases { get; init; } = [];
 }
 
 /// <summary>

@@ -36,6 +36,7 @@ public class TextSidecarClient : ITextSidecarClient
         CancellationToken ct = default)
     {
         var tokens = new IList<TokenDto>?[blocks.Count];
+        var phrases = new IList<PhraseDto>?[blocks.Count];
         var words = new List<SidecarWordDto>();
         string? version = null;
 
@@ -55,6 +56,9 @@ public class TextSidecarClient : ITextSidecarClient
                 if (!byId.TryGetValue(blocks[index].Id, out var answer))
                     throw new TextSidecarRejectedException(200, $"The text sidecar at {sidecarUrl} left out block {blocks[index].Id}");
                 tokens[index] = offset == 0 ? answer.Tokens : answer.Tokens.Select(t => Shift(t, offset)).ToList();
+                // A version 1 sidecar leaves phrases out, and a null in the JSON reads as none too
+                var blockPhrases = answer.Phrases ?? [];
+                phrases[index] = offset == 0 ? blockPhrases : blockPhrases.Select(p => p with { W = p.W + offset }).ToList();
             }
         }
 
@@ -62,7 +66,9 @@ public class TextSidecarClient : ITextSidecarClient
         {
             Version = version ?? string.Empty,
             Words = words,
-            Blocks = blocks.Select((b, i) => new TokenizedBlockDto { Id = b.Id, Tokens = tokens[i] ?? [] }).ToList(),
+            Blocks = blocks
+                .Select((b, i) => new TokenizedBlockDto { Id = b.Id, Tokens = tokens[i] ?? [], Phrases = phrases[i] ?? [] })
+                .ToList(),
         };
     }
 

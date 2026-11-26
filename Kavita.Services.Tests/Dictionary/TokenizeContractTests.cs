@@ -64,4 +64,31 @@ public class TokenizeContractTests
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<TokenDto>(json));
     }
+
+    [Fact]
+    public void Phrase_RoundTripsAsAnArray()
+    {
+        var json = JsonSerializer.Serialize(new PhraseDto(3, 7, 12));
+
+        Assert.Equal("[3,7,12]", json);
+        Assert.Equal(new PhraseDto(3, 7, 12), JsonSerializer.Deserialize<PhraseDto>(json));
+    }
+
+    [Theory]
+    [InlineData("[0,2]")]
+    [InlineData("[0,2,1,null]")]
+    [InlineData("[0,2,null]")]
+    [InlineData("{\"s\":0}")]
+    public void Phrase_RejectsTheWrongShape(string json)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<PhraseDto>(json));
+    }
+
+    [Theory]
+    [InlineData("""{"id": "0", "tokens": []}""")]
+    [InlineData("""{"id": "0", "tokens": [], "phrases": []}""")]
+    public void Block_WithoutPhrases_HasAnEmptyList(string json)
+    {
+        Assert.Empty(JsonSerializer.Deserialize<TokenizedBlockDto>(json)!.Phrases);
+    }
 }
