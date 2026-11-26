@@ -1,0 +1,1471 @@
+{
+  "page": {
+    "version": "sidecar=2",
+    "blocks": [
+      {
+        "index": 0,
+        "length": 8,
+        "tokens": [
+          [
+            0,
+            3,
+            41,
+            "とても",
+            null
+          ],
+          [
+            3,
+            7,
+            11,
+            "からかった",
+            null
+          ],
+          [
+            7,
+            8,
+            null,
+            null,
+            null
+          ]
+        ]
+      },
+      {
+        "index": 1,
+        "length": 6,
+        "tokens": [
+          [
+            0,
+            3,
+            20,
+            "にほんご",
+            [
+              [
+                0,
+                2,
+                21,
+                "にほん"
+              ],
+              [
+                2,
+                3,
+                22,
+                "ご"
+              ]
+            ]
+          ],
+          [
+            3,
+            4,
+            null,
+            null,
+            null
+          ],
+          [
+            4,
+            6,
+            80,
+            "かみさま",
+            [
+              [
+                4,
+                5,
+                81,
+                "かみ"
+              ],
+              [
+                5,
+                6,
+                null,
+                "さま"
+              ]
+            ]
+          ]
+        ]
+      },
+      {
+        "index": 2,
+        "length": 5,
+        "tokens": [
+          [
+            0,
+            1,
+            31,
+            "き",
+            null
+          ],
+          [
+            1,
+            2,
+            null,
+            null,
+            null
+          ],
+          [
+            2,
+            4,
+            32,
+            "した",
+            [
+              [
+                2,
+                3,
+                32,
+                "し"
+              ],
+              [
+                3,
+                4,
+                null,
+                null
+              ]
+            ]
+          ],
+          [
+            4,
+            5,
+            null,
+            null,
+            null
+          ]
+        ],
+        "phrases": [
+          [
+            0,
+            4,
+            33
+          ],
+          [
+            1,
+            4,
+            34
+          ],
+          [
+            0,
+            2,
+            999
+          ]
+        ]
+      },
+      {
+        "index": 3,
+        "length": 5,
+        "tokens": [
+          [
+            0,
+            3,
+            60,
+            "しかる",
+            null
+          ],
+          [
+            3,
+            5,
+            70,
+            "たなか",
+            null
+          ]
+        ]
+      },
+      {
+        "index": 4,
+        "length": 2,
+        "tokens": [
+          [
+            0,
+            1,
+            888,
+            "なぞ",
+            null
+          ],
+          [
+            1,
+            2,
+            null,
+            null,
+            null
+          ]
+        ]
+      }
+    ],
+    "words": {
+      "41": {
+        "lemma": "とても",
+        "reading": "とても",
+        "jlpt": 4,
+        "pos": "副詞",
+        "readings": [
+          "とても"
+        ],
+        "senses": [
+          {
+            "key": "4001:1",
+            "pos": [
+              "adv"
+            ],
+            "gloss": [
+              "very",
+              "awfully"
+            ]
+          }
+        ]
+      },
+      "11": {
+        "lemma": "辛い",
+        "reading": "からい",
+        "jlpt": 3,
+        "pos": "形容詞",
+        "readings": [
+          "からい",
+          "つらい"
+        ],
+        "senses": [
+          {
+            "key": "1001:1",
+            "pos": [
+              "adj-i"
+            ],
+            "gloss": [
+              "spicy"
+            ]
+          },
+          {
+            "key": "1001:2",
+            "pos": [
+              "adj-i"
+            ],
+            "gloss": [
+              "harsh"
+            ]
+          }
+        ]
+      },
+      "20": {
+        "lemma": "日本語",
+        "reading": "にほんご",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "にほんご"
+        ],
+        "senses": [
+          {
+            "key": "2000:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Japanese language"
+            ]
+          }
+        ]
+      },
+      "21": {
+        "lemma": "日本",
+        "reading": "にほん",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "にほん",
+          "にっぽん"
+        ],
+        "senses": [
+          {
+            "key": "2001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Japan"
+            ]
+          }
+        ]
+      },
+      "22": {
+        "lemma": "語",
+        "reading": "ご",
+        "jlpt": 4,
+        "pos": "名詞",
+        "readings": [
+          "ご"
+        ],
+        "senses": [
+          {
+            "key": "2002:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "language"
+            ]
+          }
+        ]
+      },
+      "80": {
+        "lemma": "神様",
+        "reading": "かみさま",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [
+          "かみさま"
+        ],
+        "senses": [
+          {
+            "key": "8000:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "God"
+            ]
+          },
+          {
+            "key": "8000:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "superior person"
+            ]
+          }
+        ]
+      },
+      "81": {
+        "lemma": "神",
+        "reading": "かみ",
+        "jlpt": 4,
+        "pos": "名詞",
+        "readings": [
+          "かみ",
+          "しん"
+        ],
+        "senses": [
+          {
+            "key": "8001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "god",
+              "deity"
+            ]
+          }
+        ]
+      },
+      "31": {
+        "lemma": "気",
+        "reading": "き",
+        "jlpt": 4,
+        "pos": "名詞",
+        "readings": [
+          "き"
+        ],
+        "senses": [
+          {
+            "key": "3001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "spirit",
+              "mind"
+            ]
+          }
+        ]
+      },
+      "32": {
+        "lemma": "する",
+        "reading": "する",
+        "jlpt": 5,
+        "pos": "動詞",
+        "readings": [
+          "する"
+        ],
+        "senses": [
+          {
+            "key": "3002:1",
+            "pos": [
+              "vs-i"
+            ],
+            "gloss": [
+              "to do"
+            ]
+          }
+        ]
+      },
+      "33": {
+        "lemma": "気がする",
+        "reading": "きがする",
+        "jlpt": null,
+        "pos": "表現",
+        "readings": [
+          "きがする"
+        ],
+        "senses": [
+          {
+            "key": "3003:1",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to have a feeling that",
+              "to feel like"
+            ]
+          },
+          {
+            "key": "3003:2",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to sense"
+            ]
+          }
+        ]
+      },
+      "34": {
+        "lemma": "がする",
+        "reading": "がする",
+        "jlpt": null,
+        "pos": "表現",
+        "readings": [
+          "がする"
+        ],
+        "senses": []
+      },
+      "60": {
+        "lemma": "\uD842\uDF9Fる",
+        "reading": "しかる",
+        "jlpt": 2,
+        "pos": "動詞",
+        "readings": [
+          "しかる"
+        ],
+        "senses": [
+          {
+            "key": "6000:1",
+            "pos": [
+              "v5r",
+              "vt"
+            ],
+            "gloss": [
+              "to scold"
+            ]
+          }
+        ]
+      },
+      "70": {
+        "lemma": "田中",
+        "reading": "たなか",
+        "jlpt": null,
+        "pos": "名詞",
+        "isProper": true,
+        "readings": [
+          "たなか"
+        ],
+        "senses": [
+          {
+            "key": "7000:1",
+            "pos": [
+              "n-pr"
+            ],
+            "gloss": [
+              "Tanaka"
+            ]
+          }
+        ]
+      }
+    },
+    "analysis": [
+      {
+        "block": 0,
+        "s": 3,
+        "senseKey": "1001:2",
+        "reading": "つらい",
+        "generator": "claude-sonnet"
+      },
+      {
+        "block": 1,
+        "s": 4,
+        "senseKey": null,
+        "reading": null,
+        "generator": "claude-haiku"
+      },
+      {
+        "block": 2,
+        "s": 2,
+        "senseKey": "3002:1",
+        "reading": null,
+        "generator": "claude-sonnet"
+      }
+    ]
+  },
+  "texts": {
+    "0": "とても辛かった。",
+    "1": "日本語と神様",
+    "2": "気がした。",
+    "3": "\uD842\uDF9Fる田中",
+    "4": "謎だ"
+  },
+  "taps": [
+    {
+      "request": {
+        "block": 0,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 41,
+          "surface": "とても",
+          "lemma": "とても",
+          "pos": "副詞",
+          "isProper": false,
+          "occurrenceReading": "とても",
+          "reading": "とても",
+          "readings": [
+            "とても"
+          ],
+          "jlpt": 4
+        },
+        "senses": [
+          {
+            "key": "4001:1",
+            "pos": [
+              "adv"
+            ],
+            "gloss": [
+              "very",
+              "awfully"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 0,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 11,
+          "surface": "辛かった",
+          "lemma": "辛い",
+          "pos": "形容詞",
+          "isProper": false,
+          "occurrenceReading": "からかった",
+          "reading": "からい",
+          "readings": [
+            "からい",
+            "つらい"
+          ],
+          "jlpt": 3
+        },
+        "senses": [
+          {
+            "key": "1001:1",
+            "pos": [
+              "adj-i"
+            ],
+            "gloss": [
+              "spicy"
+            ]
+          },
+          {
+            "key": "1001:2",
+            "pos": [
+              "adj-i"
+            ],
+            "gloss": [
+              "harsh"
+            ]
+          }
+        ],
+        "analysis": {
+          "senseKey": "1001:2",
+          "reading": "つらい",
+          "generator": "claude-sonnet"
+        },
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 0,
+        "s": 3,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 0,
+        "s": 7,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 0,
+        "s": 1,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 9,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 20,
+          "surface": "日本語",
+          "lemma": "日本語",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "にほんご",
+          "reading": "にほんご",
+          "readings": [
+            "にほんご"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "2000:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Japanese language"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 21,
+            "surface": "日本",
+            "lemma": "日本",
+            "reading": "にほん",
+            "senses": [
+              {
+                "key": "2001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "Japan"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 22,
+            "surface": "語",
+            "lemma": "語",
+            "reading": "ご",
+            "senses": [
+              {
+                "key": "2002:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "language"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 0,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 21,
+          "surface": "日本",
+          "lemma": "日本",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "にほん",
+          "reading": "にほん",
+          "readings": [
+            "にほん",
+            "にっぽん"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "2001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Japan"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 21,
+            "surface": "日本",
+            "lemma": "日本",
+            "reading": "にほん",
+            "senses": [
+              {
+                "key": "2001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "Japan"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 22,
+            "surface": "語",
+            "lemma": "語",
+            "reading": "ご",
+            "senses": [
+              {
+                "key": "2002:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "language"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 0,
+        "sub": 1,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 22,
+          "surface": "語",
+          "lemma": "語",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ご",
+          "reading": "ご",
+          "readings": [
+            "ご"
+          ],
+          "jlpt": 4
+        },
+        "senses": [
+          {
+            "key": "2002:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "language"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 21,
+            "surface": "日本",
+            "lemma": "日本",
+            "reading": "にほん",
+            "senses": [
+              {
+                "key": "2001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "Japan"
+                ]
+              }
+            ]
+          },
+          {
+            "sub": 1,
+            "wordId": 22,
+            "surface": "語",
+            "lemma": "語",
+            "reading": "ご",
+            "senses": [
+              {
+                "key": "2002:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "language"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 0,
+        "sub": 2,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 0,
+        "sub": -1,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 4,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 80,
+          "surface": "神様",
+          "lemma": "神様",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "かみさま",
+          "reading": "かみさま",
+          "readings": [
+            "かみさま"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "8000:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "God"
+            ]
+          },
+          {
+            "key": "8000:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "superior person"
+            ]
+          }
+        ],
+        "analysis": {
+          "senseKey": null,
+          "reading": null,
+          "generator": "claude-haiku"
+        },
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 81,
+            "surface": "神",
+            "lemma": "神",
+            "reading": "かみ",
+            "senses": [
+              {
+                "key": "8001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "god",
+                  "deity"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 4,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 81,
+          "surface": "神",
+          "lemma": "神",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "かみ",
+          "reading": "かみ",
+          "readings": [
+            "かみ",
+            "しん"
+          ],
+          "jlpt": 4
+        },
+        "senses": [
+          {
+            "key": "8001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "god",
+              "deity"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 81,
+            "surface": "神",
+            "lemma": "神",
+            "reading": "かみ",
+            "senses": [
+              {
+                "key": "8001:1",
+                "pos": [
+                  "n"
+                ],
+                "gloss": [
+                  "god",
+                  "deity"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 1,
+        "s": 4,
+        "sub": 1,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 31,
+          "surface": "気",
+          "lemma": "気",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "き",
+          "reading": "き",
+          "readings": [
+            "き"
+          ],
+          "jlpt": 4
+        },
+        "senses": [
+          {
+            "key": "3001:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "spirit",
+              "mind"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [
+          {
+            "index": 0,
+            "s": 0,
+            "e": 4,
+            "lemma": "気がする",
+            "reading": "きがする",
+            "gloss": "to have a feeling that; to feel like"
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 2,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 32,
+          "surface": "した",
+          "lemma": "する",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "した",
+          "reading": "する",
+          "readings": [
+            "する"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "3002:1",
+            "pos": [
+              "vs-i"
+            ],
+            "gloss": [
+              "to do"
+            ]
+          }
+        ],
+        "analysis": {
+          "senseKey": "3002:1",
+          "reading": null,
+          "generator": "claude-sonnet"
+        },
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 32,
+            "surface": "し",
+            "lemma": "する",
+            "reading": "する",
+            "senses": [
+              {
+                "key": "3002:1",
+                "pos": [
+                  "vs-i"
+                ],
+                "gloss": [
+                  "to do"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": [
+          {
+            "index": 0,
+            "s": 0,
+            "e": 4,
+            "lemma": "気がする",
+            "reading": "きがする",
+            "gloss": "to have a feeling that; to feel like"
+          },
+          {
+            "index": 1,
+            "s": 1,
+            "e": 4,
+            "lemma": "がする",
+            "reading": "がする",
+            "gloss": ""
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 2,
+        "sub": 0,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 32,
+          "surface": "し",
+          "lemma": "する",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "し",
+          "reading": "する",
+          "readings": [
+            "する"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "3002:1",
+            "pos": [
+              "vs-i"
+            ],
+            "gloss": [
+              "to do"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [
+          {
+            "sub": 0,
+            "wordId": 32,
+            "surface": "し",
+            "lemma": "する",
+            "reading": "する",
+            "senses": [
+              {
+                "key": "3002:1",
+                "pos": [
+                  "vs-i"
+                ],
+                "gloss": [
+                  "to do"
+                ]
+              }
+            ]
+          }
+        ],
+        "partOf": [
+          {
+            "index": 0,
+            "s": 0,
+            "e": 4,
+            "lemma": "気がする",
+            "reading": "きがする",
+            "gloss": "to have a feeling that; to feel like"
+          },
+          {
+            "index": 1,
+            "s": 1,
+            "e": 4,
+            "lemma": "がする",
+            "reading": "がする",
+            "gloss": ""
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 1,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 2,
+        "sub": null,
+        "phrase": 0
+      },
+      "result": {
+        "word": {
+          "id": 33,
+          "surface": "気がした",
+          "lemma": "気がする",
+          "pos": "表現",
+          "isProper": false,
+          "occurrenceReading": null,
+          "reading": "きがする",
+          "readings": [
+            "きがする"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "3003:1",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to have a feeling that",
+              "to feel like"
+            ]
+          },
+          {
+            "key": "3003:2",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to sense"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 1,
+        "sub": null,
+        "phrase": 1
+      },
+      "result": {
+        "word": {
+          "id": 34,
+          "surface": "がした",
+          "lemma": "がする",
+          "pos": "表現",
+          "isProper": false,
+          "occurrenceReading": null,
+          "reading": "がする",
+          "readings": [
+            "がする"
+          ],
+          "jlpt": null
+        },
+        "senses": [],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 3,
+        "sub": 1,
+        "phrase": 0
+      },
+      "result": {
+        "word": {
+          "id": 33,
+          "surface": "気がした",
+          "lemma": "気がする",
+          "pos": "表現",
+          "isProper": false,
+          "occurrenceReading": null,
+          "reading": "きがする",
+          "readings": [
+            "きがする"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "3003:1",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to have a feeling that",
+              "to feel like"
+            ]
+          },
+          {
+            "key": "3003:2",
+            "pos": [
+              "exp"
+            ],
+            "gloss": [
+              "to sense"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 0,
+        "sub": null,
+        "phrase": 1
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 4,
+        "sub": null,
+        "phrase": 0
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 0,
+        "sub": null,
+        "phrase": 2
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 0,
+        "sub": null,
+        "phrase": 3
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 2,
+        "s": 0,
+        "sub": null,
+        "phrase": -1
+      },
+      "result": null
+    },
+    {
+      "request": {
+        "block": 3,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 60,
+          "surface": "\uD842\uDF9Fる",
+          "lemma": "\uD842\uDF9Fる",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "しかる",
+          "reading": "しかる",
+          "readings": [
+            "しかる"
+          ],
+          "jlpt": 2
+        },
+        "senses": [
+          {
+            "key": "6000:1",
+            "pos": [
+              "v5r",
+              "vt"
+            ],
+            "gloss": [
+              "to scold"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 3,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 70,
+          "surface": "田中",
+          "lemma": "田中",
+          "pos": "名詞",
+          "isProper": true,
+          "occurrenceReading": "たなか",
+          "reading": "たなか",
+          "readings": [
+            "たなか"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "7000:1",
+            "pos": [
+              "n-pr"
+            ],
+            "gloss": [
+              "Tanaka"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": []
+      }
+    },
+    {
+      "request": {
+        "block": 4,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": null
+    }
+  ]
+}

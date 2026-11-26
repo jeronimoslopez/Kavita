@@ -65,6 +65,7 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         var wordIds = unit.Blocks
             .SelectMany(b => b.Tokens)
             .SelectMany(t => (t.Sub ?? []).Select(p => p.W).Prepend(t.W))
+            .Concat(unit.Blocks.SelectMany(b => b.Phrases).Select(p => (long?) p.W))
             .OfType<long>()
             .ToHashSet();
         var words = await readingStore.GetWordsAsync(wordIds, ct);
@@ -73,11 +74,16 @@ public class DictionaryService(ILogger<DictionaryService> logger, IUnitOfWork un
         return new EpubPageTokensDto
         {
             Version = unit.TokenizerVersion ?? string.Empty,
-            Blocks = unit.Blocks.Select(b => new EpubPageBlockDto(b.Index, b.Text.Length, b.Tokens.ToList())).ToList(),
-            Words = words.Values.ToDictionary(w => w.Id, w => new WordBriefDto(w.Lemma, w.Reading, w.Jlpt)),
+            Blocks = unit.Blocks
+                .Select(b => new EpubPageBlockDto(b.Index, b.Text.Length, b.Tokens.ToList(),
+                    b.Phrases.Count == 0 ? null : b.Phrases.ToList()))
+                .ToList(),
+            Words = words.Values.ToDictionary(w => w.Id, w => new EpubPageWordDto(w.Lemma, w.Reading, w.Jlpt, w.Pos,
+                w.IsProper, w.Readings.ToList(), w.Senses.ToList())),
+            // In stored order, so the reader's first match for an occurrence is the row LookupAsync picks
             Analysis = analysis
                 .Where(a => a.State == AnalysisState.Done)
-                .Select(a => new AnalysisEntryDto(a.Block, a.S, a.SenseKey, a.Reading))
+                .Select(a => new AnalysisEntryDto(a.Block, a.S, a.SenseKey, a.Reading, a.Generator ?? string.Empty))
                 .ToList(),
         };
     }
