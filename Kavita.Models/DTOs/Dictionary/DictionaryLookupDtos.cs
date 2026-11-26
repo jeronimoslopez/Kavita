@@ -40,6 +40,11 @@ public sealed record DictionaryLookupResultDto
     /// order the block stores them. Empty for a phrase lookup
     /// </summary>
     public IList<DictionaryPhraseDto> PartOf { get; init; } = [];
+    /// <summary>
+    /// The word's senses grouped by reading, the group to open on first, and how sure that is. <see cref="Senses"/>
+    /// stays the full flat list. For a part or a phrase the order comes from the dictionary and the tokenizer alone
+    /// </summary>
+    public ReadingsDto Readings { get; init; } = ReadingsDto.None;
 }
 
 /// <param name="Surface">The text of this occurrence as it appears in the block</param>

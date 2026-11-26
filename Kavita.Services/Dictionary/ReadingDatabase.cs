@@ -113,11 +113,34 @@ public class ReadingDatabase
         ) WITHOUT ROWID;
         """;
 
+    /// <summary>
+    /// What version 4 adds. word.entries holds the word's JMdict entries as a JSON array, [] for a word no entry
+    /// matched, and is null for a word written by a sidecar before version 3 until a page using it is tokenized again. reading_choice has a row per
+    /// user, series and word with the reading the user picked for the word in that series. Only a user's own rows are
+    /// ever read, so the key starts with the user. ix_reading_mark_word lets a page's hints read the few marks of its
+    /// words without visiting every page of the series
+    /// </summary>
+    internal const string Version4Schema = """
+        ALTER TABLE word ADD COLUMN entries TEXT NULL;
+
+        CREATE INDEX IF NOT EXISTS ix_reading_mark_word ON reading_mark (word_id, unit_id);
+
+        CREATE TABLE IF NOT EXISTS reading_choice (
+            user_id INTEGER NOT NULL,
+            series_id INTEGER NOT NULL,
+            word_id INTEGER NOT NULL,
+            reading TEXT NOT NULL,
+            updated_utc INTEGER NOT NULL,
+            PRIMARY KEY (user_id, series_id, word_id)
+        ) WITHOUT ROWID;
+        """;
+
     private static readonly IReadOnlyList<Func<ReadingDatabase, SqliteConnection, CancellationToken, Task>> Migrations =
     [
         (_, connection, ct) => CreateTablesAsync(connection, ct),
         (database, connection, ct) => database.ShrinkAsync(connection, ct),
         (_, connection, ct) => AddReadingMarksAsync(connection, ct),
+        (_, connection, ct) => AddEntriesAndChoicesAsync(connection, ct),
     ];
 
     private readonly string _connectionString;
@@ -260,8 +283,8 @@ public class ReadingDatabase
         }
 
         // A file at version 1 or later holds tokenized books, and the version 2 rewrite or a compaction can take
-        // minutes. Callers other than the one that started this are turned away meanwhile instead of waiting. Version 3
-        // only adds empty tables, so callers wait for it
+        // minutes. Callers other than the one that started this are turned away meanwhile instead of waiting. Versions 3
+        // and 4 only add empty tables and a column, so callers wait for them
         var rewrites = version == 1;
         _rewriting = rewrites || await NeedsVacuumAsync(connection, ct);
         _initDecided.TrySetResult();
@@ -434,6 +457,25 @@ public class ReadingDatabase
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = Version3Schema + "\nPRAGMA user_version = 3;";
+        await command.ExecuteNonQueryAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+
+    /// <summary>
+    /// Version 4. Adds word.entries, null on every existing word, and an empty reading_choice. A word gets its entries
+    /// when a page that uses it is tokenized again by a version 3 sidecar, which the reader's next open of the chapter
+    /// queues, so nothing existing is rewritten and the step is one transaction
+    /// </summary>
+    private static async Task AddEntriesAndChoicesAsync(SqliteConnection connection, CancellationToken ct)
+    {
+        // The version is read again inside the write transaction, so a second process opening the same file can't run
+        // the step twice. That matters here, because ADD COLUMN fails on a column that exists
+        await using var transaction = connection.BeginTransaction(deferred: false);
+        if (await UserVersionAsync(connection, transaction, ct) != 3) return;
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = Version4Schema + "\nPRAGMA user_version = 4;";
         await command.ExecuteNonQueryAsync(ct);
         await transaction.CommitAsync(ct);
     }

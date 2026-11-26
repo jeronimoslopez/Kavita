@@ -55,6 +55,7 @@ public class TextSidecarClient : ITextSidecarClient
     {
         var tokens = new IList<TokenDto>?[blocks.Count];
         var phrases = new IList<PhraseDto>?[blocks.Count];
+        var blind = new IList<int>?[blocks.Count];
         var words = new List<SidecarWordDto>();
         string? version = null;
 
@@ -77,6 +78,8 @@ public class TextSidecarClient : ITextSidecarClient
                 // A version 1 sidecar leaves phrases out, and a null in the JSON reads as none too
                 var blockPhrases = answer.Phrases ?? [];
                 phrases[index] = offset == 0 ? blockPhrases : blockPhrases.Select(p => p with { W = p.W + offset }).ToList();
+                // Blind offsets are into the block's own text and name no word, so they need no shift
+                blind[index] = answer.Blind ?? [];
             }
         }
 
@@ -85,7 +88,10 @@ public class TextSidecarClient : ITextSidecarClient
             Version = version ?? string.Empty,
             Words = words,
             Blocks = blocks
-                .Select((b, i) => new TokenizedBlockDto { Id = b.Id, Tokens = tokens[i] ?? [], Phrases = phrases[i] ?? [] })
+                .Select((b, i) => new TokenizedBlockDto
+                {
+                    Id = b.Id, Tokens = tokens[i] ?? [], Phrases = phrases[i] ?? [], Blind = blind[i] ?? [],
+                })
                 .ToList(),
         };
     }

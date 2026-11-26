@@ -100,6 +100,11 @@ public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto>
     /// furigana was kept
     /// </summary>
     public IReadOnlyList<RubyDto> Ruby { get; init; } = [];
+    /// <summary>
+    /// The start offsets of the top-level tokens whose reading the tokenizer chose by fixed cost alone. Empty for a
+    /// block a sidecar before version 3 tokenized
+    /// </summary>
+    public IReadOnlyList<int> Blind { get; init; } = [];
 }
 
 /// <summary>
@@ -124,7 +129,14 @@ public sealed record WordMarkTotals(long WordId, int Uses, IReadOnlyList<Reading
 /// </summary>
 /// <param name="Jlpt">1 (N1) to 5 (N5), or null when the word isn't listed</param>
 public sealed record StoredWord(long Id, string Lemma, string Pos, bool IsProper, string Reading, int? Jlpt,
-    IReadOnlyList<string> Readings, IReadOnlyList<SenseDto> Senses, string LexiconVersion);
+    IReadOnlyList<string> Readings, IReadOnlyList<SenseDto> Senses, string LexiconVersion)
+{
+    /// <summary>
+    /// The JMdict entries the senses come from, in the order their senses appear. Null for a word a sidecar before
+    /// version 3 wrote, until a page using it is tokenized again, and empty for a version 3 word no entry matched
+    /// </summary>
+    public IReadOnlyList<WordEntryDto>? Entries { get; init; }
+}
 
 /// <summary>
 /// A row of reading.db's analysis table

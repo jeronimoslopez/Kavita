@@ -65,9 +65,82 @@ public class DictionaryControllerTests
     }
 
     [Fact]
+    public void ClearReadingChoice_ChecksSeriesAccess()
+    {
+        var method = typeof(DictionaryController).GetMethod(nameof(DictionaryController.ClearReadingChoice))!;
+        Assert.NotNull(method.GetCustomAttribute<SeriesAccessAttribute>());
+        Assert.NotNull(method.GetCustomAttribute<HttpDeleteAttribute>());
+    }
+
+    [Fact]
+    public async Task GetEpubPage_AsksForTheRequestingUsersPage()
+    {
+        var page = new EpubPageTokensDto();
+        _service.GetEpubPageAsync(UserId, 3, 1, Arg.Any<CancellationToken>()).Returns(page);
+
+        var result = await CreateController().GetEpubPage(3, 1);
+
+        Assert.Same(page, Assert.IsType<OkObjectResult>(result.Result).Value);
+    }
+
+    [Fact]
+    public async Task SaveReadingChoice_IsNotFoundWithoutSeriesAccess_AndNeverReachesTheService()
+    {
+        _unitOfWork.UserRepository.HasAccessToSeries(UserId, 5, Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await CreateController().SaveReadingChoice(new ReadingChoiceDto(5, 90, "またたく"));
+
+        Assert.IsType<NotFoundResult>(result);
+        await _service.DidNotReceiveWithAnyArgs().SaveReadingChoiceAsync(default, default!, default);
+    }
+
+    [Fact]
+    public async Task SaveReadingChoice_SavesForTheUserAndIsBadRequestForAReadingNoGroupHas()
+    {
+        _unitOfWork.UserRepository.HasAccessToSeries(UserId, 5, Arg.Any<CancellationToken>()).Returns(true);
+        var good = new ReadingChoiceDto(5, 90, "またたく");
+        var bad = new ReadingChoiceDto(5, 90, "まじまじ");
+        _service.SaveReadingChoiceAsync(UserId, bad, Arg.Any<CancellationToken>())
+            .Returns(_ => throw new KavitaException("まじまじ isn't a reading of one of 瞬く's groups"));
+
+        Assert.IsType<OkResult>(await CreateController().SaveReadingChoice(good));
+        Assert.IsType<BadRequestObjectResult>(await CreateController().SaveReadingChoice(bad));
+        await _service.Received(1).SaveReadingChoiceAsync(UserId, good, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReadingChoice_AdminSkipsTheAccessQuery_AndClearingGoesToTheService()
+    {
+        Assert.IsType<OkResult>(await CreateController(isAdmin: true).SaveReadingChoice(new ReadingChoiceDto(5, 90, "またたく")));
+        Assert.IsType<OkResult>(await CreateController().ClearReadingChoice(5, 90));
+
+        await _unitOfWork.UserRepository.DidNotReceiveWithAnyArgs().HasAccessToSeries(default, default(int), default);
+        await _service.Received(1).ClearReadingChoiceAsync(UserId, 5, 90, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void ReadingChoiceBody_ReadsInCamelCase()
+    {
+        var dto = System.Text.Json.JsonSerializer.Deserialize<ReadingChoiceDto>("""{"seriesId": 5, "wordId": 90, "reading": "またたく"}""", Web);
+
+        Assert.Equal(new ReadingChoiceDto(5, 90, "またたく"), dto);
+    }
+
+    [Fact]
+    public void LookupResult_WritesEveryReadingsFieldWithNulls()
+    {
+        var result = new DictionaryLookupResultDto { Word = new DictionaryWordDto(1, "気", "気", "名詞", false, "き", "き", ["き"], 4) };
+
+        using var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result, Web));
+
+        Assert.Equal("""{"level":"certain","source":"dictionary","shown":null,"pick":null,"bookOnly":false,"groups":[]}""",
+            json.RootElement.GetProperty("readings").GetRawText());
+    }
+
+    [Fact]
     public async Task GetEpubPage_AnswersNoContentWhenThePageIsNotTokenized()
     {
-        _service.GetEpubPageAsync(3, 1, Arg.Any<CancellationToken>()).Returns((EpubPageTokensDto?) null);
+        _service.GetEpubPageAsync(UserId, 3, 1, Arg.Any<CancellationToken>()).Returns((EpubPageTokensDto?) null);
 
         var result = await CreateController().GetEpubPage(3, 1);
 
@@ -82,14 +155,14 @@ public class DictionaryControllerTests
         var result = await CreateController().Lookup(new DictionaryLookupRequestDto(3, 0, 0, 0, null));
 
         Assert.IsType<NotFoundResult>(result.Result);
-        await _service.DidNotReceiveWithAnyArgs().LookupAsync(default!, default);
+        await _service.DidNotReceiveWithAnyArgs().LookupAsync(default, default!, default);
     }
 
     [Fact]
     public async Task Lookup_AnswersNoContentWhenNothingIsAtTheOffset()
     {
         _unitOfWork.UserRepository.HasAccessToChapter(UserId, 3, Arg.Any<CancellationToken>()).Returns(true);
-        _service.LookupAsync(Arg.Any<DictionaryLookupRequestDto>(), Arg.Any<CancellationToken>())
+        _service.LookupAsync(Arg.Any<int>(), Arg.Any<DictionaryLookupRequestDto>(), Arg.Any<CancellationToken>())
             .Returns((DictionaryLookupResultDto?) null);
 
         var result = await CreateController().Lookup(new DictionaryLookupRequestDto(3, 0, 0, 99, null));
@@ -101,7 +174,7 @@ public class DictionaryControllerTests
     public async Task Lookup_LetsAnAdminThroughWithoutTheAccessQuery()
     {
         var found = new DictionaryLookupResultDto();
-        _service.LookupAsync(Arg.Any<DictionaryLookupRequestDto>(), Arg.Any<CancellationToken>()).Returns(found);
+        _service.LookupAsync(Arg.Any<int>(), Arg.Any<DictionaryLookupRequestDto>(), Arg.Any<CancellationToken>()).Returns(found);
 
         var result = await CreateController(isAdmin: true).Lookup(new DictionaryLookupRequestDto(3, 0, 0, 0, null));
 

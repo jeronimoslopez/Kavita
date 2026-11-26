@@ -139,16 +139,34 @@ public interface IReadingStore
     /// <summary>
     /// How one file's furigana reads the words, summed over its pages
     /// </summary>
+    /// <param name="markedOnly">Leaves out the words the file never marks, which spares reading their uses</param>
     /// <returns>An entry per word of <paramref name="wordIds"/> that a top-level token of the file uses, with the
     /// file's marked readings of it. Pages tokenized before furigana was kept count for neither</returns>
     Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(int mangaFileId,
-        IReadOnlyCollection<long> wordIds, CancellationToken ct = default);
+        IReadOnlyCollection<long> wordIds, bool markedOnly = false, CancellationToken ct = default);
     /// <summary>
     /// How the files' furigana reads the words, summed over every page of every file
     /// </summary>
+    /// <param name="markedOnly">Leaves out the words the files never mark, which spares reading their uses</param>
     /// <returns>As the one-file overload returns, summed over the files</returns>
     Task<IReadOnlyDictionary<long, WordMarkTotals>> GetReadingMarksAsync(IReadOnlyCollection<int> mangaFileIds,
+        IReadOnlyCollection<long> wordIds, bool markedOnly = false, CancellationToken ct = default);
+
+    /// <summary>
+    /// The readings the user saved for some words in one series
+    /// </summary>
+    /// <returns>Word id to the saved reading, for each word of <paramref name="wordIds"/> that has one</returns>
+    Task<IReadOnlyDictionary<long, string>> GetReadingChoicesAsync(int userId, int seriesId,
         IReadOnlyCollection<long> wordIds, CancellationToken ct = default);
+    /// <summary>
+    /// Saves the reading the user picked for the word in the series, in place of any saved before. The caller checks
+    /// that the reading belongs to the word
+    /// </summary>
+    Task SaveReadingChoiceAsync(int userId, int seriesId, long wordId, string reading, CancellationToken ct = default);
+    /// <summary>
+    /// Clears the user's saved reading for the word in the series. Clearing one that isn't saved does nothing
+    /// </summary>
+    Task ClearReadingChoiceAsync(int userId, int seriesId, long wordId, CancellationToken ct = default);
 
     /// <param name="mangaFileIds">The files to count, or null for the whole store</param>
     Task<ReadingStoreCounts> GetCountsAsync(IReadOnlyCollection<int>? mangaFileIds, CancellationToken ct = default);

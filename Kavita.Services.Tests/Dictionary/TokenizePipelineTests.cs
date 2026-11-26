@@ -137,7 +137,8 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
     /// <summary>
     /// What the sidecar would answer for the page, with one token over the first character of each block that has
     /// text, all pointing at a word with two senses so each gets an analysis row. As <paramref name="sidecar"/> 2, a
-    /// block of two or more characters also gets a token over its second character and a phrase over both
+    /// block of two or more characters also gets a token over its second character and a phrase over both. As 3, the
+    /// words carry their entries, 吾輩's second sense is restricted to one reading, and each block's first token is blind
     /// </summary>
     private async Task<string> SidecarAnswerAsync(string filePath, int page, int sidecar = 1)
     {
@@ -173,7 +174,19 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
                 phrases = sidecar == 1 || b.Text.Length < 2 ? [] : new[] { new[] { 0, 2, 1 } },
             }),
         };
-        return JsonSerializer.Serialize(answer);
+        var json = JsonSerializer.SerializeToNode(answer)!;
+        if (sidecar >= 3)
+        {
+            var words = json["words"]!.AsArray();
+            words[0]!["entries"] = JsonSerializer.SerializeToNode(new[] { new { seq = 1, common = true, readings = new[] { "わがはい", "わがはえ" } } });
+            words[0]!["senses"]![1]!["r"] = JsonSerializer.SerializeToNode(new[] { "わがはい" });
+            words[1]!["entries"] = JsonSerializer.SerializeToNode(new[] { new { seq = 2, common = false, readings = new[] { "わがはいは" } } });
+            foreach (var block in json["blocks"]!.AsArray())
+            {
+                block!["blind"] = JsonSerializer.SerializeToNode(block["tokens"]!.AsArray().Count == 0 ? Array.Empty<int>() : [0]);
+            }
+        }
+        return json.ToJsonString();
     }
 
     private static string Version(int sidecar) => $"sudachipy=0.6;modes=C/A;words=6;lexicon=test;sidecar={sidecar}";
@@ -283,5 +296,48 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
         await eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryPagesReady,
             Arg.Is<SignalRMessageDto>(m => ((DictionaryPagesReadyEventBodyDto) m.Body!).Pages.SequenceEqual(new[] { 0 })),
             false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OpeningAChapterAfterTheSidecarGainsEntries_GivesItsStoredWordsTheirEntries()
+    {
+        var (unitOfWork, service, files) = await Setup([FirstPage]);
+        var file = files[0];
+        await service.DetectNewFilesAsync();
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 2));
+        Assert.Equal(TokenizeUnitOutcome.UnitDone, (await service.ProcessUnitAsync((await service.GetNextUnitAsync())!, SidecarUrl)).Outcome);
+
+        var before = (await _store.GetUnitAsync(file.Id, 0))!;
+        var wordId = before.Blocks.SelectMany(b => b.Tokens).First(t => t.W != null).W!.Value;
+        var old = (await _store.GetWordsAsync([wordId]))[wordId];
+        Assert.Null(old.Entries);
+        Assert.All(old.Senses, s => Assert.Null(s.R));
+        Assert.All(before.Blocks, b => Assert.Empty(b.Blind));
+
+        _httpTest.RespondWithJson(new { version = Version(3) });
+        await service.PrioritizeChapterAsync(file.ChapterId);
+        Assert.Equal(ReadingUnitState.Refresh, (await _store.GetUnitAsync(file.Id, 0))!.State);
+
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 3));
+        var services = new ServiceCollection();
+        services.AddSingleton(unitOfWork);
+        services.AddSingleton<ITokenizeService>(service);
+        services.AddSingleton(Substitute.For<IEventHub>());
+        var worker = new TokenizeWorkerHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<ILogger<TokenizeWorkerHostedService>>());
+        Assert.False(await worker.RunPassAsync(CancellationToken.None));
+
+        // The same row, keyed on (lemma, pos, isProper), now has the entries and the restriction
+        var after = (await _store.GetUnitAsync(file.Id, 0))!;
+        Assert.Equal(Version(3), after.TokenizerVersion);
+        Assert.Equal(wordId, after.Blocks.SelectMany(b => b.Tokens).First(t => t.W != null).W);
+        var word = (await _store.GetWordsAsync([wordId]))[wordId];
+        Assert.Equal("test", word.LexiconVersion);
+        var entry = Assert.Single(word.Entries!);
+        Assert.Equal(new WordEntryDto(1, true, entry.Readings), entry);
+        Assert.Equal(["わがはい", "わがはえ"], entry.Readings);
+        Assert.Equal(["わがはい"], word.Senses[1].R!);
+        Assert.All(after.Blocks.Where(b => b.Tokens.Count > 0), b => Assert.Equal([0], b.Blind));
+        Assert.Equal(2, ReadingGroups.Of(word).Count);
     }
 }
