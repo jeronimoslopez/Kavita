@@ -611,6 +611,14 @@ public class DictionaryServiceTests : AbstractDbTest
     {
         Entries = [new WordEntryDto(1586120, true, ["やま"]), new WordEntryDto(9600, false, ["さん"])],
     };
+    /// <summary>
+    /// 杯 read さかずき in a common entry, and the counter's plain はい in one that isn't. No entry has the voiced ばい
+    /// </summary>
+    private static readonly StoredWord Hai = new(106, "杯", "名詞", false, "さかずき", 5, ["さかずき", "さかづき", "はい"],
+        [Sense("1325220:1", "sake cup"), Sense("9700:1", "counter for cupfuls")], "lex1")
+    {
+        Entries = [new WordEntryDto(1325220, true, ["さかずき", "さかづき"]), new WordEntryDto(9700, false, ["はい"])],
+    };
 
     /// <summary>
     /// The opened file defines 翠苓, and another file of the series defines 馬閃
@@ -718,11 +726,14 @@ public class DictionaryServiceTests : AbstractDbTest
                 new TokenDto(0, 1, null, null, null), new TokenDto(1, 2, Hon.Id, "ぽん", null), new TokenDto(2, 3, null, null, null),
                 new TokenDto(3, 5, null, null, null), new TokenDto(5, 6, Yama.Id, "さん", null),
             ]) { Blind = [1, 5] },
+            // 杯 after a numeral read by fixed cost as the voiced ばい, which only its plain はい group matches
+            new StoredBlock(17, "二杯", [new TokenDto(0, 1, null, null, null), new TokenDto(1, 2, Hai.Id, "ばい", null)])
+                { Blind = [1] },
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
             Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto, Toki, Hon,
-            Yama);
+            Yama, Hai);
         GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
@@ -802,6 +813,7 @@ public class DictionaryServiceTests : AbstractDbTest
         (15, 3, null, null), // a blind token where no group is common, a guess from the tokenizer
         (16, 1, null, null), // a blind counter after a numeral in a rare group, a guess from the tokenizer
         (16, 5, null, null), // a blind suffix in a rare group, a guess from the tokenizer
+        (17, 1, null, null), // a blind voiced counter after a numeral, a guess on its plain reading's group
     ];
 
     /// <summary>

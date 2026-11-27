@@ -126,6 +126,7 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
     return {level: 'certain', source: 'dictionary', shown: null, pick, bookOnly: false, groups};
   }
 
+  const plain = tokenReading === null ? null : unvoiceFirst(tokenReading);
   let pick: string;
   let source: LookupReadings['source'];
   let level: LookupReadings['level'];
@@ -142,11 +143,28 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
     } else {
       [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
     }
+  } else if (bound && plain !== null && plain !== tokenReading && has(plain) !== undefined) {
+    // A counter's first sound voices after some numbers, as 二杯 read ばい or 一本 read ぽん, and JMdict lists only the
+    // plain はい or ほん
+    [pick, source, level] = [plain, 'tokenizer', blind ? 'guess' : 'likely'];
   } else {
     [pick, source, level] = [groups[0].readings[0], 'dictionary', 'guess'];
   }
   const first = has(pick) ?? groups[0];
   return {level, source, shown: null, pick, bookOnly: false, groups: [first, ...groups.filter(g => g !== first)]};
+}
+
+const VOICED_KANA = 'がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ';
+const PLAIN_KANA = 'かきくけこさしすせそたちつてとはひふへほはひふへほ';
+
+/**
+ * The hiragana reading with its first kana's dakuten or handakuten taken off, so ばい gives はい and ぽん gives ほん, as
+ * the server's UnvoiceFirst. A reading whose first kana is already plain, or an empty one, comes back as it is
+ */
+export function unvoiceFirst(reading: string): string {
+  if (reading.length === 0) return reading;
+  const at = VOICED_KANA.indexOf(reading[0]);
+  return at < 0 ? reading : PLAIN_KANA[at] + reading.slice(1);
 }
 
 /** The tokenizer's part of speech for a suffix, such as 家 read か after a surname */

@@ -75,6 +75,13 @@ public static class ReadingResolver
                 ? (common!.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess)
                 : (inputs.TokenReading!, ReadingSource.Tokenizer, inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
         }
+        else if (inputs.Bound && inputs.TokenReading is { } voiced && UnvoiceFirst(voiced) is var plain
+                 && plain != voiced && ReadingGroups.AnyHas(groups, plain))
+        {
+            // A counter's first sound voices after some numbers, as 二杯 read ばい or 一本 read ぽん, and JMdict lists
+            // only the plain はい or ほん
+            (pick, source, level) = (plain, ReadingSource.Tokenizer, inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
+        }
         else
         {
             (pick, source, level) = (groups[0].Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess);
@@ -83,6 +90,18 @@ public static class ReadingResolver
         var first = groups.First(g => g.Readings.Contains(pick));
         return new ReadingsDto(level, source, null, pick, false,
             groups.Where(g => !ReferenceEquals(g, first)).Prepend(first).ToList());
+    }
+
+    private const string VoicedKana = "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ";
+    private const string PlainKana = "かきくけこさしすせそたちつてとはひふへほはひふへほ";
+
+    /// <returns>The hiragana reading with its first kana's dakuten or handakuten taken off, so ばい gives はい and ぽん
+    /// gives ほん. A reading whose first kana is already plain, or an empty one, comes back as it is</returns>
+    public static string UnvoiceFirst(string reading)
+    {
+        if (reading.Length == 0) return reading;
+        var at = VoicedKana.IndexOf(reading[0]);
+        return at < 0 ? reading : PlainKana[at] + reading[1..];
     }
 
     /// <summary>
