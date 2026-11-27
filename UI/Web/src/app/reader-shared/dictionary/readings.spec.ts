@@ -134,9 +134,28 @@ describe('resolveReadings', () => {
   const cases: {name: string, input: ResolverInput, level: string, source: string, shown: string | null,
     pick: string | null, bookOnly: boolean, firsts: string[]}[] = [
     {
-      name: '瞬く read しばたたく by fixed cost is a guess with that group first',
+      name: '瞬く read しばたたく by fixed cost gives way to the common group, a guess from the dictionary',
       input: input({tokenReading: 'しばたたく', blind: true}),
-      level: 'guess', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+      level: 'guess', source: 'dictionary', shown: null, pick: 'またたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+    },
+    {
+      name: '瞬く read まばたく by fixed cost is in the common group, so a guess from the tokenizer',
+      input: input({tokenReading: 'まばたく', blind: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'まばたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+    },
+    {
+      name: 'a reading by fixed cost stays a guess from the tokenizer when no group is common',
+      input: input({
+        groups: readingGroups([{seq: 1, common: false, readings: ['とき']}, {seq: 2, common: false, readings: ['つき']}],
+          [sense('1:1', 'ibis'), sense('2:1', 'ibis (rare)')]),
+        tokenReading: 'つき', blind: true,
+      }),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'つき', bookOnly: false, firsts: ['つき', 'とき'],
+    },
+    {
+      name: 'a saved choice beats a reading by fixed cost in a rare group',
+      input: input({choice: 'めたたく', tokenReading: 'しばたたく', blind: true}),
+      level: 'likely', source: 'choice', shown: null, pick: 'めたたく', bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
     },
     {
       name: '瞬く read しばたたく by the tokenizer is likely',
