@@ -266,6 +266,39 @@ public class ReadingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task GetWords_RoundTripsEntryRanksAndWritesNoneWhereThereIsNone()
+    {
+        var dive = Today with
+        {
+            Lemma = "潜る", Pos = "動詞", Reading = "もぐる", Readings = ["もぐる", "くぐる"],
+            Senses = [new SenseDto("1:1", ["v5r"], ["to dive"]), new SenseDto("2:1", ["v5r"], ["to pass under"])],
+            Entries = [new WordEntryDto(1, false, ["もぐる"], 5055), new WordEntryDto(2, true, ["くぐる"])],
+        };
+        var id = (await _store.UpsertWordsAsync([dive], Lexicon))[0];
+
+        var word = (await _store.GetWordsAsync([id]))[id];
+
+        Assert.Equal([5055, null], word.Entries!.Select(e => e.Rank));
+        Assert.Equal("""[{"seq":1,"common":false,"readings":["もぐる"],"rank":5055},{"seq":2,"common":true,"readings":["くぐる"]}]""",
+            await TextAsync($"SELECT entries FROM word WHERE id = {id}"));
+    }
+
+    [Fact]
+    public async Task UpsertWords_AWordStoredWithoutRanksGetsThemWhenARankedAnswerWritesItAgain()
+    {
+        // The word a sidecar before ranks wrote, which reads back with none
+        var id = (await _store.UpsertWordsAsync([Today], "lex-3"))[0];
+        Assert.All((await _store.GetWordsAsync([id]))[id].Entries!, e => Assert.Null(e.Rank));
+
+        var again = await _store.UpsertWordsAsync([Today with { Entries = [Today.Entries![0] with { Rank = 120 }] }], "lex-4");
+
+        Assert.Equal(id, again[0]);
+        var word = (await _store.GetWordsAsync([id]))[id];
+        Assert.Equal(120, Assert.Single(word.Entries!).Rank);
+        Assert.Equal("lex-4", word.LexiconVersion);
+    }
+
+    [Fact]
     public async Task UpsertAndGetWords_AcceptEmptyInput()
     {
         Assert.Empty(await _store.UpsertWordsAsync([], Lexicon));

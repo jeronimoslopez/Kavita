@@ -27,6 +27,8 @@ export interface WordEntry {
   common: boolean;
   /** Hiragana */
   readings: string[];
+  /** The entry's frequency rank for this spelling, lower being more common. Missing when the sidecar knows none */
+  rank?: number;
 }
 
 /** Where the reading of a word's first reading group came from */
@@ -56,6 +58,8 @@ export interface ReadingGroup {
   /** True when any entry in the group is */
   common: boolean;
   senses: Sense[];
+  /** The lowest rank of the group's entries, or null when none has one */
+  rank: number | null;
 }
 
 /** The reading groups of a lookup, with the one that fits the occurrence first */

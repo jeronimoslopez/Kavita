@@ -114,8 +114,8 @@ describe('DictionaryPopupPresenter', () => {
   it('passes reading tabs and the reading actions on', () => {
     open();
     const groups = [
-      {seq: 1, readings: ['またたく', 'まばたく'], common: true, senses: [{key: '1:1', pos: [], gloss: ['to twinkle']}]},
-      {seq: 2, readings: ['しばたたく'], common: false, senses: [{key: '2:1', pos: [], gloss: ['to blink']}]},
+      {seq: 1, readings: ['またたく', 'まばたく'], common: true, senses: [{key: '1:1', pos: [], gloss: ['to twinkle']}], rank: null},
+      {seq: 2, readings: ['しばたたく'], common: false, senses: [{key: '2:1', pos: [], gloss: ['to blink']}], rank: null},
     ];
     const state: DictionaryPopupView['state'] = {kind: 'result', result: {
       word: {id: 1, surface: '瞬く', lemma: '瞬く', pos: '動詞', isProper: false, occurrenceReading: null, reading: 'またたく', readings: [], jlpt: null},

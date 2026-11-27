@@ -33,11 +33,11 @@ export const NO_READINGS: LookupReadings = Object.freeze({
 
 /**
  * A word's senses in reading groups. Each entry's readings split into classes of readings that exactly the same
- * senses of the entry apply to, and each class with a sense is a group. Classes keep the order of their first reading.
- * A sense applies to a reading when it has no `r` or its `r` holds the reading. Groups with equal readings lists then
- * merge into the first of them, since their tabs would offer no choice of reading. A word whose lemma has no kanji has
- * one group, read as the lemma in hiragana, because its reading is what the book prints. A null `lemma` groups by the
- * entries alone
+ * senses of the entry apply to, and each class with a sense is a group with its entry's rank. Classes keep the order
+ * of their first reading. A sense applies to a reading when it has no `r` or its `r` holds the reading. Groups with
+ * equal readings lists then merge into the first of them, since their tabs would offer no choice of reading. A word
+ * whose lemma has no kanji has one group, read as the lemma in hiragana, because its reading is what the book prints,
+ * with the lowest rank of its entries. A null `lemma` groups by the entries alone
  */
 export function readingGroups(entries: readonly WordEntry[] | undefined, senses: readonly Sense[],
                               lemma: string | null = null): ReadingGroup[] {
@@ -45,7 +45,7 @@ export function readingGroups(entries: readonly WordEntry[] | undefined, senses:
   if (lemma !== null && !hasKanji(lemma)) {
     return [{
       seq: entries[0].seq, readings: [toHiraganaServer(lemma)], common: entries.some(e => e.common),
-      senses: [...senses],
+      senses: [...senses], rank: entries.reduce<number | null>((low, e) => lowerRank(low, e.rank ?? null), null),
     }];
   }
 
@@ -62,7 +62,9 @@ export function readingGroups(entries: readonly WordEntry[] | undefined, senses:
       else known.readings.push(reading);
     }
     for (const {readings, senses: applicable} of classes.values()) {
-      if (applicable.length > 0) groups.push({seq: entry.seq, readings, common: entry.common, senses: applicable});
+      if (applicable.length > 0) {
+        groups.push({seq: entry.seq, readings, common: entry.common, senses: applicable, rank: entry.rank ?? null});
+      }
     }
   }
   return mergeEqualReadings(groups);
@@ -70,7 +72,8 @@ export function readingGroups(entries: readonly WordEntry[] | undefined, senses:
 
 /**
  * Folds each group into the first group whose readings are the same in the same order. The merged group sits where
- * that first group sat, keeps its seq, holds the senses of all of them in order, and is common when any is
+ * that first group sat, keeps its seq, holds the senses of all of them in order, is common when any is, and takes the
+ * lowest rank any of them has
  */
 function mergeEqualReadings(groups: readonly ReadingGroup[]): ReadingGroup[] {
   const merged: ReadingGroup[] = [];
@@ -84,9 +87,17 @@ function mergeEqualReadings(groups: readonly ReadingGroup[]): ReadingGroup[] {
       continue;
     }
     const first = merged[index];
-    merged[index] = {...first, common: first.common || group.common, senses: [...first.senses, ...group.senses]};
+    merged[index] = {
+      ...first, common: first.common || group.common, senses: [...first.senses, ...group.senses],
+      rank: lowerRank(first.rank, group.rank),
+    };
   }
   return merged;
+}
+
+/** The lower of two ranks, either when the other is null, and null when both are */
+function lowerRank(a: number | null, b: number | null): number | null {
+  return a === null ? b : b === null ? a : Math.min(a, b);
 }
 
 function hasKanji(text: string): boolean {
@@ -130,15 +141,22 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
   let pick: string;
   let source: LookupReadings['source'];
   let level: LookupReadings['level'];
+  let first: ReadingGroup | undefined;
   if (choice !== null && has(choice) !== undefined) {
     [pick, source, level] = [choice, 'choice', 'likely'];
   } else if (hint !== null && has(hint.reading) !== undefined) {
     [pick, source, level] = [hint.reading, hint.source, 'likely'];
   } else if (tokenReading !== null && has(tokenReading) !== undefined) {
-    // A blind reading is no evidence, so a rare group holding it gives way to the first common group. A bound
-    // occurrence keeps it, since 二本 read ぽん or 山 read さん as a suffix is the reading JMdict files as rare
+    // A blind reading is no evidence. A group far more frequent than the rest goes first, and without one a rare group
+    // holding the reading gives way to the first common group. A bound occurrence keeps it, since 二本 read ぽん or 山
+    // read さん as a suffix is the reading JMdict files as rare
+    const tokenGroup = has(tokenReading)!;
+    const frequent = blind && !bound ? frequencyPick(groups) : null;
     const common = groups.find(g => g.common);
-    if (blind && !bound && common !== undefined && !has(tokenReading)!.common) {
+    if (frequent !== null && frequent !== tokenGroup) {
+      [pick, source, level] = [frequent.readings[0], 'dictionary', 'guess'];
+      first = frequent;
+    } else if (frequent === null && blind && !bound && common !== undefined && !tokenGroup.common) {
       [pick, source, level] = [common.readings[0], 'dictionary', 'guess'];
     } else {
       [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
@@ -148,10 +166,27 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
     // plain はい or ほん
     [pick, source, level] = [plain, 'tokenizer', blind ? 'guess' : 'likely'];
   } else {
-    [pick, source, level] = [groups[0].readings[0], 'dictionary', 'guess'];
+    first = frequencyPick(groups) ?? groups[0];
+    [pick, source, level] = [first.readings[0], 'dictionary', 'guess'];
   }
-  const first = has(pick) ?? groups[0];
-  return {level, source, shown: null, pick, bookOnly: false, groups: [first, ...groups.filter(g => g !== first)]};
+  first ??= has(pick) ?? groups[0];
+  const opened = first;
+  return {level, source, shown: null, pick, bookOnly: false, groups: [opened, ...groups.filter(g => g !== opened)]};
+}
+
+/** How many times the second most frequent group's rank must be the first's for the first to be the frequencyPick */
+export const FREQUENCY_FACTOR = 5;
+
+/**
+ * The group frequency clearly favours, as the server's FrequencyPick. Of the groups with a rank, taken by rank from the
+ * lowest, the first is the pick when it's the only one or when the second's rank is at least FREQUENCY_FACTOR times
+ * its own. Null when no group has a rank or the two lowest are too close
+ */
+export function frequencyPick(groups: readonly ReadingGroup[]): ReadingGroup | null {
+  const ranked = groups.filter(g => g.rank !== null).sort((a, b) => a.rank! - b.rank!);
+  if (ranked.length === 0) return null;
+  if (ranked.length === 1) return ranked[0];
+  return ranked[1].rank! >= ranked[0].rank! * FREQUENCY_FACTOR ? ranked[0] : null;
 }
 
 const VOICED_KANA = 'がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ';

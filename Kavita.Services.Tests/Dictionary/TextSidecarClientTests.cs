@@ -146,6 +146,22 @@ public class TextSidecarClientTests : IDisposable
         Assert.Empty(response.Blocks[0].Blind);
     }
 
+    [Fact]
+    public void Answer_ReadsAnEntrysRankAndNoneWhereItIsLeftOut()
+    {
+        var response = JsonSerializer.Deserialize<TokenizeResponseDto>("""
+            {"version": "lexicon=x;sidecar=4",
+             "words": [{"lemma": "潜る", "pos": "動詞", "isProper": false, "reading": "もぐる", "jlpt": null,
+                        "readings": ["もぐる", "くぐる"],
+                        "senses": [{"key": "1:1", "pos": ["v5r"], "gloss": ["to dive"]}, {"key": "2:1", "pos": ["v5r"], "gloss": ["to pass under"]}],
+                        "entries": [{"seq": 1, "common": false, "readings": ["もぐる"], "rank": 5055},
+                                    {"seq": 2, "common": true, "readings": ["くぐる"]}]}],
+             "blocks": [{"id": "0", "tokens": [[0, 2, 0, "もぐる", null]], "phrases": [], "blind": [0]}]}
+            """)!;
+
+        Assert.Equal([5055, null], response.Words[0].Entries!.Select(e => e.Rank));
+    }
+
     /// <summary>
     /// One word, and a token on it for each of the blocks from <paramref name="first"/>
     /// </summary>

@@ -497,14 +497,14 @@ public class DictionaryServiceTests : AbstractDbTest
         new(key, ["n"], [gloss], r.Length == 0 ? null : r);
 
     /// <summary>
-    /// Three entries with a sense each, as the sidecar gives 瞬く
+    /// Three entries with a sense each, as the sidecar gives 瞬く, with their Jiten ranks where the list has one
     /// </summary>
     private static readonly StoredWord Blink = new(90, "瞬く", "動詞", false, "しばたたく", null,
         ["しばたたく", "しばたく", "またたく", "まばたく", "めたたく", "めばたく"],
         [Sense("2831002:1", "to blink"), Sense("1341200:1", "to twinkle"), Sense("2831001:1", "to wink")], "lex1")
     {
-        Entries = [new WordEntryDto(2831002, false, ["しばたたく", "しばたく"]), new WordEntryDto(1341200, true, ["またたく", "まばたく"]),
-            new WordEntryDto(2831001, false, ["めたたく", "めばたく"])],
+        Entries = [new WordEntryDto(2831002, false, ["しばたたく", "しばたく"], 80172),
+            new WordEntryDto(1341200, true, ["またたく", "まばたく"], 8110), new WordEntryDto(2831001, false, ["めたたく", "めばたく"])],
     };
     private static readonly StoredWord Hiraku = new(91, "開く", "動詞", false, "ひらく", 5, ["ひらく", "あく"],
         [Sense("1202440:1", "to open (a door)"), Sense("1586270:1", "to be open")], "lex1")
@@ -621,6 +621,31 @@ public class DictionaryServiceTests : AbstractDbTest
     };
 
     /// <summary>
+    /// 潜る read もぐる in an entry JMdict doesn't mark common, ranked 5055, and くぐる in a common one, ranked 83217
+    /// </summary>
+    private static readonly StoredWord Dive = new(107, "潜る", "動詞", false, "もぐる", null, ["もぐる", "くぐる"],
+        [Sense("1385260:1", "to dive"), Sense("1385270:1", "to pass under")], "lex1")
+    {
+        Entries = [new WordEntryDto(1385260, false, ["もぐる"], 5055), new WordEntryDto(1385270, true, ["くぐる"], 83217)],
+    };
+    /// <summary>
+    /// The same two entries with くぐる first, as another part of speech
+    /// </summary>
+    private static readonly StoredWord DiveUnder = Dive with
+    {
+        Id = 108, Pos = "名詞", Reading = "くぐる", Readings = ["くぐる", "もぐる"],
+        Senses = [Dive.Senses[1], Dive.Senses[0]], Entries = [Dive.Entries![1], Dive.Entries[0]],
+    };
+    /// <summary>
+    /// 分 read ぶん in a common entry ranked 300 and ふん in one that isn't, ranked 900, within five times of each other
+    /// </summary>
+    private static readonly StoredWord Minute = new(109, "分", "名詞", false, "ぶん", 5, ["ぶん", "ふん"],
+        [Sense("1502840:1", "part"), Sense("1502850:1", "minute")], "lex1")
+    {
+        Entries = [new WordEntryDto(1502840, true, ["ぶん"], 300), new WordEntryDto(1502850, false, ["ふん"], 900)],
+    };
+
+    /// <summary>
     /// The opened file defines 翠苓, and another file of the series defines 馬閃
     /// </summary>
     private void GivenBookWords(MangaFile file)
@@ -729,11 +754,20 @@ public class DictionaryServiceTests : AbstractDbTest
             // 杯 after a numeral read by fixed cost as the voiced ばい, which only its plain はい group matches
             new StoredBlock(17, "二杯", [new TokenDto(0, 1, null, null, null), new TokenDto(1, 2, Hai.Id, "ばい", null)])
                 { Blind = [1] },
+            // 潜る read by fixed cost as もぐる and then as くぐる, where frequency favours もぐる
+            new StoredBlock(18, "潜ると潜る",
+                [new TokenDto(0, 2, Dive.Id, "もぐる", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 5, Dive.Id, "くぐる", null)])
+                { Blind = [0, 3] },
+            // 潜る read せんる, which no group has, with the frequent もぐる group second
+            new StoredBlock(19, "潜る", [new TokenDto(0, 2, DiveUnder.Id, "せんる", null)]),
+            // 分 read by fixed cost as the rare ふん, ranked too close to ぶん for frequency to decide
+            new StoredBlock(20, "分だ", [new TokenDto(0, 1, Minute.Id, "ふん", null), new TokenDto(1, 2, null, null, null)])
+                { Blind = [0] },
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
             Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto, Toki, Hon,
-            Yama, Hai);
+            Yama, Hai, Dive, DiveUnder, Minute);
         GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
@@ -814,6 +848,10 @@ public class DictionaryServiceTests : AbstractDbTest
         (16, 1, null, null), // a blind counter after a numeral in a rare group, a guess from the tokenizer
         (16, 5, null, null), // a blind suffix in a rare group, a guess from the tokenizer
         (17, 1, null, null), // a blind voiced counter after a numeral, a guess on its plain reading's group
+        (18, 0, null, null), // a blind token in the group frequency favours, a guess from the tokenizer
+        (18, 3, null, null), // a blind token in a common group frequency doesn't favour, a guess on the frequent group
+        (19, 0, null, null), // a token reading no group has, a guess on the frequent group
+        (20, 0, null, null), // a blind token in a rare group with ranks too close, a guess on the common group
     ];
 
     /// <summary>

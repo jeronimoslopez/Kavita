@@ -199,6 +199,53 @@ describe('localLookup', () => {
       expect(cupTap(cupPage([1]), 'の杯')).toMatchObject({level: 'guess', source: 'dictionary', pick: 'さかずき'});
     });
 
+    it('opens a blind token on the group frequency clearly favours', () => {
+      const ranked = blinkPage({entries: [
+        {seq: 10, common: false, readings: ['しばたたく', 'しばたく'], rank: 80172},
+        {seq: 20, common: true, readings: ['またたく', 'まばたく'], rank: 8110},
+        {seq: 30, common: false, readings: ['めたたく', 'めばたく']},
+      ]}, {blind: [2]});
+      expect(tap(ranked)).toMatchObject({level: 'guess', source: 'dictionary', pick: 'またたく'});
+      expect(firsts(ranked)).toEqual(['またたく', 'しばたたく', 'めたたく']);
+      expect(tap(ranked)?.groups.map(g => g.rank)).toEqual([8110, 80172, null]);
+    });
+
+    it('keeps or moves a blind 潜る by frequency, and opens an unmatched reading on the frequent group', () => {
+      const dive: EpubPageWord = {
+        lemma: '潜る', reading: 'もぐる', jlpt: null, pos: '動詞', readings: ['もぐる', 'くぐる'],
+        senses: [sense('70:1', 'to dive'), sense('71:1', 'to pass under')],
+        entries: [{seq: 70, common: false, readings: ['もぐる'], rank: 5055}, {seq: 71, common: true, readings: ['くぐる'], rank: 83217}],
+      };
+      const divePage = (r: string, blind: number[]): EpubPageTokens => ({
+        version: 'v3', seriesId: 7,
+        blocks: [{index: 0, length: 2, tokens: [[0, 2, 1, r, null]], phrases: [], blind}],
+        words: {1: dive}, analysis: [],
+      });
+      const diveTap = (page: EpubPageTokens, blockText = '潜る') =>
+        localLookup(page, {block: 0, s: 0, sub: null}, blockText)?.readings;
+
+      expect(diveTap(divePage('もぐる', [0]))).toMatchObject({level: 'guess', source: 'tokenizer', pick: 'もぐる'});
+      expect(diveTap(divePage('くぐる', [0]))).toMatchObject({level: 'guess', source: 'dictionary', pick: 'もぐる'});
+      expect(diveTap(divePage('くぐる', []))).toMatchObject({level: 'likely', source: 'tokenizer', pick: 'くぐる'});
+      const under = divePage('せんる', []);
+      under.words[1] = {...dive, entries: [dive.entries![1], dive.entries![0]]};
+      expect(diveTap(under)).toMatchObject({level: 'guess', source: 'dictionary', pick: 'もぐる'});
+      expect(diveTap(under)?.groups.map(g => g.readings[0])).toEqual(['もぐる', 'くぐる']);
+    });
+
+    it('ignores frequency for a token the sentence chose and for a bound one', () => {
+      const ranked = (block: Partial<EpubPageTokens['blocks'][0]>, word: Partial<EpubPageWord> = {}) => blinkPage({
+        entries: [
+          {seq: 10, common: false, readings: ['しばたたく', 'しばたく'], rank: 80172},
+          {seq: 20, common: true, readings: ['またたく', 'まばたく'], rank: 8110},
+          {seq: 30, common: false, readings: ['めたたく', 'めばたく']},
+        ],
+        ...word,
+      }, block);
+      expect(tap(ranked({}))).toMatchObject({level: 'likely', source: 'tokenizer', pick: 'しばたたく'});
+      expect(tap(ranked({blind: [2]}, {pos: '接尾辞'}))).toMatchObject({level: 'guess', source: 'tokenizer', pick: 'しばたたく'});
+    });
+
     it('picks a later reading of a group from the token reading in dictionary form', () => {
       const page = blinkPage();
       page.blocks[0].tokens[2] = [2, 5, 1, 'まばたいた', null];
@@ -219,7 +266,7 @@ describe('localLookup', () => {
       const page = blinkPage({choice: 'しばたたく'}, {ruby: [[2, 3, 'まばた']]});
       expect(tap(page)).toEqual({
         level: 'certain', source: 'furigana', shown: 'まばたく', pick: 'まばたく', bookOnly: false,
-        groups: [{seq: 20, readings: ['またたく', 'まばたく'], common: true, senses: [blink.senses![1]]}],
+        groups: [{seq: 20, readings: ['またたく', 'まばたく'], common: true, senses: [blink.senses![1]], rank: null}],
       });
     });
 

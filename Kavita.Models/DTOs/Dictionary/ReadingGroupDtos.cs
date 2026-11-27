@@ -14,7 +14,9 @@ namespace Kavita.Models.DTOs.Dictionary;
 /// kanji, the lemma in hiragana alone</param>
 /// <param name="Common">True when the <see cref="WordEntryDto.Common"/> of any entry in the group is</param>
 /// <param name="Senses">The senses that apply to these readings, in the word's order</param>
-public sealed record ReadingGroupDto(long Seq, IList<string> Readings, bool Common, IList<SenseDto> Senses);
+/// <param name="Rank">The lowest <see cref="WordEntryDto.Rank"/> of the group's entries, or null when none has one</param>
+public sealed record ReadingGroupDto(long Seq, IList<string> Readings, bool Common, IList<SenseDto> Senses,
+    int? Rank = null);
 
 /// <summary>
 /// Which reading the popup opens on, and how sure that is

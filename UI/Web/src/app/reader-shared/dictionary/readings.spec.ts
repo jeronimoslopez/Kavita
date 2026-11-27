@@ -1,6 +1,8 @@
 import {LookupReadings, ReadingHint, Sense, WordEntry} from '../../_models/dictionary/dictionary';
 import {markedReadingOf} from './marked-reading';
 import {
+  FREQUENCY_FACTOR,
+  frequencyPick,
   groupKey,
   isBound,
   markedForResolver,
@@ -43,6 +45,32 @@ const cup = readingGroups([
   {seq: 4, common: false, readings: ['はた']},
 ], [sense('1:1', 'sake cup'), sense('2:1', 'counter for cupfuls'), sense('3:1', 'moon'), sense('4:1', 'flag')]);
 
+/** 瞬く with its Jiten ranks: しばたたく 80172, the common またたく 8110, and めたたく unranked */
+const rankedBlink = readingGroups([
+  {...blinkEntries[0], rank: 80172}, {...blinkEntries[1], rank: 8110}, blinkEntries[2],
+], blinkSenses);
+
+/** 潜る read もぐる, rare in JMdict and rank 5055, and くぐる, common and rank 83217 */
+const diveSenses = [sense('1:1', 'to dive'), sense('2:1', 'to pass under')];
+const dive = readingGroups([
+  {seq: 1, common: false, readings: ['もぐる'], rank: 5055}, {seq: 2, common: true, readings: ['くぐる'], rank: 83217},
+], diveSenses);
+
+/** The same two groups with くぐる first, so the first group isn't the frequent one */
+const diveKuguruFirst = readingGroups([
+  {seq: 2, common: true, readings: ['くぐる'], rank: 83217}, {seq: 1, common: false, readings: ['もぐる'], rank: 5055},
+], [diveSenses[1], diveSenses[0]]);
+
+/** 分 read ぶん in a common entry ranked 300 and ふん in one that isn't, ranked 900, too close for a pick */
+const minute = readingGroups([
+  {seq: 1, common: true, readings: ['ぶん'], rank: 300}, {seq: 2, common: false, readings: ['ふん'], rank: 900},
+], [sense('1:1', 'part'), sense('2:1', 'minute')]);
+
+/** Two groups neither of which is common, the first ranked `first` and the second 100 */
+const twoRanked = (first: number) => readingGroups([
+  {seq: 1, common: false, readings: ['とき'], rank: first}, {seq: 2, common: false, readings: ['つき'], rank: 100},
+], [sense('1:1', 'ibis'), sense('2:1', 'moon')]);
+
 const series = (reading: string): ReadingHint => ({reading, printed: reading, source: 'series'});
 
 function input(overrides: Partial<ResolverInput>): ResolverInput {
@@ -55,16 +83,16 @@ const firsts = (readings: LookupReadings) => readings.groups.map(g => g.readings
 describe('readingGroups', () => {
   it('makes one group per entry when no sense is restricted, in entry order', () => {
     expect(blink).toEqual([
-      {seq: 10, readings: ['しばたたく', 'しばたく'], common: false, senses: [blinkSenses[0]]},
-      {seq: 20, readings: ['またたく', 'まばたく'], common: true, senses: [blinkSenses[1], blinkSenses[2]]},
-      {seq: 30, readings: ['めたたく', 'めばたく'], common: false, senses: [blinkSenses[3]]},
+      {seq: 10, readings: ['しばたたく', 'しばたく'], common: false, senses: [blinkSenses[0]], rank: null},
+      {seq: 20, readings: ['またたく', 'まばたく'], common: true, senses: [blinkSenses[1], blinkSenses[2]], rank: null},
+      {seq: 30, readings: ['めたたく', 'めばたく'], common: false, senses: [blinkSenses[3]], rank: null},
     ]);
   });
 
   it('splits an entry whose senses are restricted by reading into a group per set of senses', () => {
     expect(readingGroups(todayEntries, todaySenses)).toEqual([
-      {seq: 40, readings: ['きょう', 'こんじつ'], common: true, senses: [todaySenses[0]]},
-      {seq: 40, readings: ['こんにち'], common: true, senses: todaySenses},
+      {seq: 40, readings: ['きょう', 'こんじつ'], common: true, senses: [todaySenses[0]], rank: null},
+      {seq: 40, readings: ['こんにち'], common: true, senses: todaySenses, rank: null},
     ]);
   });
 
@@ -73,7 +101,7 @@ describe('readingGroups', () => {
       [{seq: 60, common: false, readings: ['あ', 'い']}],
       [sense('60:1', 'only あ', ['あ']), sense('99:1', 'another word')],
     );
-    expect(groups).toEqual([{seq: 60, readings: ['あ'], common: false, senses: [sense('60:1', 'only あ', ['あ'])]}]);
+    expect(groups).toEqual([{seq: 60, readings: ['あ'], common: false, senses: [sense('60:1', 'only あ', ['あ'])], rank: null}]);
   });
 
   it('gives no groups without entries', () => {
@@ -89,7 +117,7 @@ describe('readingGroups', () => {
       {seq: 71, common: true, readings: ['そう']},
       {seq: 72, common: false, readings: ['そう']},
     ], senses);
-    expect(groups).toEqual([{seq: 70, readings: ['そう'], common: true, senses}]);
+    expect(groups).toEqual([{seq: 70, readings: ['そう'], common: true, senses, rank: null}]);
   });
 
   it('merges equal readings lists where the first sat and keeps different lists apart', () => {
@@ -101,9 +129,9 @@ describe('readingGroups', () => {
       {seq: 4, common: false, readings: ['あみ']},
     ], senses);
     expect(groups).toEqual([
-      {seq: 1, readings: ['ら'], common: true, senses: [senses[0], senses[2]]},
-      {seq: 2, readings: ['うすもの', 'ら'], common: false, senses: [senses[1]]},
-      {seq: 4, readings: ['あみ'], common: false, senses: [senses[3]]},
+      {seq: 1, readings: ['ら'], common: true, senses: [senses[0], senses[2]], rank: null},
+      {seq: 2, readings: ['うすもの', 'ら'], common: false, senses: [senses[1]], rank: null},
+      {seq: 4, readings: ['あみ'], common: false, senses: [senses[3]], rank: null},
     ]);
   });
 
@@ -117,8 +145,8 @@ describe('readingGroups', () => {
       {seq: 81, common: false, readings: ['きょう', 'こんにち']},
     ], senses);
     expect(groups).toEqual([
-      {seq: 80, readings: ['きょう'], common: true, senses: [senses[0], senses[2]]},
-      {seq: 80, readings: ['こんにち'], common: true, senses},
+      {seq: 80, readings: ['きょう'], common: true, senses: [senses[0], senses[2]], rank: null},
+      {seq: 80, readings: ['こんにち'], common: true, senses, rank: null},
     ]);
   });
 
@@ -129,11 +157,27 @@ describe('readingGroups', () => {
       {seq: 91, common: true, readings: ['ちょっと', 'ちょと']},
     ];
     const groups = readingGroups(entries, senses, 'チョ');
-    expect(groups).toEqual([{seq: 90, readings: ['ちょ'], common: true, senses}]);
+    expect(groups).toEqual([{seq: 90, readings: ['ちょ'], common: true, senses, rank: null}]);
 
     const readings = resolveReadings(input({groups, tokenReading: 'ちょ'}));
     expect(readings).toEqual({level: 'certain', source: 'dictionary', shown: null, pick: 'ちょ', bookOnly: false, groups});
     expect(readingGroups(entries, senses, '一寸').map(g => g.readings)).toEqual([['いっすん'], ['ちょっと'], ['ちょと']]);
+  });
+
+  it('gives each group the rank of its entry, and null without one', () => {
+    expect(rankedBlink.map(g => g.rank)).toEqual([80172, 8110, null]);
+    expect(readingGroups([{...todayEntries[0], rank: 120}], todaySenses).map(g => g.rank)).toEqual([120, 120]);
+  });
+
+  it('gives a merged group or the group of a kana lemma the lowest rank', () => {
+    const entries: WordEntry[] = [
+      {seq: 1, common: false, readings: ['そう']}, {seq: 2, common: true, readings: ['そう'], rank: 900},
+      {seq: 3, common: false, readings: ['そう'], rank: 40},
+    ];
+    const senses = [sense('1:1', 'a'), sense('2:1', 'b'), sense('3:1', 'c')];
+    expect(readingGroups(entries, senses).map(g => g.rank)).toEqual([40]);
+    expect(readingGroups(entries, senses, 'そう').map(g => g.rank)).toEqual([40]);
+    expect(readingGroups([entries[0]], [senses[0]], 'そう').map(g => g.rank)).toEqual([null]);
   });
 
   it('keys a group by its entry and first reading', () => {
@@ -174,6 +218,35 @@ describe('unvoiceFirst', () => {
       expect(unvoiceFirst(reading)).toBe(expected);
     });
   }
+});
+
+describe('frequencyPick', () => {
+  it('names the factor five', () => {
+    expect(FREQUENCY_FACTOR).toBe(5);
+  });
+
+  it('is null without ranks', () => {
+    expect(frequencyPick(blink)).toBeNull();
+    expect(frequencyPick([])).toBeNull();
+  });
+
+  it('is the only ranked group among unranked ones', () => {
+    const groups = readingGroups([blinkEntries[0], blinkEntries[1], {...blinkEntries[2], rank: 70000}], blinkSenses);
+    expect(frequencyPick(groups)).toBe(groups[2]);
+  });
+
+  it('is the lowest rank when the next is at least five times it', () => {
+    expect(frequencyPick(rankedBlink)).toBe(rankedBlink[1]);
+    expect(frequencyPick(diveKuguruFirst)).toBe(diveKuguruFirst[1]);
+    const exactly = twoRanked(500);
+    expect(frequencyPick(exactly)).toBe(exactly[1]);
+  });
+
+  it('is null when the two lowest are within five times', () => {
+    expect(frequencyPick(twoRanked(499))).toBeNull();
+    expect(frequencyPick(minute)).toBeNull();
+    expect(frequencyPick(readingGroups([{...todayEntries[0], rank: 120}], todaySenses))).toBeNull();
+  });
 });
 
 describe('resolveReadings', () => {
@@ -314,6 +387,93 @@ describe('resolveReadings', () => {
       level: 'likely', source: 'tokenizer', shown: null, pick: 'こんにち', bookOnly: false, firsts: ['こんにち', 'きょう'],
     },
     {
+      name: 'a blind しばたたく on ranked 瞬く opens on the far more frequent またたく, a guess from the dictionary',
+      input: input({groups: rankedBlink, tokenReading: 'しばたたく', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'またたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+    },
+    {
+      name: 'a blind もぐる keeps its rare group because frequency favours it, a guess from the tokenizer',
+      input: input({groups: dive, tokenReading: 'もぐる', blind: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'もぐる', bookOnly: false, firsts: ['もぐる', 'くぐる'],
+    },
+    {
+      name: 'a blind くぐる in the common group gives way to the far more frequent もぐる',
+      input: input({groups: dive, tokenReading: 'くぐる', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'もぐる', bookOnly: false, firsts: ['もぐる', 'くぐる'],
+    },
+    {
+      name: 'ranks within five times leave 分\'s blind rare ふん to the common group rule',
+      input: input({groups: minute, tokenReading: 'ふん', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'ぶん', bookOnly: false, firsts: ['ぶん', 'ふん'],
+    },
+    {
+      name: 'ranks within five times keep 分\'s blind common ぶん from the tokenizer',
+      input: input({groups: minute, tokenReading: 'ぶん', blind: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'ぶん', bookOnly: false, firsts: ['ぶん', 'ふん'],
+    },
+    {
+      name: 'a rank exactly five times the lowest is a pick',
+      input: input({groups: twoRanked(500), tokenReading: 'とき', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'つき', bookOnly: false, firsts: ['つき', 'とき'],
+    },
+    {
+      name: 'a rank just under five times the lowest is no pick, so the tokenizer\'s group stays first',
+      input: input({groups: twoRanked(499), tokenReading: 'とき', blind: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'とき', bookOnly: false, firsts: ['とき', 'つき'],
+    },
+    {
+      name: 'one ranked group among unranked ones is a pick',
+      input: input({
+        groups: readingGroups([{seq: 1, common: false, readings: ['とき']}, {seq: 2, common: false, readings: ['つき'], rank: 70000}],
+          [sense('1:1', 'ibis'), sense('2:1', 'moon')]),
+        tokenReading: 'とき', blind: true,
+      }),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'つき', bookOnly: false, firsts: ['つき', 'とき'],
+    },
+    {
+      name: 'a token the sentence chose ignores frequency',
+      input: input({groups: rankedBlink, tokenReading: 'しばたたく'}),
+      level: 'likely', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+    },
+    {
+      name: 'a bound blind token ignores frequency',
+      input: input({groups: rankedBlink, tokenReading: 'しばたたく', blind: true, bound: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false, firsts: ['しばたたく', 'またたく', 'めたたく'],
+    },
+    {
+      name: 'a saved choice beats frequency',
+      input: input({groups: rankedBlink, choice: 'めたたく', tokenReading: 'しばたたく', blind: true}),
+      level: 'likely', source: 'choice', shown: null, pick: 'めたたく', bookOnly: false, firsts: ['めたたく', 'しばたたく', 'またたく'],
+    },
+    {
+      name: 'a token reading no group has opens on the frequency pick',
+      input: input({groups: diveKuguruFirst, tokenReading: 'なにか'}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'もぐる', bookOnly: false, firsts: ['もぐる', 'くぐる'],
+    },
+    {
+      name: 'the same groups without ranks open on the first group',
+      input: input({
+        groups: readingGroups([{seq: 2, common: true, readings: ['くぐる']}, {seq: 1, common: false, readings: ['もぐる']}],
+          [diveSenses[1], diveSenses[0]]),
+        tokenReading: 'なにか',
+      }),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'くぐる', bookOnly: false, firsts: ['くぐる', 'もぐる'],
+    },
+    {
+      name: 'a token reading no group has opens on the first group when ranks are too close',
+      input: input({groups: minute, tokenReading: 'なにか', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'ぶん', bookOnly: false, firsts: ['ぶん', 'ふん'],
+    },
+    {
+      name: 'a bound voiced counter still opens on its plain reading\'s group ahead of frequency',
+      input: input({
+        groups: readingGroups([{seq: 1, common: true, readings: ['さかずき'], rank: 50}, {seq: 2, common: false, readings: ['はい'], rank: 90000}],
+          [sense('1:1', 'sake cup'), sense('2:1', 'counter for cupfuls')]),
+        tokenReading: 'ばい', blind: true, bound: true,
+      }),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'はい', bookOnly: false, firsts: ['はい', 'さかずき'],
+    },
+    {
       name: 'a word without groups takes a hint as likely',
       input: input({groups: [], hint: {reading: 'がおしゅん', printed: 'ガオシュン', source: 'book'}}),
       level: 'likely', source: 'book', shown: 'ガオシュン', pick: null, bookOnly: false, firsts: [],
@@ -333,6 +493,21 @@ describe('resolveReadings', () => {
       expect(firsts(readings)).toEqual(c.firsts);
     });
   }
+
+  it('opens on the frequency pick even when an earlier group shares its first reading', () => {
+    // 羅's [ら, うすもの] comes first and also holds ら, the first reading of the far more frequent [ら]
+    const groups = readingGroups([
+      {seq: 1, common: false, readings: ['ら', 'うすもの'], rank: 90000}, {seq: 2, common: false, readings: ['ら'], rank: 10},
+    ], [sense('1:1', 'thin silk'), sense('2:1', 'net')]);
+
+    const fallback = resolveReadings(input({groups, tokenReading: 'なにか'}));
+    const blind = resolveReadings(input({groups, tokenReading: 'うすもの', blind: true}));
+
+    expect(fallback).toMatchObject({level: 'guess', source: 'dictionary', pick: 'ら'});
+    expect(fallback.groups.map(g => g.seq)).toEqual([2, 1]);
+    expect(blind).toMatchObject({level: 'guess', source: 'dictionary', pick: 'ら'});
+    expect(blind.groups.map(g => g.seq)).toEqual([2, 1]);
+  });
 
   it('keeps the other groups as they are, in their original order', () => {
     const readings = resolveReadings(input({tokenReading: 'めばたく'}));

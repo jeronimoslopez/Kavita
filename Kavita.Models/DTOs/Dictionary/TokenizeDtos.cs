@@ -134,7 +134,11 @@ public sealed record SenseDto(
 /// <param name="Seq">The JMdict seq, the part of a sense key before the colon</param>
 /// <param name="Common">Whether the spelling is a common form in the entry</param>
 /// <param name="Readings">The entry's kana forms that read the spelling, in hiragana and JMdict's order</param>
+/// <param name="Rank">The entry's frequency rank for this spelling, lower being more common. Null, and left out of the
+/// JSON, when the sidecar knows none or answered before it sent ranks</param>
 public sealed record WordEntryDto(
     [property: JsonPropertyName("seq")] long Seq,
     [property: JsonPropertyName("common")] bool Common,
-    [property: JsonPropertyName("readings")] IList<string> Readings);
+    [property: JsonPropertyName("readings")] IList<string> Readings,
+    [property: JsonPropertyName("rank"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? Rank = null);
