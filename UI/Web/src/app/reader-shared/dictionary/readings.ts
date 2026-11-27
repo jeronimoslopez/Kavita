@@ -132,7 +132,13 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
   } else if (hint !== null && has(hint.reading) !== undefined) {
     [pick, source, level] = [hint.reading, hint.source, 'likely'];
   } else if (tokenReading !== null && has(tokenReading) !== undefined) {
-    [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
+    // A blind reading is no evidence, so a rare group holding it gives way to the first common group
+    const common = groups.find(g => g.common);
+    if (blind && common !== undefined && !has(tokenReading)!.common) {
+      [pick, source, level] = [common.readings[0], 'dictionary', 'guess'];
+    } else {
+      [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
+    }
   } else {
     [pick, source, level] = [groups[0].readings[0], 'dictionary', 'guess'];
   }

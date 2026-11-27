@@ -160,12 +160,14 @@ describe('localLookup', () => {
       localLookup(page, {block: 0, s: 2, sub, phrase: phraseIndex}, text)?.readings;
     const firsts = (page: EpubPageTokens, sub: number | null = null) => tap(page, sub)?.groups.map(g => g.readings[0]);
 
-    it('orders the groups by the token reading in dictionary form and calls a blind reading a guess', () => {
+    it('orders the groups by the token reading in dictionary form, and a blind rare reading gives way to the common group', () => {
       expect(tap(blinkPage(), null)).toMatchObject({
         level: 'likely', source: 'tokenizer', shown: null, pick: 'しばたたく', bookOnly: false,
       });
       expect(firsts(blinkPage())).toEqual(['しばたたく', 'またたく', 'めたたく']);
-      expect(tap(blinkPage({}, {blind: [0, 2]}))).toMatchObject({level: 'guess', source: 'tokenizer'});
+      const blind = blinkPage({}, {blind: [0, 2]});
+      expect(tap(blind)).toMatchObject({level: 'guess', source: 'dictionary', pick: 'またたく'});
+      expect(firsts(blind)).toEqual(['またたく', 'しばたたく', 'めたたく']);
       expect(tap(blinkPage({}, {blind: [0]}))).toMatchObject({level: 'likely'});
     });
 

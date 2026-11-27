@@ -36,6 +36,12 @@ public class ReadingResolverTests
 
     private static IReadOnlyList<ReadingGroupDto> BlinkGroups => ReadingGroups.Of(BlinkEntries, BlinkSenses);
 
+    /// <summary>
+    /// 鴇 read とき or つき, two entries neither of which is common
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> RareGroups =>
+        ReadingGroups.Of([new WordEntryDto(1, false, ["とき"]), new WordEntryDto(2, false, ["つき"])], [Sense("1:1"), Sense("2:1")]);
+
     private static ReadingInputs Inputs(IReadOnlyList<ReadingGroupDto>? groups, MarkedReadingResult? marked = null,
         string? choice = null, ReadingHintDto? hint = null, string? tokenReading = null, bool blind = false) =>
         new(groups, marked, choice, hint, tokenReading, blind);
@@ -190,10 +196,34 @@ public class ReadingResolverTests
     public static TheoryData<string, ReadingInputs, ReadingsDto, string[]> Cases => new()
     {
         {
-            "a blind token on 瞬く is a guess, with the tokenizer's group first",
+            "a blind token on 瞬く in a rare group gives way to the common group, as a guess from the dictionary",
             Inputs(BlinkGroups, tokenReading: "しばたたく", blind: true),
-            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "しばたたく", false, []),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "またたく", false, []),
+            ["またたく", "しばたたく", "めたたく"]
+        },
+        {
+            "a token the sentence chose in a rare group still wins",
+            Inputs(BlinkGroups, tokenReading: "しばたたく"),
+            new ReadingsDto(ReadingLevel.Likely, ReadingSource.Tokenizer, null, "しばたたく", false, []),
             ["しばたたく", "またたく", "めたたく"]
+        },
+        {
+            "a blind token in a common group is a guess, with its group first",
+            Inputs(BlinkGroups, tokenReading: "まばたく", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "まばたく", false, []),
+            ["またたく", "しばたたく", "めたたく"]
+        },
+        {
+            "a blind token is a guess with its group first when no group is common",
+            Inputs(RareGroups, tokenReading: "つき", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "つき", false, []),
+            ["つき", "とき"]
+        },
+        {
+            "a saved choice beats a blind token in a rare group",
+            Inputs(BlinkGroups, choice: "めたたく", tokenReading: "しばたたく", blind: true),
+            new ReadingsDto(ReadingLevel.Likely, ReadingSource.Choice, null, "めたたく", false, []),
+            ["めたたく", "しばたたく", "またたく"]
         },
         {
             "a token the sentence chose is likely",

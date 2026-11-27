@@ -587,6 +587,14 @@ public class DictionaryServiceTests : AbstractDbTest
         Entries = [new WordEntryDto(1313580, true, ["こと"]), new WordEntryDto(2827864, false, ["こと"]),
             new WordEntryDto(1313590, false, ["じ"])],
     };
+    /// <summary>
+    /// Two entries read とき and つき, neither of them common
+    /// </summary>
+    private static readonly StoredWord Toki = new(103, "鴇", "名詞", false, "とき", null, ["とき", "つき"],
+        [Sense("9400:1", "crested ibis"), Sense("9401:1", "ibis (rare)")], "lex1")
+    {
+        Entries = [new WordEntryDto(9400, false, ["とき"]), new WordEntryDto(9401, false, ["つき"])],
+    };
 
     /// <summary>
     /// The opened file defines 翠苓, and another file of the series defines 馬閃
@@ -684,10 +692,14 @@ public class DictionaryServiceTests : AbstractDbTest
             new StoredBlock(14, "今日だ",
                 [new TokenDto(0, 2, Kyou.Id, "きょう", null), new TokenDto(2, 3, null, null, null)])
                 { Ruby = [new RubyDto(0, 1, "こん", 0), new RubyDto(1, 2, "にち", 0)] },
+            // 今日 read by fixed cost in a common group, and 鴇 read by fixed cost where no group is common
+            new StoredBlock(15, "今日の鴇",
+                [new TokenDto(0, 2, Kyou.Id, "こんにち", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 4, Toki.Id, "つき", null)])
+                { Blind = [0, 3] },
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
-            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto);
+            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto, Toki);
         GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
@@ -742,7 +754,7 @@ public class DictionaryServiceTests : AbstractDbTest
         (3, 3, null, null), // a proper noun
         (4, 0, null, null), // null, the token's word is missing
         (5, 0, null, null), // a series hint
-        (5, 2, null, null), // three groups and a blind token, so a guess
+        (5, 2, null, null), // a blind token in a rare group, so a guess on the common group
         (6, 2, null, null), // a book hint, which the series' other reading doesn't override
         (7, 0, null, null), // the user's saved choice, which beats a book hint
         (7, 3, null, null), // one group, read in dictionary form
@@ -763,6 +775,8 @@ public class DictionaryServiceTests : AbstractDbTest
         (13, 4, null, null), // a kana word whose first entry reads いっすん, one group read ちょ
         (13, 6, null, null), // a kanji word whose こと entries merge, two groups
         (14, 0, null, null), // furigana from one ruby element's spans, read together
+        (15, 0, null, null), // a blind token in a common group, a guess from the tokenizer
+        (15, 3, null, null), // a blind token where no group is common, a guess from the tokenizer
     ];
 
     /// <summary>
@@ -935,8 +949,8 @@ public class DictionaryServiceTests : AbstractDbTest
         GivenParityPage(book.FirstFile, 2);
 
         var blink = await ReadingsAt(book, 5, 2);
-        Assert.Equal((ReadingLevel.Guess, ReadingSource.Tokenizer, "しばたたく"), (blink.Level, blink.Source, blink.Pick));
-        Assert.Equal([2831002L, 1341200L, 2831001L], blink.Groups.Select(g => g.Seq));
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Dictionary, "またたく"), (blink.Level, blink.Source, blink.Pick));
+        Assert.Equal([1341200L, 2831002L, 2831001L], blink.Groups.Select(g => g.Seq));
 
         var star = await ReadingsAt(book, 5, 0);
         Assert.Equal((ReadingLevel.Likely, ReadingSource.Series, "せい"), (star.Level, star.Source, star.Pick));

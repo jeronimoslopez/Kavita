@@ -558,6 +558,37 @@
             0
           ]
         ]
+      },
+      {
+        "index": 15,
+        "length": 4,
+        "tokens": [
+          [
+            0,
+            2,
+            94,
+            "こんにち",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            4,
+            103,
+            "つき",
+            null
+          ]
+        ],
+        "blind": [
+          0,
+          3
+        ]
       }
     ],
     "words": {
@@ -1488,6 +1519,52 @@
             ]
           }
         ]
+      },
+      "103": {
+        "lemma": "鴇",
+        "reading": "とき",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [
+          "とき",
+          "つき"
+        ],
+        "senses": [
+          {
+            "key": "9400:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "crested ibis"
+            ]
+          },
+          {
+            "key": "9401:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "ibis (rare)"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 9400,
+            "common": false,
+            "readings": [
+              "とき"
+            ]
+          },
+          {
+            "seq": 9401,
+            "common": false,
+            "readings": [
+              "つき"
+            ]
+          }
+        ]
       }
     },
     "analysis": [
@@ -1529,7 +1606,8 @@
     "11": "翠苓は翠苓と",
     "12": "馬閃が",
     "13": "そうだ、ちょ事",
-    "14": "今日だ"
+    "14": "今日だ",
+    "15": "今日の鴇"
   },
   "taps": [
     {
@@ -2764,30 +2842,11 @@
         "partOf": [],
         "readings": {
           "level": "guess",
-          "source": "tokenizer",
+          "source": "dictionary",
           "shown": null,
-          "pick": "しばたたく",
+          "pick": "またたく",
           "bookOnly": false,
           "groups": [
-            {
-              "seq": 2831002,
-              "readings": [
-                "しばたたく",
-                "しばたく"
-              ],
-              "common": false,
-              "senses": [
-                {
-                  "key": "2831002:1",
-                  "pos": [
-                    "n"
-                  ],
-                  "gloss": [
-                    "to blink"
-                  ]
-                }
-              ]
-            },
             {
               "seq": 1341200,
               "readings": [
@@ -2803,6 +2862,25 @@
                   ],
                   "gloss": [
                     "to twinkle"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 2831002,
+              "readings": [
+                "しばたたく",
+                "しばたく"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "2831002:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to blink"
                   ]
                 }
               ]
@@ -4487,6 +4565,207 @@
                   ],
                   "r": [
                     "こんにち"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 15,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 94,
+          "surface": "今日",
+          "lemma": "今日",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "こんにち",
+          "reading": "きょう",
+          "readings": [
+            "きょう",
+            "こんにち",
+            "こんち"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1579110:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "today"
+            ]
+          },
+          {
+            "key": "1579110:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "these days"
+            ],
+            "r": [
+              "こんにち"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "こんにち",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1579110,
+              "readings": [
+                "こんにち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                },
+                {
+                  "key": "1579110:2",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "these days"
+                  ],
+                  "r": [
+                    "こんにち"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1579110,
+              "readings": [
+                "きょう",
+                "こんち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 15,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 103,
+          "surface": "鴇",
+          "lemma": "鴇",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "つき",
+          "reading": "とき",
+          "readings": [
+            "とき",
+            "つき"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "9400:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "crested ibis"
+            ]
+          },
+          {
+            "key": "9401:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "ibis (rare)"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "つき",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 9401,
+              "readings": [
+                "つき"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9401:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "ibis (rare)"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 9400,
+              "readings": [
+                "とき"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9400:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "crested ibis"
                   ]
                 }
               ]

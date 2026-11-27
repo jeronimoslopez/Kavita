@@ -64,8 +64,13 @@ public static class ReadingResolver
         }
         else if (ReadingGroups.AnyHas(groups, inputs.TokenReading))
         {
-            (pick, source, level) = (inputs.TokenReading!, ReadingSource.Tokenizer,
-                inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
+            // A blind reading is no evidence, so a rare group holding it gives way to the first common group
+            var common = groups.FirstOrDefault(g => g.Common);
+            var blindRare = inputs.Blind && common != null
+                && !groups.First(g => g.Readings.Contains(inputs.TokenReading!)).Common;
+            (pick, source, level) = blindRare
+                ? (common!.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess)
+                : (inputs.TokenReading!, ReadingSource.Tokenizer, inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
         }
         else
         {
