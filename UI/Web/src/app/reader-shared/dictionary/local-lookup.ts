@@ -9,7 +9,15 @@ import {
   SubToken,
 } from '../../_models/dictionary/dictionary';
 import {markedReadingOf} from './marked-reading';
-import {markedForResolver, NO_READINGS, readingGroups, resolveReadings, ResolverInput, tokenReadingOf} from './readings';
+import {
+  isBound,
+  markedForResolver,
+  NO_READINGS,
+  readingGroups,
+  resolveReadings,
+  ResolverInput,
+  tokenReadingOf,
+} from './readings';
 
 /** A tap, as the `block`, `s`, `sub` and `phrase` of a DictionaryLookupRequest */
 export interface LocalLookupRequest {
@@ -113,6 +121,7 @@ export function localLookup(page: EpubPageTokens, request: LocalLookupRequest,
       hint: word.hint ?? null,
       tokenReading,
       blind: block.blind?.includes(tokenS) ?? false,
+      bound: isBound(blockText, tokenS, word.pos ?? ''),
     })
     : readingsOf(word, {tokenReading});
 
@@ -134,7 +143,7 @@ function readingsOf(word: EpubPageWord, input: Partial<Omit<ResolverInput, 'grou
   if (word.entries === undefined) return {...NO_READINGS, groups: []};
   return resolveReadings({
     groups: readingGroups(word.entries, word.senses ?? [], word.lemma),
-    marked: null, choice: null, hint: null, tokenReading: null, blind: false,
+    marked: null, choice: null, hint: null, tokenReading: null, blind: false, bound: false,
     ...input,
   });
 }

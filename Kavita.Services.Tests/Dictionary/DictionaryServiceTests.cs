@@ -595,6 +595,22 @@ public class DictionaryServiceTests : AbstractDbTest
     {
         Entries = [new WordEntryDto(9400, false, ["とき"]), new WordEntryDto(9401, false, ["つき"])],
     };
+    /// <summary>
+    /// 本 read ほん in a common entry, and the counter's ぽん in one that isn't
+    /// </summary>
+    private static readonly StoredWord Hon = new(104, "本", "名詞", false, "ほん", 5, ["ほん", "ぽん"],
+        [Sense("1522150:1", "book"), Sense("9500:1", "counter for long objects")], "lex1")
+    {
+        Entries = [new WordEntryDto(1522150, true, ["ほん"]), new WordEntryDto(9500, false, ["ぽん"])],
+    };
+    /// <summary>
+    /// 山 as the tokenizer's suffix, read やま in a common entry and さん in one that isn't
+    /// </summary>
+    private static readonly StoredWord Yama = new(105, "山", "接尾辞", false, "さん", 5, ["やま", "さん"],
+        [Sense("1586120:1", "mountain"), Sense("9600:1", "Mt.")], "lex1")
+    {
+        Entries = [new WordEntryDto(1586120, true, ["やま"]), new WordEntryDto(9600, false, ["さん"])],
+    };
 
     /// <summary>
     /// The opened file defines 翠苓, and another file of the series defines 馬閃
@@ -696,10 +712,17 @@ public class DictionaryServiceTests : AbstractDbTest
             new StoredBlock(15, "今日の鴇",
                 [new TokenDto(0, 2, Kyou.Id, "こんにち", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 4, Toki.Id, "つき", null)])
                 { Blind = [0, 3] },
+            // 本 after a numeral and the suffix 山, both read by fixed cost in a group that isn't common
+            new StoredBlock(16, "二本と富士山",
+            [
+                new TokenDto(0, 1, null, null, null), new TokenDto(1, 2, Hon.Id, "ぽん", null), new TokenDto(2, 3, null, null, null),
+                new TokenDto(3, 5, null, null, null), new TokenDto(5, 6, Yama.Id, "さん", null),
+            ]) { Blind = [1, 5] },
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
-            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto, Toki);
+            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto, Toki, Hon,
+            Yama);
         GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
@@ -777,6 +800,8 @@ public class DictionaryServiceTests : AbstractDbTest
         (14, 0, null, null), // furigana from one ruby element's spans, read together
         (15, 0, null, null), // a blind token in a common group, a guess from the tokenizer
         (15, 3, null, null), // a blind token where no group is common, a guess from the tokenizer
+        (16, 1, null, null), // a blind counter after a numeral in a rare group, a guess from the tokenizer
+        (16, 5, null, null), // a blind suffix in a rare group, a guess from the tokenizer
     ];
 
     /// <summary>

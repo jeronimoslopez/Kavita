@@ -589,6 +589,51 @@
           0,
           3
         ]
+      },
+      {
+        "index": 16,
+        "length": 6,
+        "tokens": [
+          [
+            0,
+            1,
+            null,
+            null,
+            null
+          ],
+          [
+            1,
+            2,
+            104,
+            "ぽん",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            null,
+            null,
+            null
+          ],
+          [
+            5,
+            6,
+            105,
+            "さん",
+            null
+          ]
+        ],
+        "blind": [
+          1,
+          5
+        ]
       }
     ],
     "words": {
@@ -1565,6 +1610,98 @@
             ]
           }
         ]
+      },
+      "104": {
+        "lemma": "本",
+        "reading": "ほん",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "ほん",
+          "ぽん"
+        ],
+        "senses": [
+          {
+            "key": "1522150:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "book"
+            ]
+          },
+          {
+            "key": "9500:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "counter for long objects"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1522150,
+            "common": true,
+            "readings": [
+              "ほん"
+            ]
+          },
+          {
+            "seq": 9500,
+            "common": false,
+            "readings": [
+              "ぽん"
+            ]
+          }
+        ]
+      },
+      "105": {
+        "lemma": "山",
+        "reading": "さん",
+        "jlpt": 5,
+        "pos": "接尾辞",
+        "readings": [
+          "やま",
+          "さん"
+        ],
+        "senses": [
+          {
+            "key": "1586120:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "mountain"
+            ]
+          },
+          {
+            "key": "9600:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Mt."
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1586120,
+            "common": true,
+            "readings": [
+              "やま"
+            ]
+          },
+          {
+            "seq": 9600,
+            "common": false,
+            "readings": [
+              "さん"
+            ]
+          }
+        ]
       }
     },
     "analysis": [
@@ -1607,7 +1744,8 @@
     "12": "馬閃が",
     "13": "そうだ、ちょ事",
     "14": "今日だ",
-    "15": "今日の鴇"
+    "15": "今日の鴇",
+    "16": "二本と富士山"
   },
   "taps": [
     {
@@ -4766,6 +4904,190 @@
                   ],
                   "gloss": [
                     "crested ibis"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 16,
+        "s": 1,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 104,
+          "surface": "本",
+          "lemma": "本",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ぽん",
+          "reading": "ほん",
+          "readings": [
+            "ほん",
+            "ぽん"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1522150:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "book"
+            ]
+          },
+          {
+            "key": "9500:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "counter for long objects"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "ぽん",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 9500,
+              "readings": [
+                "ぽん"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9500:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "counter for long objects"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1522150,
+              "readings": [
+                "ほん"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1522150:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "book"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 16,
+        "s": 5,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 105,
+          "surface": "山",
+          "lemma": "山",
+          "pos": "接尾辞",
+          "isProper": false,
+          "occurrenceReading": "さん",
+          "reading": "さん",
+          "readings": [
+            "やま",
+            "さん"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1586120:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "mountain"
+            ]
+          },
+          {
+            "key": "9600:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "Mt."
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "さん",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 9600,
+              "readings": [
+                "さん"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9600:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "Mt."
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1586120,
+              "readings": [
+                "やま"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1586120:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "mountain"
                   ]
                 }
               ]

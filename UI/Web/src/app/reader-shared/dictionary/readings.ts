@@ -22,6 +22,8 @@ export interface ResolverInput {
   hint: ReadingHint | null;
   tokenReading: string | null;
   blind: boolean;
+  /** The occurrence is a suffix or follows a numeral, from isBound. A part or a phrase is never bound */
+  bound: boolean;
 }
 
 /** What a word gives when its data has no `entries`, which version 2 data never has */
@@ -100,7 +102,7 @@ function hasKanji(text: string): boolean {
  * group and `bookOnly`
  */
 export function resolveReadings(input: ResolverInput): LookupReadings {
-  const {groups, marked, choice, hint, tokenReading, blind} = input;
+  const {groups, marked, choice, hint, tokenReading, blind, bound} = input;
   const has = (reading: string | null) => reading === null ? undefined : groups.find(g => g.readings.includes(reading));
 
   if (marked !== null) {
@@ -132,9 +134,10 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
   } else if (hint !== null && has(hint.reading) !== undefined) {
     [pick, source, level] = [hint.reading, hint.source, 'likely'];
   } else if (tokenReading !== null && has(tokenReading) !== undefined) {
-    // A blind reading is no evidence, so a rare group holding it gives way to the first common group
+    // A blind reading is no evidence, so a rare group holding it gives way to the first common group. A bound
+    // occurrence keeps it, since 二本 read ぽん or 山 read さん as a suffix is the reading JMdict files as rare
     const common = groups.find(g => g.common);
-    if (blind && common !== undefined && !has(tokenReading)!.common) {
+    if (blind && !bound && common !== undefined && !has(tokenReading)!.common) {
       [pick, source, level] = [common.readings[0], 'dictionary', 'guess'];
     } else {
       [pick, source, level] = [tokenReading, 'tokenizer', blind ? 'guess' : 'likely'];
@@ -144,6 +147,22 @@ export function resolveReadings(input: ResolverInput): LookupReadings {
   }
   const first = has(pick) ?? groups[0];
   return {level, source, shown: null, pick, bookOnly: false, groups: [first, ...groups.filter(g => g !== first)]};
+}
+
+/** The tokenizer's part of speech for a suffix, such as 家 read か after a surname */
+export const SUFFIX_POS = '接尾辞';
+
+/** The characters a counter follows, besides the digits */
+const NUMERAL_KANJI = '〇一二三四五六七八九十百千万億兆数何幾';
+
+/** True when the word is a suffix or the character before the occurrence at `s` is a numeral, as the server's IsBound */
+export function isBound(text: string, s: number, pos: string): boolean {
+  return pos === SUFFIX_POS || (s > 0 && s <= text.length && isNumeral(text[s - 1]));
+}
+
+/** True for an ASCII or full-width digit, or a kanji that a counter follows, such as 二, 百 or 何 */
+export function isNumeral(ch: string): boolean {
+  return (ch >= '0' && ch <= '9') || (ch >= '０' && ch <= '９') || NUMERAL_KANJI.includes(ch);
 }
 
 /** The dictionary-form pair of a marked reading when it has one, and the surface's reading otherwise */

@@ -171,6 +171,14 @@ describe('localLookup', () => {
       expect(tap(blinkPage({}, {blind: [0]}))).toMatchObject({level: 'likely'});
     });
 
+    it('keeps a blind rare reading after a numeral or on a suffix', () => {
+      const blind = blinkPage({}, {blind: [2]});
+      const afterNumeral = localLookup(blind, {block: 0, s: 2, sub: null}, '目二瞬いた')?.readings;
+      expect(afterNumeral).toMatchObject({level: 'guess', source: 'tokenizer', pick: 'しばたたく'});
+      expect(tap(blinkPage({pos: '接尾辞'}, {blind: [2]}))).toMatchObject({level: 'guess', source: 'tokenizer', pick: 'しばたたく'});
+      expect(firsts(blinkPage({pos: '接尾辞'}, {blind: [2]}))).toEqual(['しばたたく', 'またたく', 'めたたく']);
+    });
+
     it('picks a later reading of a group from the token reading in dictionary form', () => {
       const page = blinkPage();
       page.blocks[0].tokens[2] = [2, 5, 1, 'まばたいた', null];

@@ -2,6 +2,7 @@ import {LookupReadings, ReadingHint, Sense, WordEntry} from '../../_models/dicti
 import {markedReadingOf} from './marked-reading';
 import {
   groupKey,
+  isBound,
   markedForResolver,
   readingGroups,
   resolveReadings,
@@ -36,7 +37,8 @@ const say = readingGroups(sayEntries, [sense('50:1', 'to say'), sense('50:2', 't
 const series = (reading: string): ReadingHint => ({reading, printed: reading, source: 'series'});
 
 function input(overrides: Partial<ResolverInput>): ResolverInput {
-  return {groups: blink, marked: null, choice: null, hint: null, tokenReading: null, blind: false, ...overrides};
+  return {groups: blink, marked: null, choice: null, hint: null, tokenReading: null, blind: false, bound: false,
+    ...overrides};
 }
 
 const firsts = (readings: LookupReadings) => readings.groups.map(g => g.readings[0]);
@@ -130,6 +132,24 @@ describe('readingGroups', () => {
   });
 });
 
+describe('isBound', () => {
+  const cases: [string, number, string, boolean][] = [
+    ['二本', 1, '名詞', true],
+    ['２本', 1, '名詞', true],
+    ['2本', 1, '名詞', true],
+    ['何本', 1, '名詞', true],
+    ['に本', 1, '名詞', false],
+    ['本', 0, '名詞', false],
+    ['富士山', 2, '接尾辞', true],
+    ['山', 0, '接尾辞', true],
+  ];
+  for (const [text, s, pos, bound] of cases) {
+    it(`is ${bound} at ${s} of ${text} with the part of speech ${pos}`, () => {
+      expect(isBound(text, s, pos)).toBe(bound);
+    });
+  }
+});
+
 describe('resolveReadings', () => {
   const cases: {name: string, input: ResolverInput, level: string, source: string, shown: string | null,
     pick: string | null, bookOnly: boolean, firsts: string[]}[] = [
@@ -137,6 +157,15 @@ describe('resolveReadings', () => {
       name: '瞬く read しばたたく by fixed cost gives way to the common group, a guess from the dictionary',
       input: input({tokenReading: 'しばたたく', blind: true}),
       level: 'guess', source: 'dictionary', shown: null, pick: 'またたく', bookOnly: false, firsts: ['またたく', 'しばたたく', 'めたたく'],
+    },
+    {
+      name: 'a bound reading by fixed cost in a rare group stays a guess from the tokenizer',
+      input: input({
+        groups: readingGroups([{seq: 1, common: true, readings: ['ほん']}, {seq: 2, common: false, readings: ['ぽん']}],
+          [sense('1:1', 'book'), sense('2:1', 'counter for long objects')]),
+        tokenReading: 'ぽん', blind: true, bound: true,
+      }),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'ぽん', bookOnly: false, firsts: ['ぽん', 'ほん'],
     },
     {
       name: '瞬く read まばたく by fixed cost is in the common group, so a guess from the tokenizer',
