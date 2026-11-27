@@ -107,6 +107,77 @@ public class ReadingResolverTests
         Assert.Empty(ReadingGroups.Of(Blink with { Entries = null }));
     }
 
+    [Fact]
+    public void Groups_MergeEntriesThatAllHaveTheSameReading()
+    {
+        // そう as three JMdict entries, each read そう
+        WordEntryDto[] entries = [new(2137720, false, ["そう"]), new(1006830, true, ["そう"]), new(2833030, false, ["そう"])];
+        SenseDto[] senses = [Sense("2137720:1"), Sense("1006830:1"), Sense("1006830:2"), Sense("2833030:1")];
+
+        var group = Assert.Single(ReadingGroups.Of(entries, senses));
+
+        Assert.Equal(["そう"], group.Readings);
+        Assert.Equal(2137720L, group.Seq);
+        Assert.True(group.Common);
+        Assert.Equal(["2137720:1", "1006830:1", "1006830:2", "2833030:1"], group.Senses.Select(s => s.Key));
+    }
+
+    [Fact]
+    public void Groups_MergeEqualReadingsInPlaceAndKeepDifferentListsApart()
+    {
+        // 羅's [うすもの, ら] and [ら] share ら but stay apart. The second [ら] folds into the first, where it sat
+        WordEntryDto[] entries =
+        [
+            new(1, false, ["ら"]), new(2, false, ["うすもの", "ら"]), new(3, true, ["ら"]), new(4, false, ["あみ"]),
+        ];
+        SenseDto[] senses = [Sense("1:1"), Sense("2:1"), Sense("3:1"), Sense("4:1")];
+
+        var groups = ReadingGroups.Of(entries, senses);
+
+        Assert.Equal([["ら"], ["うすもの", "ら"], ["あみ"]], groups.Select(g => g.Readings.ToArray()));
+        Assert.Equal([1L, 2L, 4L], groups.Select(g => g.Seq));
+        Assert.Equal(["1:1", "3:1"], groups[0].Senses.Select(s => s.Key));
+        Assert.Equal([true, false, false], groups.Select(g => g.Common));
+    }
+
+    [Fact]
+    public void Groups_MergeSplitPartsWithEqualReadingsAcrossEntries()
+    {
+        // Both entries restrict a sense to こんにち, so each splits into [きょう] and [こんにち], and the parts merge
+        WordEntryDto[] entries = [new(10, true, ["きょう", "こんにち"]), new(20, false, ["きょう", "こんにち"])];
+        SenseDto[] senses = [Sense("10:1"), Sense("10:2", "こんにち"), Sense("20:1"), Sense("20:2", "こんにち")];
+
+        var groups = ReadingGroups.Of(entries, senses);
+
+        Assert.Equal(["きょう", "こんにち"], groups.Select(g => g.Readings.Single()));
+        Assert.Equal(["10:1", "20:1"], groups[0].Senses.Select(s => s.Key));
+        Assert.Equal(["10:1", "10:2", "20:1", "20:2"], groups[1].Senses.Select(s => s.Key));
+        Assert.All(groups, g => Assert.Equal(10L, g.Seq));
+    }
+
+    [Fact]
+    public void Groups_OfAKanaLemmaAreOneGroupReadAsTheLemma()
+    {
+        // ちょ printed in kana, whose first entry is 一寸 read いっすん
+        WordEntryDto[] entries = [new(1160790, false, ["いっすん"]), new(1008950, true, ["ちょっと", "ちょと", "ちょいと"])];
+        SenseDto[] senses = [Sense("1160790:1"), Sense("1008950:1"), Sense("1008950:2", "ちょっと")];
+        var word = new StoredWord(3, "チョ", "副詞", false, "ちょ", null, ["いっすん", "ちょっと"], senses, "lex")
+        {
+            Entries = entries,
+        };
+
+        var group = Assert.Single(ReadingGroups.Of(word));
+
+        Assert.Equal(["ちょ"], group.Readings);
+        Assert.Equal(1160790L, group.Seq);
+        Assert.True(group.Common);
+        Assert.Equal(["1160790:1", "1008950:1", "1008950:2"], group.Senses.Select(s => s.Key));
+
+        var result = ReadingResolver.Resolve(ReadingResolver.ForPhrase(word));
+        Assert.Equal((ReadingLevel.Certain, ReadingSource.Dictionary, "ちょ"), (result.Level, result.Source, result.Pick));
+        Assert.Empty(ReadingGroups.Of(word with { Entries = [] }));
+    }
+
     #endregion
 
     #region Resolver

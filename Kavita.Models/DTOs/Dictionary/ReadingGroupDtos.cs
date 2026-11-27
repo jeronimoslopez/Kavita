@@ -6,12 +6,14 @@ namespace Kavita.Models.DTOs.Dictionary;
 
 /// <summary>
 /// The senses of a word the popup shows under one reading tab. A group is one JMdict entry, or the part of one whose
-/// readings share the same senses when the entry restricts some senses by reading
+/// readings share the same senses when the entry restricts some senses by reading, with every such part that has the
+/// same readings list folded into the first. A word whose lemma has no kanji has one group holding all its senses
 /// </summary>
-/// <param name="Seq">The JMdict seq of the group's entry</param>
-/// <param name="Readings">The group's readings in hiragana, in the entry's order</param>
-/// <param name="Common">The entry's <see cref="WordEntryDto.Common"/></param>
-/// <param name="Senses">The entry's senses that apply to these readings, in the word's order</param>
+/// <param name="Seq">The JMdict seq of the group's first entry</param>
+/// <param name="Readings">The group's readings in hiragana, in the entry's order. For a word whose lemma has no
+/// kanji, the lemma in hiragana alone</param>
+/// <param name="Common">True when the <see cref="WordEntryDto.Common"/> of any entry in the group is</param>
+/// <param name="Senses">The senses that apply to these readings, in the word's order</param>
 public sealed record ReadingGroupDto(long Seq, IList<string> Readings, bool Common, IList<SenseDto> Senses);
 
 /// <summary>

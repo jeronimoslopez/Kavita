@@ -133,7 +133,7 @@ export function localLookup(page: EpubPageTokens, request: LocalLookupRequest,
 function readingsOf(word: EpubPageWord, input: Partial<Omit<ResolverInput, 'groups'>>): LookupReadings {
   if (word.entries === undefined) return {...NO_READINGS, groups: []};
   return resolveReadings({
-    groups: readingGroups(word.entries, word.senses ?? []),
+    groups: readingGroups(word.entries, word.senses ?? [], word.lemma),
     marked: null, choice: null, hint: null, tokenReading: null, blind: false,
     ...input,
   });

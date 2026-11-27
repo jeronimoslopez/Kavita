@@ -44,11 +44,16 @@ export interface ReadingHint {
   source: 'book' | 'series';
 }
 
-/** One JMdict entry, or the part of one whose senses apply to the same readings */
+/**
+ * One JMdict entry, or the part of one whose senses apply to the same readings, with every such part that has the
+ * same readings list folded into the first. A word whose lemma has no kanji has one group holding all its senses
+ */
 export interface ReadingGroup {
+  /** The group's first entry */
   seq: number;
-  /** In entry order */
+  /** In entry order. The lemma in hiragana alone for a word whose lemma has no kanji */
   readings: string[];
+  /** True when any entry in the group is */
   common: boolean;
   senses: Sense[];
 }
