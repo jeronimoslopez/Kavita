@@ -15,8 +15,10 @@ namespace Kavita.Services.Dictionary;
 /// <param name="TokenReading">The tokenizer's reading of the occurrence in dictionary form, or the word's reading when
 /// that can't be had</param>
 /// <param name="Blind">The tokenizer chose the occurrence's reading by fixed cost alone</param>
+/// <param name="Bound">The occurrence is a suffix or follows a numeral, where the tokenizer's reading is the counter's
+/// or the suffix's and often sits in a group JMdict doesn't mark common</param>
 public sealed record ReadingInputs(IReadOnlyList<ReadingGroupDto>? Groups, MarkedReadingResult? Marked, string? Choice,
-    ReadingHintDto? Hint, string? TokenReading, bool Blind);
+    ReadingHintDto? Hint, string? TokenReading, bool Blind, bool Bound = false);
 
 /// <summary>
 /// Orders a word's reading groups for one lookup and says how sure the first one is. The reader runs a TypeScript
@@ -64,9 +66,10 @@ public static class ReadingResolver
         }
         else if (ReadingGroups.AnyHas(groups, inputs.TokenReading))
         {
-            // A blind reading is no evidence, so a rare group holding it gives way to the first common group
+            // A blind reading is no evidence, so a rare group holding it gives way to the first common group. A bound
+            // occurrence keeps it, since 二本 read ぽん or 山 read さん as a suffix is the reading JMdict files as rare
             var common = groups.FirstOrDefault(g => g.Common);
-            var blindRare = inputs.Blind && common != null
+            var blindRare = inputs.Blind && !inputs.Bound && common != null
                 && !groups.First(g => g.Readings.Contains(inputs.TokenReading!)).Common;
             (pick, source, level) = blindRare
                 ? (common!.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess)
@@ -90,7 +93,26 @@ public static class ReadingResolver
     public static ReadingInputs ForToken(StoredBlock block, TokenDto token, StoredWord word, string? choice,
         ReadingHintDto? hint) =>
         new(GroupsOf(word), MarkedReading.Of(block.Text, token, block.Ruby, word.Lemma), choice, hint,
-            TokenReading(block.Text, token.S, token.E, token.R, word), block.Blind.Contains(token.S));
+            TokenReading(block.Text, token.S, token.E, token.R, word), block.Blind.Contains(token.S),
+            IsBound(block.Text, token.S, word));
+
+    /// <summary>
+    /// The tokenizer's part of speech for a suffix, such as 家 read か after a surname
+    /// </summary>
+    public const string SuffixPos = "接尾辞";
+
+    /// <summary>
+    /// The characters a counter follows, besides the digits
+    /// </summary>
+    private const string NumeralKanji = "〇一二三四五六七八九十百千万億兆数何幾";
+
+    /// <returns>True when the word is a suffix or the character before the occurrence is a numeral</returns>
+    public static bool IsBound(string text, int s, StoredWord word) =>
+        word.Pos == SuffixPos || (s > 0 && s <= text.Length && IsNumeral(text[s - 1]));
+
+    /// <returns>True for an ASCII or full-width digit, or a kanji that a counter follows, such as 二, 百 or 何</returns>
+    public static bool IsNumeral(char ch) =>
+        ch is >= '0' and <= '9' or >= '０' and <= '９' || NumeralKanji.Contains(ch);
 
     /// <summary>
     /// The inputs for one part of a compound, from the part's own text, reading and lemma. A part has no furigana,

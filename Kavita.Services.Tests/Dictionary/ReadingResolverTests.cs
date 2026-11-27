@@ -42,9 +42,24 @@ public class ReadingResolverTests
     private static IReadOnlyList<ReadingGroupDto> RareGroups =>
         ReadingGroups.Of([new WordEntryDto(1, false, ["とき"]), new WordEntryDto(2, false, ["つき"])], [Sense("1:1"), Sense("2:1")]);
 
+    /// <summary>
+    /// 本 read ほん in a common entry, and the counter's ぽん and ぼん in an entry JMdict doesn't mark common
+    /// </summary>
+    private static readonly WordEntryDto[] BookEntries = [new(1522150, true, ["ほん"]), new(2, false, ["ぽん", "ぼん"])];
+
+    private static readonly SenseDto[] BookSenses = [Sense("1522150:1"), Sense("2:1")];
+
+    private static StoredWord Book => new(4, "本", "名詞", false, "ほん", 5, ["ほん", "ぽん", "ぼん"], BookSenses, "lex")
+    {
+        Entries = BookEntries,
+    };
+
+    private static IReadOnlyList<ReadingGroupDto> BookGroups => ReadingGroups.Of(BookEntries, BookSenses);
+
     private static ReadingInputs Inputs(IReadOnlyList<ReadingGroupDto>? groups, MarkedReadingResult? marked = null,
-        string? choice = null, ReadingHintDto? hint = null, string? tokenReading = null, bool blind = false) =>
-        new(groups, marked, choice, hint, tokenReading, blind);
+        string? choice = null, ReadingHintDto? hint = null, string? tokenReading = null, bool blind = false,
+        bool bound = false) =>
+        new(groups, marked, choice, hint, tokenReading, blind, bound);
 
     private static IEnumerable<string> FirstReadings(ReadingsDto result) => result.Groups.Select(g => g.Readings[0]);
 
@@ -200,6 +215,18 @@ public class ReadingResolverTests
             Inputs(BlinkGroups, tokenReading: "しばたたく", blind: true),
             new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "またたく", false, []),
             ["またたく", "しばたたく", "めたたく"]
+        },
+        {
+            "a bound blind token in a rare group keeps the tokenizer's reading, as a guess",
+            Inputs(BookGroups, tokenReading: "ぽん", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "ぽん", false, []),
+            ["ぽん", "ほん"]
+        },
+        {
+            "the same token unbound gives way to the common group",
+            Inputs(BookGroups, tokenReading: "ぽん", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "ほん", false, []),
+            ["ほん", "ぽん"]
         },
         {
             "a token the sentence chose in a rare group still wins",
@@ -397,6 +424,50 @@ public class ReadingResolverTests
         var result = ReadingResolver.Resolve(inputs);
         Assert.Equal(ReadingsDto.None with { Groups = result.Groups }, result);
         Assert.Empty(result.Groups);
+    }
+
+    [Theory]
+    [InlineData("二本", 1, "名詞", true)]
+    [InlineData("２本", 1, "名詞", true)] // full-width digit
+    [InlineData("2本", 1, "名詞", true)]
+    [InlineData("何本", 1, "名詞", true)]
+    [InlineData("に本", 1, "名詞", false)]
+    [InlineData("本", 0, "名詞", false)] // nothing before the token
+    [InlineData("富士山", 2, "接尾辞", true)] // a suffix, whatever comes before it
+    [InlineData("山", 0, "接尾辞", true)]
+    public void ForToken_IsBoundForASuffixOrAfterANumeral(string text, int s, string pos, bool bound)
+    {
+        var block = new StoredBlock(0, text, [new TokenDto(s, s + 1, 4, "ぽん", null)]) { Blind = [s] };
+
+        var inputs = ReadingResolver.ForToken(block, block.Tokens[0], Book with { Pos = pos }, null, null);
+
+        Assert.Equal(bound, inputs.Bound);
+        Assert.True(inputs.Blind);
+    }
+
+    [Fact]
+    public void ForToken_OfACounterAfterANumeralOpensOnTheTokenizersReading()
+    {
+        // The tokenizer reads 本 after 二 as ぽん by fixed cost
+        var block = new StoredBlock(0, "二本", [new TokenDto(0, 1, 5, "に", null), new TokenDto(1, 2, 4, "ぽん", null)])
+        {
+            Blind = [1],
+        };
+
+        var result = ReadingResolver.Resolve(ReadingResolver.ForToken(block, block.Tokens[1], Book, null, null));
+
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Tokenizer, "ぽん"), (result.Level, result.Source, result.Pick));
+        Assert.Equal(["ぽん", "ほん"], FirstReadings(result));
+    }
+
+    [Fact]
+    public void ForToken_OfBlinkAfterAParticleIsNotBound()
+    {
+        var block = BlinkBlock(blind: [2]);
+
+        var result = ReadingResolver.Resolve(ReadingResolver.ForToken(block, block.Tokens[2] with { R = "しばたたい" }, Blink, null, null));
+
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Dictionary, "またたく"), (result.Level, result.Source, result.Pick));
     }
 
     [Theory]
