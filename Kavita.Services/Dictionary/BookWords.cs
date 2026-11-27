@@ -61,6 +61,14 @@ public static class BookWords
     /// span, when there is one, isn't all numerals. That's names whose reading happens to be their kanji's, such as
     /// 羅半 under ラハン over 羅 ら and 半 はん.</item>
     /// </list>
+    /// <para>
+    /// The spans of one <c>ruby</c> element, which share a <see cref="RubyDto.Group"/>, count as one span when they
+    /// follow each other with no gap, each one starting where the one before it ends, and no span of another element
+    /// overlaps them. That span runs from the first one's start to the last one's end, and its reading is theirs in a
+    /// row, so <c>&lt;rb&gt;羅&lt;/rb&gt;&lt;rt&gt;ラ&lt;/rt&gt;&lt;rb&gt;半&lt;/rb&gt;&lt;rt&gt;ハン&lt;/rt&gt;</c> in one
+    /// element reads as 羅半 under ラハン. Otherwise each of them is a span on its own. Spans of different elements never
+    /// join, so a book that marks every kanji in its own element joins nothing.
+    /// </para>
     /// </remarks>
     /// <param name="text">The block's text</param>
     /// <param name="tokens">The block's top-level tokens in text order</param>
@@ -70,8 +78,7 @@ public static class BookWords
         var result = new List<BookWord>();
         if (ruby.Count == 0 || tokens.Count < 2) return result;
 
-        var kana = ruby.Where(r => r.S >= 0 && r.E <= text.Length && r.S < r.E && MarkedReading.IsKanaReading(r.Reading))
-            .OrderBy(r => r.S).ToList();
+        var kana = JoinGroups(ruby.Where(r => r.S >= 0 && r.E <= text.Length && r.S < r.E).ToList());
         for (var i = 0; i < kana.Count; i++)
         {
             var span = kana[i];
@@ -96,6 +103,49 @@ public static class BookWords
             if (defines) result.Add(new BookWord(text[span.S..span.E], reading, span.Reading));
         }
         return result;
+    }
+
+    /// <summary>
+    /// The spans with a kana reading, each group that qualifies as one span, ordered by start
+    /// </summary>
+    /// <remarks>
+    /// A group qualifies when it has two or more spans, every one of them has a kana reading, each starts where the one
+    /// before it ends, and no kana span outside the group overlaps it. Spans of a group that doesn't qualify are kept
+    /// on their own
+    /// </remarks>
+    /// <param name="ruby">Spans inside the block's text</param>
+    private static List<RubyDto> JoinGroups(IReadOnlyList<RubyDto> ruby)
+    {
+        var kana = ruby.Where(r => MarkedReading.IsKanaReading(r.Reading)).OrderBy(r => r.S).ToList();
+        if (kana.All(r => r.Group == null)) return kana;
+
+        var result = kana.Where(r => r.Group == null).ToList();
+        foreach (var group in ruby.Where(r => r.Group != null).GroupBy(r => r.Group))
+        {
+            var members = group.OrderBy(r => r.S).ToList();
+            var joined = JoinGroup(members, kana);
+            if (joined != null) result.Add(joined);
+            else result.AddRange(members.Where(r => MarkedReading.IsKanaReading(r.Reading)));
+        }
+        return result.OrderBy(r => r.S).ToList();
+    }
+
+    /// <param name="members">One group's spans ordered by start</param>
+    /// <param name="kana">Every kana span of the block</param>
+    /// <returns>The group as one span, or null when it doesn't qualify</returns>
+    private static RubyDto? JoinGroup(IReadOnlyList<RubyDto> members, IReadOnlyList<RubyDto> kana)
+    {
+        if (members.Count < 2) return null;
+        for (var i = 0; i < members.Count; i++)
+        {
+            if (!MarkedReading.IsKanaReading(members[i].Reading)) return null;
+            if (i > 0 && members[i].S != members[i - 1].E) return null;
+        }
+
+        var s = members[0].S;
+        var e = members[^1].E;
+        if (kana.Any(r => r.Group != members[0].Group && r.S < e && r.E > s)) return null;
+        return new RubyDto(s, e, string.Concat(members.Select(r => r.Reading)));
     }
 
     /// <summary>

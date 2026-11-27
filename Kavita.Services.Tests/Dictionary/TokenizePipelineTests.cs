@@ -275,7 +275,7 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
         // Until the worker gets to it, the page keeps the tokens it had
         var waiting = (await _store.GetUnitAsync(file.Id, 0))!;
         Assert.Equal(ReadingUnitState.Refresh, waiting.State);
-        Assert.Equal(Version(1), waiting.TokenizerVersion);
+        Assert.Equal(TokenizeService.StoredVersion(Version(1)), waiting.TokenizerVersion);
         Assert.All(waiting.Blocks, b => Assert.Empty(b.Phrases));
 
         _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 2));
@@ -291,11 +291,49 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
 
         var saved = (await _store.GetUnitAsync(file.Id, 0))!;
         Assert.Equal(ReadingUnitState.Done, saved.State);
-        Assert.Equal(Version(2), saved.TokenizerVersion);
+        Assert.Equal(TokenizeService.StoredVersion(Version(2)), saved.TokenizerVersion);
         Assert.Contains(saved.Blocks, b => b.Phrases.Count == 1);
         await eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryPagesReady,
             Arg.Is<SignalRMessageDto>(m => ((DictionaryPagesReadyEventBodyDto) m.Body!).Pages.SequenceEqual(new[] { 0 })),
             false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OpeningAChapterStoredBeforeTheTextVersion_RetokenizesItAndFindsItsRubyGroupBookWords()
+    {
+        const string page = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja">
+            <head><title>一</title></head>
+            <body><p><ruby><rb>羅</rb><rt>ラ</rt><rb>半</rb><rt>ハン</rt></ruby>は</p></body>
+            </html>
+            """;
+        var (_, service, files) = await Setup([page.ReplaceLineEndings("\n")]);
+        var file = files[0];
+        await service.DetectNewFilesAsync();
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 2));
+        Assert.Equal(TokenizeUnitOutcome.UnitDone, (await service.ProcessUnitAsync((await service.GetNextUnitAsync())!, SidecarUrl)).Outcome);
+        Assert.Equal([("羅半", "らはん", "ラハン")],
+            (await _store.GetBookWordsAsync([file.Id])).Select(w => (w.Text, w.Reading, w.Printed)));
+
+        // The page as a Kavita before ruby groups stored it, with the sidecar's version alone
+        var current = (await _store.GetUnitAsync(file.Id, 0))!;
+        var old = current.Blocks.Select(b => b with { Ruby = b.Ruby.Select(r => r with { Group = null }).ToList() }).ToList();
+        Assert.True(await _store.SaveTokenizedUnitAsync(current.Id, current.SourceStamp, Version(2), old));
+        Assert.Empty(await _store.GetBookWordsAsync([file.Id]));
+
+        _httpTest.RespondWithJson(new { version = Version(2) });
+        await service.PrioritizeChapterAsync(file.ChapterId);
+        Assert.Equal(ReadingUnitState.Refresh, (await _store.GetUnitAsync(file.Id, 0))!.State);
+
+        _httpTest.RespondWith(await SidecarAnswerAsync(file.FilePath, 0, sidecar: 2));
+        Assert.Equal(TokenizeUnitOutcome.UnitDone, (await service.ProcessUnitAsync((await service.GetNextUnitAsync())!, SidecarUrl)).Outcome);
+
+        var saved = (await _store.GetUnitAsync(file.Id, 0))!;
+        Assert.Equal(TokenizeService.StoredVersion(Version(2)), saved.TokenizerVersion);
+        Assert.Equal([0, 0], saved.Blocks[0].Ruby.Select(r => r.Group));
+        Assert.Equal([("羅半", "らはん", "ラハン")],
+            (await _store.GetBookWordsAsync([file.Id])).Select(w => (w.Text, w.Reading, w.Printed)));
     }
 
     [Fact]
@@ -329,7 +367,7 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
 
         // The same row, keyed on (lemma, pos, isProper), now has the entries and the restriction
         var after = (await _store.GetUnitAsync(file.Id, 0))!;
-        Assert.Equal(Version(3), after.TokenizerVersion);
+        Assert.Equal(TokenizeService.StoredVersion(Version(3)), after.TokenizerVersion);
         Assert.Equal(wordId, after.Blocks.SelectMany(b => b.Tokens).First(t => t.W != null).W);
         var word = (await _store.GetWordsAsync([wordId]))[wordId];
         Assert.Equal("test", word.LexiconVersion);

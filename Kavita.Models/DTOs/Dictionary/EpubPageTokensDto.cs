@@ -41,7 +41,8 @@ public sealed record EpubPageTokensDto
 /// <see cref="DictionaryLookupRequestDto.Phrase"/> index that looks it up. Word ids are reading.db word ids. Null, and
 /// left out of the JSON, when the block has none</param>
 /// <param name="Ruby">The block's furigana as <c>[s, e, reading]</c> spans over its text, with the reading as the book
-/// prints it. Null, and left out of the JSON, when the block has none</param>
+/// prints it, and <c>[s, e, reading, group]</c> for the spans of a <c>ruby</c> element that has two or more, as
+/// <see cref="RubyDto.Group"/> says. Null, and left out of the JSON, when the block has none</param>
 /// <param name="Blind">The start offsets of the top-level tokens whose reading the tokenizer chose by fixed cost alone.
 /// Null, and left out of the JSON, when the block has none</param>
 public sealed record EpubPageBlockDto(int Index, int Length, IList<TokenDto> Tokens,

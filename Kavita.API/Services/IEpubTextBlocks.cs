@@ -46,7 +46,9 @@ public sealed record EpubTextBlock(int Index, HtmlNode Node, string Text)
 {
     /// <summary>
     /// The block's furigana in document order, one span per <c>rt</c> with a reading over a base with text. Offsets
-    /// are UTF-16 offsets into <see cref="Text"/>, which never holds the readings themselves
+    /// are UTF-16 offsets into <see cref="Text"/>, which never holds the readings themselves. The spans of a
+    /// <c>ruby</c> element with two or more of them share a <see cref="RubyDto.Group"/>, numbered from 0 in the order
+    /// the walk leaves the elements
     /// </summary>
     public IReadOnlyList<RubyDto> Ruby { get; init; } = [];
 }

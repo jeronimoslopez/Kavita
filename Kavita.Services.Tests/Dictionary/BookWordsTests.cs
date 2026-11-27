@@ -178,6 +178,93 @@ public class BookWordsTests
         Assert.Equal([new BookWord("𠮟責", "しっせき", "しっせき")], BookWords.Detect("𠮟責", tokens, [new RubyDto(0, 3, "しっせき")]));
     }
 
+    /// <summary>
+    /// The book words of one paragraph of markup, with its text cut into tokens of the given lengths and readings
+    /// </summary>
+    private static IReadOnlyList<BookWord> DetectMarkup(string paragraph, params (int Length, string? R)[] pieces)
+    {
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml($"<html><body>{paragraph}</body></html>");
+        var block = Assert.Single(new EpubTextBlocks().GetBlocks(doc.DocumentNode.SelectSingleNode("//body")));
+
+        var tokens = new List<TokenDto>();
+        var offset = 0;
+        foreach (var (length, r) in pieces)
+        {
+            tokens.Add(new TokenDto(offset, offset + length, 1, r, null));
+            offset += length;
+        }
+        Assert.Equal(block.Text.Length, offset);
+        return BookWords.Detect(block.Text, tokens, block.Ruby);
+    }
+
+    [Fact]
+    public void Detect_OneRubyElementWithAReadingPerKanji_IsOneBookWord()
+    {
+        var words = DetectMarkup("<p><ruby><rb>羅</rb><rt>ラ</rt><rb>半</rb><rt>ハン</rt></ruby>は</p>",
+            (1, "ら"), (1, "はん"), (1, "は"));
+
+        Assert.Equal([new BookWord("羅半", "らはん", "ラハン")], words);
+    }
+
+    [Fact]
+    public void Detect_OneRubyElementWithoutRb_IsOneBookWord()
+    {
+        var words = DetectMarkup("<p><ruby>馬<rt>バ</rt>閃<rt>セン</rt></ruby>が</p>", (1, "うま"), (1, "せん"), (1, "が"));
+
+        Assert.Equal([new BookWord("馬閃", "ばせん", "バセン")], words);
+    }
+
+    [Fact]
+    public void Detect_ARubyElementPerKanji_JoinsNothing()
+    {
+        Assert.Empty(DetectMarkup("<p><ruby>羅<rt>ら</rt></ruby><ruby>半<rt>はん</rt></ruby>は</p>",
+            (1, "ら"), (1, "はん"), (1, "は")));
+    }
+
+    [Fact]
+    public void Detect_AGroupOverOneToken_IsNotABookWord()
+    {
+        Assert.Empty(DetectMarkup("<p><ruby>高<rt>ガオ</rt>順<rt>シュン</rt></ruby>は</p>", (2, "こうじゅん"), (1, "は")));
+    }
+
+    [Fact]
+    public void Detect_AGroupWithAGap_FallsBackToItsSpansOnTheirOwn()
+    {
+        // と sits between the group's two spans unmarked, so the group isn't one run of text
+        var tokens = new List<TokenDto> { new(0, 1, 1, null, null), new(1, 2, 2, null, null), new(2, 3, 3, null, null) };
+        RubyDto[] ruby = [new(0, 1, "スイ", 0), new(2, 3, "レイ", 0)];
+
+        Assert.Empty(BookWords.Detect("翠と苓", tokens, ruby));
+    }
+
+    [Fact]
+    public void Detect_AGroupInsideAnotherSpan_FallsBackToTheSpansOnTheirOwn()
+    {
+        // An outer ruby over 翠苓 overlaps the group, so neither joins, as overlapping spans never do
+        var tokens = new List<TokenDto> { new(0, 1, 1, null, null), new(1, 2, 2, null, null) };
+        RubyDto[] ruby = [new(0, 1, "スイ", 0), new(1, 2, "レイ", 0), new(0, 2, "スイレイ")];
+
+        Assert.Empty(BookWords.Detect("翠苓", tokens, ruby));
+    }
+
+    [Fact]
+    public void Detect_AGroupWithANonKanaReading_FallsBackToTheSpansOnTheirOwn()
+    {
+        var tokens = new List<TokenDto> { new(0, 1, 1, null, null), new(1, 2, 2, null, null), new(2, 3, 3, null, null) };
+        RubyDto[] ruby = [new(0, 2, "スイレイ", 0), new(2, 3, "・", 0)];
+
+        // The kana span still qualifies on its own, over 翠 and 苓
+        Assert.Equal(["翠苓"], BookWords.Detect("翠苓様", tokens, ruby).Select(w => w.Text));
+    }
+
+    [Fact]
+    public void Detect_AGroupOfOrdinaryWordsReadAsTheirPieces_IsNotABookWord()
+    {
+        // 漢字 read かんじ is the pieces' reading and the pieces aren't all one kanji each
+        Assert.Empty(DetectMarkup("<p><ruby>漢字<rt>かんじ</rt>書<rt>か</rt></ruby>く</p>", (2, "かんじ"), (1, "か"), (1, "く")));
+    }
+
     [Theory]
     [InlineData("4", true)]
     [InlineData("１２", true)]

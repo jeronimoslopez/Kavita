@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Kavita.Models.DTOs.Dictionary;
+using Kavita.Services.Dictionary;
 
 namespace Kavita.Services.Tests.Dictionary;
 
@@ -128,6 +129,28 @@ public class TokenizeContractTests
     public void Phrase_RejectsTheWrongShape(string json)
     {
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<PhraseDto>(json));
+    }
+
+    [Fact]
+    public void Ruby_RoundTripsWithAGroupAndLeavesItOutWithout()
+    {
+        Assert.Equal("""[0,1,"ラ",3]""", JsonSerializer.Serialize(new RubyDto(0, 1, "ラ", 3), ReadingJson.Options));
+        Assert.Equal("""[0,2,"かんじ"]""", JsonSerializer.Serialize(new RubyDto(0, 2, "かんじ"), ReadingJson.Options));
+        Assert.Equal(new RubyDto(0, 1, "ラ", 3), JsonSerializer.Deserialize<RubyDto>("""[0,1,"ラ",3]"""));
+        // The form stored before groups existed
+        Assert.Equal(new RubyDto(0, 2, "かんじ"), JsonSerializer.Deserialize<RubyDto>("""[0,2,"かんじ"]"""));
+        Assert.Equal(new RubyDto(0, 2, "かんじ"), JsonSerializer.Deserialize<RubyDto>("""[0,2,"かんじ",null]"""));
+    }
+
+    [Theory]
+    [InlineData("[0,2]")]
+    [InlineData("[0,2,null]")]
+    [InlineData("[0,2,\"x\",1,2]")]
+    [InlineData("[0,2,\"x\",\"1\"]")]
+    [InlineData("{\"s\":0}")]
+    public void Ruby_RejectsTheWrongShape(string json)
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<RubyDto>(json));
     }
 
     [Theory]

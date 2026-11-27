@@ -81,9 +81,10 @@ export interface EpubPageBlock {
   phrases?: Phrase[];
   /**
    * The block's furigana, `[s, e, reading]` with UTF-16 offsets of the base into the block's text and the `rt` text as
-   * the book prints it. Missing when the block has none
+   * the book prints it. A span of a `ruby` element with two or more spans has a fourth item, the same number for each
+   * span of that element. Missing when the block has none
    */
-  ruby?: [s: number, e: number, reading: string][];
+  ruby?: [s: number, e: number, reading: string, group?: number][];
   /** Start offsets of the top-level tokens whose reading the tokenizer chose by fixed cost. Missing when there are none */
   blind?: number[];
 }
