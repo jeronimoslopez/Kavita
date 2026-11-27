@@ -99,17 +99,20 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
 
     /// <summary>
     /// The marked readings of some words over the units of some files, summed per word, reading and printed form.
-    /// Furigana marks few of a book's words, so it reads each word's rows through ix_reading_mark_word and then each
-    /// row's unit by id. CROSS JOIN keeps that order, where the planner would otherwise read every unit of the files
-    /// and look each word up in each. Public so the tests can check the plan
+    /// It reads the files' units through unit's (kind, manga_file_id, page) key and then each unit's marks for the
+    /// words through reading_mark's (unit_id, word_id, reading) key. That costs a seek per unit and word asked about,
+    /// and it never reads a mark from a file it wasn't asked about. Starting from the words would read a common word's
+    /// marks over the whole library, because such a word is marked in nearly every book. reading.db has no ANALYZE
+    /// statistics, so CROSS JOIN fixes the order the planner would otherwise be free to flip. Public so the tests can
+    /// check the plan
     /// </summary>
     /// <param name="files">The IN list of file id parameters</param>
     /// <param name="words">The IN list of word id parameters</param>
     public static string ReadingMarkTotalsSql(string files, string words) => $"""
         SELECT m.word_id, m.reading, m.printed, SUM(m.count)
-        FROM reading_mark m
-        CROSS JOIN unit u ON u.id = m.unit_id
-        WHERE m.word_id IN ({words}) AND u.kind = $kind AND u.manga_file_id IN ({files})
+        FROM unit u
+        CROSS JOIN reading_mark m ON m.unit_id = u.id
+        WHERE u.kind = $kind AND u.manga_file_id IN ({files}) AND m.word_id IN ({words})
         GROUP BY m.word_id, m.reading, m.printed
         """;
 

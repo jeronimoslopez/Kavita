@@ -117,8 +117,9 @@ public class ReadingDatabase
     /// What version 4 adds. word.entries holds the word's JMdict entries as a JSON array, [] for a word no entry
     /// matched, and is null for a word written by a sidecar before version 3 until a page using it is tokenized again. reading_choice has a row per
     /// user, series and word with the reading the user picked for the word in that series. Only a user's own rows are
-    /// ever read, so the key starts with the user. ix_reading_mark_word lets a page's hints read the few marks of its
-    /// words without visiting every page of the series
+    /// ever read, so the key starts with the user. ix_reading_mark_word indexes the marks by word. A page's hints
+    /// don't need it, because they read the units of the files asked about first and then each unit's marks by
+    /// unit_id and word_id, which reading_mark's key serves on its own
     /// </summary>
     internal const string Version4Schema = """
         ALTER TABLE word ADD COLUMN entries TEXT NULL;

@@ -644,13 +644,16 @@ public class ReadingDatabaseTests : IDisposable
 
     [Theory]
     [MemberData(nameof(MarkTotals))]
-    public async Task MarkTotals_ReadEachWordsMarksAndThenTheirUnitsById(string sql)
+    public async Task MarkTotals_ReadTheFilesUnitsAndThenEachUnitsMarksForTheWords(string sql)
     {
         var plan = await PlanAsync(sql);
 
-        Assert.Equal("SEARCH m USING INDEX ix_reading_mark_word (word_id=?)", plan[0]);
-        Assert.Contains("SEARCH u USING INTEGER PRIMARY KEY (rowid=?)", plan);
-        Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
+        // Starting from unit, and reaching reading_mark only by unit_id, keeps the marks of other files unread
+        Assert.Equal([
+            "SEARCH u USING COVERING INDEX sqlite_autoindex_unit_1 (kind=? AND manga_file_id=?)",
+            "SEARCH m USING PRIMARY KEY (unit_id=? AND word_id=?)",
+            "USE TEMP B-TREE FOR GROUP BY",
+        ], plan);
     }
 
     [Fact]
