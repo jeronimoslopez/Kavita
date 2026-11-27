@@ -483,6 +483,47 @@
             null
           ]
         ]
+      },
+      {
+        "index": 13,
+        "length": 7,
+        "tokens": [
+          [
+            0,
+            2,
+            100,
+            "そう",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            4,
+            null,
+            null,
+            null
+          ],
+          [
+            4,
+            6,
+            101,
+            "ちょ",
+            null
+          ],
+          [
+            6,
+            7,
+            102,
+            "こと",
+            null
+          ]
+        ]
       }
     ],
     "words": {
@@ -1242,6 +1283,177 @@
           "printed": "バセン",
           "source": "series"
         }
+      },
+      "100": {
+        "lemma": "そう",
+        "reading": "そう",
+        "jlpt": 5,
+        "pos": "副詞",
+        "readings": [
+          "そう"
+        ],
+        "senses": [
+          {
+            "key": "1006610:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "so, really"
+            ]
+          },
+          {
+            "key": "2137720:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "I hear"
+            ]
+          },
+          {
+            "key": "2833030:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "appearing"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1006610,
+            "common": true,
+            "readings": [
+              "そう"
+            ]
+          },
+          {
+            "seq": 2137720,
+            "common": false,
+            "readings": [
+              "そう"
+            ]
+          },
+          {
+            "seq": 2833030,
+            "common": false,
+            "readings": [
+              "そう"
+            ]
+          }
+        ]
+      },
+      "101": {
+        "lemma": "ちょ",
+        "reading": "ちょ",
+        "jlpt": null,
+        "pos": "副詞",
+        "readings": [
+          "いっすん",
+          "ちょっと",
+          "ちょと"
+        ],
+        "senses": [
+          {
+            "key": "1160790:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "one sun"
+            ]
+          },
+          {
+            "key": "1008950:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "a little"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1160790,
+            "common": false,
+            "readings": [
+              "いっすん"
+            ]
+          },
+          {
+            "seq": 1008950,
+            "common": true,
+            "readings": [
+              "ちょっと",
+              "ちょと"
+            ]
+          }
+        ]
+      },
+      "102": {
+        "lemma": "事",
+        "reading": "こと",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "こと",
+          "じ"
+        ],
+        "senses": [
+          {
+            "key": "1313580:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "thing, matter"
+            ]
+          },
+          {
+            "key": "2827864:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "fact"
+            ]
+          },
+          {
+            "key": "1313590:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "affair"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1313580,
+            "common": true,
+            "readings": [
+              "こと"
+            ]
+          },
+          {
+            "seq": 2827864,
+            "common": false,
+            "readings": [
+              "こと"
+            ]
+          },
+          {
+            "seq": 1313590,
+            "common": false,
+            "readings": [
+              "じ"
+            ]
+          }
+        ]
       }
     },
     "analysis": [
@@ -1281,7 +1493,8 @@
     "9": "小姐と高順",
     "10": "瞬き星",
     "11": "翠苓は翠苓と",
-    "12": "馬閃が"
+    "12": "馬閃が",
+    "13": "そうだ、ちょ事"
   },
   "taps": [
     {
@@ -3862,6 +4075,300 @@
         "phrase": null
       },
       "result": null
+    },
+    {
+      "request": {
+        "block": 13,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 100,
+          "surface": "そう",
+          "lemma": "そう",
+          "pos": "副詞",
+          "isProper": false,
+          "occurrenceReading": "そう",
+          "reading": "そう",
+          "readings": [
+            "そう"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1006610:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "so, really"
+            ]
+          },
+          {
+            "key": "2137720:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "I hear"
+            ]
+          },
+          {
+            "key": "2833030:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "appearing"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "そう",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1006610,
+              "readings": [
+                "そう"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1006610:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "so, really"
+                  ]
+                },
+                {
+                  "key": "2137720:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "I hear"
+                  ]
+                },
+                {
+                  "key": "2833030:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "appearing"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 13,
+        "s": 4,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 101,
+          "surface": "ちょ",
+          "lemma": "ちょ",
+          "pos": "副詞",
+          "isProper": false,
+          "occurrenceReading": "ちょ",
+          "reading": "ちょ",
+          "readings": [
+            "いっすん",
+            "ちょっと",
+            "ちょと"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "1160790:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "one sun"
+            ]
+          },
+          {
+            "key": "1008950:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "a little"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "ちょ",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1160790,
+              "readings": [
+                "ちょ"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1160790:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "one sun"
+                  ]
+                },
+                {
+                  "key": "1008950:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "a little"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 13,
+        "s": 6,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 102,
+          "surface": "事",
+          "lemma": "事",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "こと",
+          "reading": "こと",
+          "readings": [
+            "こと",
+            "じ"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1313580:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "thing, matter"
+            ]
+          },
+          {
+            "key": "2827864:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "fact"
+            ]
+          },
+          {
+            "key": "1313590:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "affair"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "likely",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "こと",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1313580,
+              "readings": [
+                "こと"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1313580:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "thing, matter"
+                  ]
+                },
+                {
+                  "key": "2827864:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "fact"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1313590,
+              "readings": [
+                "じ"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1313590:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "affair"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   ]
 }

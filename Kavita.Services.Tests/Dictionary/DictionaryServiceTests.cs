@@ -561,6 +561,32 @@ public class DictionaryServiceTests : AbstractDbTest
     {
         Entries = [],
     };
+    /// <summary>
+    /// A kana word whose three entries are all read そう, so one group
+    /// </summary>
+    private static readonly StoredWord Sou = new(100, "そう", "副詞", false, "そう", 5, ["そう"],
+        [Sense("1006610:1", "so, really"), Sense("2137720:1", "I hear"), Sense("2833030:1", "appearing")], "lex1")
+    {
+        Entries = [new WordEntryDto(1006610, true, ["そう"]), new WordEntryDto(2137720, false, ["そう"]),
+            new WordEntryDto(2833030, false, ["そう"])],
+    };
+    /// <summary>
+    /// A kana word whose first entry is 一寸 read いっすん, so one group read ちょ
+    /// </summary>
+    private static readonly StoredWord Cho = new(101, "ちょ", "副詞", false, "ちょ", null, ["いっすん", "ちょっと", "ちょと"],
+        [Sense("1160790:1", "one sun"), Sense("1008950:1", "a little")], "lex1")
+    {
+        Entries = [new WordEntryDto(1160790, false, ["いっすん"]), new WordEntryDto(1008950, true, ["ちょっと", "ちょと"])],
+    };
+    /// <summary>
+    /// Two entries read こと, which merge, and one read じ
+    /// </summary>
+    private static readonly StoredWord Koto = new(102, "事", "名詞", false, "こと", 5, ["こと", "じ"],
+        [Sense("1313580:1", "thing, matter"), Sense("2827864:1", "fact"), Sense("1313590:1", "affair")], "lex1")
+    {
+        Entries = [new WordEntryDto(1313580, true, ["こと"]), new WordEntryDto(2827864, false, ["こと"]),
+            new WordEntryDto(1313590, false, ["じ"])],
+    };
 
     /// <summary>
     /// The opened file defines 翠苓, and another file of the series defines 馬閃
@@ -648,10 +674,16 @@ public class DictionaryServiceTests : AbstractDbTest
             // The book word 馬閃, defined only by another file of the series, with a part that has no word
             new StoredBlock(12, "馬閃が",
                 [new TokenDto(0, 1, Uma.Id, "うま", null), new TokenDto(1, 2, null, "せん", null), new TokenDto(2, 3, null, null, null)]),
+            // Kana words whose entries give one group, and a kanji word whose entries read こと merge
+            new StoredBlock(13, "そうだ、ちょ事",
+            [
+                new TokenDto(0, 2, Sou.Id, "そう", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 4, null, null, null),
+                new TokenDto(4, 6, Cho.Id, "ちょ", null), new TokenDto(6, 7, Koto.Id, "こと", null),
+            ]),
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
-            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen);
+            Blink, Hiraku, Hoshi, Jouzu, Kyou, Shoujo, Iu, Gaoshun, Midori, Rei, Uma, Suirei, Basen, Sou, Cho, Koto);
         GivenBookWords(file);
         GivenMarks(file.Id,
             book: [new WordMarkTotals(Hiraku.Id, 4, [new ReadingMarkTotal("あく", "あく", 1)]),
@@ -723,6 +755,9 @@ public class DictionaryServiceTests : AbstractDbTest
         (11, 1, null, null), // null, inside a joined token
         (12, 0, null, null), // a book word only the series defines, by the series' hint
         (12, 0, 1, null), // null, a piece without a word
+        (13, 0, null, null), // a kana word whose entries all read そう, one group
+        (13, 4, null, null), // a kana word whose first entry reads いっすん, one group read ちょ
+        (13, 6, null, null), // a kanji word whose こと entries merge, two groups
     ];
 
     /// <summary>

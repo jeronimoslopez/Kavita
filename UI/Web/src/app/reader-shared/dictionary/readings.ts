@@ -5,7 +5,7 @@ import {
   Sense,
   WordEntry,
 } from '../../_models/dictionary/dictionary';
-import {dictionaryForm, MarkedReadingResult} from './marked-reading';
+import {dictionaryForm, isKanji, MarkedReadingResult, toHiraganaServer} from './marked-reading';
 
 /** The reading the book's furigana gives an occurrence, in the form the resolver compares */
 export interface MarkedReading {
@@ -32,11 +32,23 @@ export const NO_READINGS: LookupReadings = Object.freeze({
 /**
  * A word's senses in reading groups. Each entry's readings split into classes of readings that exactly the same
  * senses of the entry apply to, and each class with a sense is a group. Classes keep the order of their first reading.
- * A sense applies to a reading when it has no `r` or its `r` holds the reading
+ * A sense applies to a reading when it has no `r` or its `r` holds the reading. Groups with equal readings lists then
+ * merge into the first of them, since their tabs would offer no choice of reading. A word whose lemma has no kanji has
+ * one group, read as the lemma in hiragana, because its reading is what the book prints. A null `lemma` groups by the
+ * entries alone
  */
-export function readingGroups(entries: readonly WordEntry[] | undefined, senses: readonly Sense[]): ReadingGroup[] {
+export function readingGroups(entries: readonly WordEntry[] | undefined, senses: readonly Sense[],
+                              lemma: string | null = null): ReadingGroup[] {
+  if (entries === undefined || entries.length === 0) return [];
+  if (lemma !== null && !hasKanji(lemma)) {
+    return [{
+      seq: entries[0].seq, readings: [toHiraganaServer(lemma)], common: entries.some(e => e.common),
+      senses: [...senses],
+    }];
+  }
+
   const groups: ReadingGroup[] = [];
-  for (const entry of entries ?? []) {
+  for (const entry of entries) {
     const prefix = `${entry.seq}:`;
     const own = senses.filter(s => s.key.startsWith(prefix));
     const classes = new Map<string, {readings: string[], senses: Sense[]}>();
@@ -51,7 +63,35 @@ export function readingGroups(entries: readonly WordEntry[] | undefined, senses:
       if (applicable.length > 0) groups.push({seq: entry.seq, readings, common: entry.common, senses: applicable});
     }
   }
-  return groups;
+  return mergeEqualReadings(groups);
+}
+
+/**
+ * Folds each group into the first group whose readings are the same in the same order. The merged group sits where
+ * that first group sat, keeps its seq, holds the senses of all of them in order, and is common when any is
+ */
+function mergeEqualReadings(groups: readonly ReadingGroup[]): ReadingGroup[] {
+  const merged: ReadingGroup[] = [];
+  const at = new Map<string, number>();
+  for (const group of groups) {
+    const signature = group.readings.join('\n');
+    const index = at.get(signature);
+    if (index === undefined) {
+      at.set(signature, merged.length);
+      merged.push(group);
+      continue;
+    }
+    const first = merged[index];
+    merged[index] = {...first, common: first.common || group.common, senses: [...first.senses, ...group.senses]};
+  }
+  return merged;
+}
+
+function hasKanji(text: string): boolean {
+  for (const ch of text) {
+    if (isKanji(ch.codePointAt(0) ?? 0)) return true;
+  }
+  return false;
 }
 
 /**

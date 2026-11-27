@@ -68,6 +68,61 @@ describe('readingGroups', () => {
   it('gives no groups without entries', () => {
     expect(readingGroups(undefined, blinkSenses)).toEqual([]);
     expect(readingGroups([], blinkSenses)).toEqual([]);
+    expect(readingGroups([], blinkSenses, 'ちょ')).toEqual([]);
+  });
+
+  it('merges entries that all have the same reading into one group with every sense', () => {
+    const senses = [sense('70:1', 'so'), sense('71:1', 'I hear'), sense('71:2', 'they say'), sense('72:1', 'appearing')];
+    const groups = readingGroups([
+      {seq: 70, common: false, readings: ['そう']},
+      {seq: 71, common: true, readings: ['そう']},
+      {seq: 72, common: false, readings: ['そう']},
+    ], senses);
+    expect(groups).toEqual([{seq: 70, readings: ['そう'], common: true, senses}]);
+  });
+
+  it('merges equal readings lists where the first sat and keeps different lists apart', () => {
+    const senses = [sense('1:1', 'a'), sense('2:1', 'b'), sense('3:1', 'c'), sense('4:1', 'd')];
+    const groups = readingGroups([
+      {seq: 1, common: false, readings: ['ら']},
+      {seq: 2, common: false, readings: ['うすもの', 'ら']},
+      {seq: 3, common: true, readings: ['ら']},
+      {seq: 4, common: false, readings: ['あみ']},
+    ], senses);
+    expect(groups).toEqual([
+      {seq: 1, readings: ['ら'], common: true, senses: [senses[0], senses[2]]},
+      {seq: 2, readings: ['うすもの', 'ら'], common: false, senses: [senses[1]]},
+      {seq: 4, readings: ['あみ'], common: false, senses: [senses[3]]},
+    ]);
+  });
+
+  it('merges parts split by restricted senses when their readings are equal', () => {
+    const senses = [
+      sense('80:1', 'today'), sense('80:2', 'nowadays', ['こんにち']),
+      sense('81:1', 'this day'), sense('81:2', 'these days', ['こんにち']),
+    ];
+    const groups = readingGroups([
+      {seq: 80, common: true, readings: ['きょう', 'こんにち']},
+      {seq: 81, common: false, readings: ['きょう', 'こんにち']},
+    ], senses);
+    expect(groups).toEqual([
+      {seq: 80, readings: ['きょう'], common: true, senses: [senses[0], senses[2]]},
+      {seq: 80, readings: ['こんにち'], common: true, senses},
+    ]);
+  });
+
+  it('gives a word whose lemma has no kanji one group read as the lemma', () => {
+    const senses = [sense('90:1', 'one sun'), sense('91:1', 'a little'), sense('91:2', 'hey', ['ちょっと'])];
+    const entries: WordEntry[] = [
+      {seq: 90, common: false, readings: ['いっすん']},
+      {seq: 91, common: true, readings: ['ちょっと', 'ちょと']},
+    ];
+    const groups = readingGroups(entries, senses, 'チョ');
+    expect(groups).toEqual([{seq: 90, readings: ['ちょ'], common: true, senses}]);
+
+    const readings = resolveReadings(input({groups, tokenReading: 'ちょ'}));
+    expect(readings).toEqual({level: 'certain', source: 'dictionary', shown: null, pick: 'ちょ', bookOnly: false, groups});
+    expect(readingGroups(entries, senses, '一寸').map(g => g.readings)).toEqual([['いっすん'], ['ちょっと'], ['ちょと']]);
   });
 
   it('keys a group by its entry and first reading', () => {
