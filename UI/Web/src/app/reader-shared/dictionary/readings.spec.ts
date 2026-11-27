@@ -8,6 +8,7 @@ import {
   resolveReadings,
   ResolverInput,
   tokenReadingOf,
+  unvoiceFirst,
 } from './readings';
 
 const sense = (key: string, gloss: string, r?: string[]): Sense =>
@@ -33,6 +34,14 @@ const todaySenses = [sense('40:1', 'today'), sense('40:2', 'nowadays', ['こん�
 
 const sayEntries: WordEntry[] = [{seq: 50, common: true, readings: ['いう', 'ゆう']}];
 const say = readingGroups(sayEntries, [sense('50:1', 'to say'), sense('50:2', 'to call')]);
+
+/** 杯 read さかずき in a common entry, and the counter's plain はい, つき and はた in entries that aren't */
+const cup = readingGroups([
+  {seq: 1, common: true, readings: ['さかずき', 'さかづき']},
+  {seq: 2, common: false, readings: ['はい']},
+  {seq: 3, common: false, readings: ['つき']},
+  {seq: 4, common: false, readings: ['はた']},
+], [sense('1:1', 'sake cup'), sense('2:1', 'counter for cupfuls'), sense('3:1', 'moon'), sense('4:1', 'flag')]);
 
 const series = (reading: string): ReadingHint => ({reading, printed: reading, source: 'series'});
 
@@ -150,6 +159,23 @@ describe('isBound', () => {
   }
 });
 
+describe('unvoiceFirst', () => {
+  const cases: [string, string][] = [
+    ['が', 'か'], ['ぎ', 'き'], ['ぐ', 'く'], ['げ', 'け'], ['ご', 'こ'],
+    ['ざ', 'さ'], ['じ', 'し'], ['ず', 'す'], ['ぜ', 'せ'], ['ぞ', 'そ'],
+    ['だ', 'た'], ['ぢ', 'ち'], ['づ', 'つ'], ['で', 'て'], ['ど', 'と'],
+    ['ば', 'は'], ['び', 'ひ'], ['ぶ', 'ふ'], ['べ', 'へ'], ['ぼ', 'ほ'],
+    ['ぱ', 'は'], ['ぴ', 'ひ'], ['ぷ', 'ふ'], ['ぺ', 'へ'], ['ぽ', 'ほ'],
+    ['びゃく', 'ひゃく'], ['ぽん', 'ほん'], ['ばぶ', 'はぶ'],
+    ['はい', 'はい'], ['', ''],
+  ];
+  for (const [reading, expected] of cases) {
+    it(`gives ${expected || 'nothing'} for ${reading || 'nothing'}`, () => {
+      expect(unvoiceFirst(reading)).toBe(expected);
+    });
+  }
+});
+
 describe('resolveReadings', () => {
   const cases: {name: string, input: ResolverInput, level: string, source: string, shown: string | null,
     pick: string | null, bookOnly: boolean, firsts: string[]}[] = [
@@ -166,6 +192,39 @@ describe('resolveReadings', () => {
         tokenReading: 'ぽん', blind: true, bound: true,
       }),
       level: 'guess', source: 'tokenizer', shown: null, pick: 'ぽん', bookOnly: false, firsts: ['ぽん', 'ほん'],
+    },
+    {
+      name: 'a bound 杯 read ばい by fixed cost, which no group has, opens on the plain はい as a guess from the tokenizer',
+      input: input({groups: cup, tokenReading: 'ばい', blind: true, bound: true}),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'はい', bookOnly: false,
+      firsts: ['はい', 'さかずき', 'つき', 'はた'],
+    },
+    {
+      name: 'a bound 本 read ぽん by fixed cost with no ぽん group opens on ほん from the tokenizer',
+      input: input({
+        groups: readingGroups([{seq: 1, common: true, readings: ['ほん']}, {seq: 2, common: true, readings: ['もと']}],
+          [sense('1:1', 'book'), sense('2:1', 'origin')]),
+        tokenReading: 'ぽん', blind: true, bound: true,
+      }),
+      level: 'guess', source: 'tokenizer', shown: null, pick: 'ほん', bookOnly: false, firsts: ['ほん', 'もと'],
+    },
+    {
+      name: 'the same 杯 unbound still falls back to the first group',
+      input: input({groups: cup, tokenReading: 'ばい', blind: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'さかずき', bookOnly: false,
+      firsts: ['さかずき', 'はい', 'つき', 'はた'],
+    },
+    {
+      name: 'a bound 杯 read ばい that the sentence chose is likely',
+      input: input({groups: cup, tokenReading: 'ばい', bound: true}),
+      level: 'likely', source: 'tokenizer', shown: null, pick: 'はい', bookOnly: false,
+      firsts: ['はい', 'さかずき', 'つき', 'はた'],
+    },
+    {
+      name: 'a bound token whose plain reading no group has either falls back to the first group',
+      input: input({groups: cup, tokenReading: 'ばん', blind: true, bound: true}),
+      level: 'guess', source: 'dictionary', shown: null, pick: 'さかずき', bookOnly: false,
+      firsts: ['さかずき', 'はい', 'つき', 'はた'],
     },
     {
       name: '瞬く read まばたく by fixed cost is in the common group, so a guess from the tokenizer',

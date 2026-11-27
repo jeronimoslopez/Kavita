@@ -179,6 +179,26 @@ describe('localLookup', () => {
       expect(firsts(blinkPage({pos: '接尾辞'}, {blind: [2]}))).toEqual(['しばたたく', 'またたく', 'めたたく']);
     });
 
+    it('opens a voiced counter after a numeral on its plain reading\'s group', () => {
+      const cup: EpubPageWord = {
+        lemma: '杯', reading: 'さかずき', jlpt: 5, pos: '名詞', readings: ['さかずき', 'さかづき', 'はい'],
+        senses: [sense('60:1', 'sake cup'), sense('61:1', 'counter for cupfuls')],
+        entries: [{seq: 60, common: true, readings: ['さかずき', 'さかづき']}, {seq: 61, common: false, readings: ['はい']}],
+      };
+      const cupPage = (blind: number[]): EpubPageTokens => ({
+        version: 'v3', seriesId: 7,
+        blocks: [{index: 0, length: 2, tokens: [[0, 1, null, null, null], [1, 2, 1, 'ばい', null]], phrases: [], blind}],
+        words: {1: cup}, analysis: [],
+      });
+      const cupTap = (page: EpubPageTokens, blockText: string) =>
+        localLookup(page, {block: 0, s: 1, sub: null}, blockText)?.readings;
+
+      expect(cupTap(cupPage([1]), '二杯')).toMatchObject({level: 'guess', source: 'tokenizer', pick: 'はい'});
+      expect(cupTap(cupPage([1]), '二杯')?.groups.map(g => g.readings[0])).toEqual(['はい', 'さかずき']);
+      expect(cupTap(cupPage([]), '二杯')).toMatchObject({level: 'likely', source: 'tokenizer', pick: 'はい'});
+      expect(cupTap(cupPage([1]), 'の杯')).toMatchObject({level: 'guess', source: 'dictionary', pick: 'さかずき'});
+    });
+
     it('picks a later reading of a group from the token reading in dictionary form', () => {
       const page = blinkPage();
       page.blocks[0].tokens[2] = [2, 5, 1, 'まばたいた', null];

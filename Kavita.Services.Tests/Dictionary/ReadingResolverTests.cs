@@ -56,6 +56,16 @@ public class ReadingResolverTests
 
     private static IReadOnlyList<ReadingGroupDto> BookGroups => ReadingGroups.Of(BookEntries, BookSenses);
 
+    /// <summary>
+    /// 杯 read さかずき in a common entry, and the counter's はい, つき and はた in entries JMdict doesn't mark common
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> CupGroups => ReadingGroups.Of(
+        [
+            new WordEntryDto(1, true, ["さかずき", "さかづき"]), new WordEntryDto(2, false, ["はい"]),
+            new WordEntryDto(3, false, ["つき"]), new WordEntryDto(4, false, ["はた"]),
+        ],
+        [Sense("1:1"), Sense("2:1"), Sense("3:1"), Sense("4:1")]);
+
     private static ReadingInputs Inputs(IReadOnlyList<ReadingGroupDto>? groups, MarkedReadingResult? marked = null,
         string? choice = null, ReadingHintDto? hint = null, string? tokenReading = null, bool blind = false,
         bool bound = false) =>
@@ -229,6 +239,37 @@ public class ReadingResolverTests
             ["ほん", "ぽん"]
         },
         {
+            "a bound blind 杯 read ばい, which no group has, opens on the group with the plain はい, as a guess",
+            Inputs(CupGroups, tokenReading: "ばい", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "はい", false, []),
+            ["はい", "さかずき", "つき", "はた"]
+        },
+        {
+            "a bound blind 本 read ぽん with no ぽん group opens on ほん from the tokenizer",
+            Inputs(ReadingGroups.Of([new WordEntryDto(1, true, ["ほん"]), new WordEntryDto(2, true, ["もと"])],
+                [Sense("1:1"), Sense("2:1")]), tokenReading: "ぽん", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "ほん", false, []),
+            ["ほん", "もと"]
+        },
+        {
+            "the same 杯 unbound still falls back to the first group",
+            Inputs(CupGroups, tokenReading: "ばい", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "さかずき", false, []),
+            ["さかずき", "はい", "つき", "はた"]
+        },
+        {
+            "a bound 杯 read ばい that the sentence chose is likely",
+            Inputs(CupGroups, tokenReading: "ばい", bound: true),
+            new ReadingsDto(ReadingLevel.Likely, ReadingSource.Tokenizer, null, "はい", false, []),
+            ["はい", "さかずき", "つき", "はた"]
+        },
+        {
+            "a bound token whose plain reading no group has either falls back to the first group",
+            Inputs(CupGroups, tokenReading: "ばん", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "さかずき", false, []),
+            ["さかずき", "はい", "つき", "はた"]
+        },
+        {
             "a token the sentence chose in a rare group still wins",
             Inputs(BlinkGroups, tokenReading: "しばたたく"),
             new ReadingsDto(ReadingLevel.Likely, ReadingSource.Tokenizer, null, "しばたたく", false, []),
@@ -353,6 +394,19 @@ public class ReadingResolverTests
 
         Assert.True(expected == result with { Groups = expected.Groups }, $"{why}: got {result}");
         Assert.Equal(firstReadings, FirstReadings(result));
+    }
+
+    [Theory]
+    [InlineData("が", "か"), InlineData("ぎ", "き"), InlineData("ぐ", "く"), InlineData("げ", "け"), InlineData("ご", "こ")]
+    [InlineData("ざ", "さ"), InlineData("じ", "し"), InlineData("ず", "す"), InlineData("ぜ", "せ"), InlineData("ぞ", "そ")]
+    [InlineData("だ", "た"), InlineData("ぢ", "ち"), InlineData("づ", "つ"), InlineData("で", "て"), InlineData("ど", "と")]
+    [InlineData("ば", "は"), InlineData("び", "ひ"), InlineData("ぶ", "ふ"), InlineData("べ", "へ"), InlineData("ぼ", "ほ")]
+    [InlineData("ぱ", "は"), InlineData("ぴ", "ひ"), InlineData("ぷ", "ふ"), InlineData("ぺ", "へ"), InlineData("ぽ", "ほ")]
+    [InlineData("びゃく", "ひゃく"), InlineData("ぽん", "ほん"), InlineData("ばぶ", "はぶ")]
+    [InlineData("はい", "はい"), InlineData("", "")]
+    public void UnvoiceFirst_TakesTheMarkOffTheFirstKanaOnly(string reading, string expected)
+    {
+        Assert.Equal(expected, ReadingResolver.UnvoiceFirst(reading));
     }
 
     [Fact]

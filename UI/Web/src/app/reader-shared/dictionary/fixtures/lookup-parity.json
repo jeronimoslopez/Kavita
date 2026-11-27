@@ -634,6 +634,29 @@
           1,
           5
         ]
+      },
+      {
+        "index": 17,
+        "length": 2,
+        "tokens": [
+          [
+            0,
+            1,
+            null,
+            null,
+            null
+          ],
+          [
+            1,
+            2,
+            106,
+            "ばい",
+            null
+          ]
+        ],
+        "blind": [
+          1
+        ]
       }
     ],
     "words": {
@@ -1702,6 +1725,54 @@
             ]
           }
         ]
+      },
+      "106": {
+        "lemma": "杯",
+        "reading": "さかずき",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "さかずき",
+          "さかづき",
+          "はい"
+        ],
+        "senses": [
+          {
+            "key": "1325220:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "sake cup"
+            ]
+          },
+          {
+            "key": "9700:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "counter for cupfuls"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1325220,
+            "common": true,
+            "readings": [
+              "さかずき",
+              "さかづき"
+            ]
+          },
+          {
+            "seq": 9700,
+            "common": false,
+            "readings": [
+              "はい"
+            ]
+          }
+        ]
       }
     },
     "analysis": [
@@ -1745,7 +1816,8 @@
     "13": "そうだ、ちょ事",
     "14": "今日だ",
     "15": "今日の鴇",
-    "16": "二本と富士山"
+    "16": "二本と富士山",
+    "17": "二杯"
   },
   "taps": [
     {
@@ -5088,6 +5160,100 @@
                   ],
                   "gloss": [
                     "mountain"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 17,
+        "s": 1,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 106,
+          "surface": "杯",
+          "lemma": "杯",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ばい",
+          "reading": "さかずき",
+          "readings": [
+            "さかずき",
+            "さかづき",
+            "はい"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1325220:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "sake cup"
+            ]
+          },
+          {
+            "key": "9700:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "counter for cupfuls"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "はい",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 9700,
+              "readings": [
+                "はい"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "9700:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "counter for cupfuls"
+                  ]
+                }
+              ]
+            },
+            {
+              "seq": 1325220,
+              "readings": [
+                "さかずき",
+                "さかづき"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1325220:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "sake cup"
                   ]
                 }
               ]
