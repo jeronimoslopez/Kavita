@@ -84,16 +84,16 @@ public class EpubTextBlocksTests
         { "<p><ruby>漢字<rt>かんじ</rt></ruby>を書く</p>", "漢字を書く", [new RubyDto(0, 2, "かんじ")] },
         // One span per rb and rt pair
         { "<p><ruby><rb>漢</rb><rt>かん</rt><rb>字</rb><rt>じ</rt></ruby></p>", "漢字",
-            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+            [new RubyDto(0, 1, "かん", 0), new RubyDto(1, 2, "じ", 0)] },
         // Every rb first and every rt after, paired in order
         { "<p><ruby><rb>漢</rb><rb>字</rb><rt>かん</rt><rt>じ</rt></ruby></p>", "漢字",
-            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+            [new RubyDto(0, 1, "かん", 0), new RubyDto(1, 2, "じ", 0)] },
         // Bases without rb, each up to its rt
-        { "<p><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+        { "<p><ruby>漢<rt>かん</rt>字<rt>じ</rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん", 0), new RubyDto(1, 2, "じ", 0)] },
         // rp fallbacks are in neither the text nor the reading
         { "<p><ruby>始<rp>（</rp><rt>はじ</rt><rp>）</rp></ruby>まり</p>", "始まり", [new RubyDto(0, 1, "はじ")] },
         { "<p><ruby>漢<rp>(</rp><rt>かん</rt><rp>)</rp>字<rp>(</rp><rt>じ</rt><rp>)</rp></ruby></p>", "漢字",
-            [new RubyDto(0, 1, "かん"), new RubyDto(1, 2, "じ")] },
+            [new RubyDto(0, 1, "かん", 0), new RubyDto(1, 2, "じ", 0)] },
         // Markup inside rt is read through
         { "<p><ruby>東京<rt><span class='k'>とう</span><b>きょう</b></rt></ruby></p>", "東京", [new RubyDto(0, 2, "とうきょう")] },
         // An empty rt, or one of whitespace, gives no span
@@ -116,6 +116,15 @@ public class EpubTextBlocksTests
         { "<p><ruby>漢字<rtc><rt>かんじ</rt></rtc></ruby></p>", "漢字", [new RubyDto(0, 2, "かんじ")] },
         // An rb left without an rt gives no span
         { "<p><ruby><rb>漢</rb><rb>字</rb><rt>かん</rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん")] },
+        // The spans of each ruby with several rt elements share a group, numbered from 0 in each block
+        { "<p><ruby><rb>羅</rb><rt>ラ</rt><rb>半</rb><rt>ハン</rt></ruby>と<ruby>馬<rt>バ</rt>閃<rt>セン</rt></ruby></p>",
+            "羅半と馬閃",
+            [new RubyDto(0, 1, "ラ", 0), new RubyDto(1, 2, "ハン", 0), new RubyDto(3, 4, "バ", 1), new RubyDto(4, 5, "セン", 1)] },
+        // A ruby element per kanji gives spans without a group
+        { "<p><ruby>羅<rt>ら</rt></ruby><ruby>半<rt>はん</rt></ruby></p>", "羅半",
+            [new RubyDto(0, 1, "ら"), new RubyDto(1, 2, "はん")] },
+        // A ruby whose second rt gives no span has one span, so no group
+        { "<p><ruby>漢<rt>かん</rt>字<rt> </rt></ruby></p>", "漢字", [new RubyDto(0, 1, "かん")] },
         // Entities decode in the reading as in the text
         { "<p><ruby>&#x5B57;<rt>&#x3058;</rt></ruby></p>", "字", [new RubyDto(0, 1, "じ")] },
     };

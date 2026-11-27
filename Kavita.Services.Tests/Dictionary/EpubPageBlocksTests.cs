@@ -200,7 +200,7 @@ public class EpubPageBlocksTests
         Assert.Equal(
         [
             [],
-            [new RubyDto(0, 2, "とうきょう"), new RubyDto(3, 5, "おおさか"), new RubyDto(10, 11, "と"), new RubyDto(11, 12, "し")],
+            [new RubyDto(0, 2, "とうきょう"), new RubyDto(3, 5, "おおさか"), new RubyDto(10, 11, "と", 0), new RubyDto(11, 12, "し", 0)],
             [], [], [],
         ], second.Select(b => b.Ruby));
         // Each span's base is the text the book prints the reading over

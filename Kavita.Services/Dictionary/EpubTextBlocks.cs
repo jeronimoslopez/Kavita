@@ -179,6 +179,10 @@ public class EpubTextBlocks : IEpubTextBlocks
         /// The <c>rb</c> elements no <c>rt</c> has read yet, as text offsets, so <c>rb rb rt rt</c> pairs in order
         /// </summary>
         public Queue<(int S, int E)> Bases { get; } = new();
+        /// <summary>
+        /// The spans this element's <c>rt</c> elements gave, in the order they were read
+        /// </summary>
+        public List<RubyDto> Spans { get; } = [];
     }
 
     /// <summary>
@@ -202,6 +206,7 @@ public class EpubTextBlocks : IEpubTextBlocks
     {
         var text = new StringBuilder();
         var ruby = new List<RubyDto>();
+        var group = 0;
         // Innermost last, so a ruby nested in another's base reads its own rt elements
         var rubies = new List<OpenRuby>();
         var open = new Stack<OpenTextElement>();
@@ -212,7 +217,11 @@ public class EpubTextBlocks : IEpubTextBlocks
             if (element.NextChild >= element.Node.ChildNodes.Count)
             {
                 open.Pop();
-                if (element.Ruby != null) rubies.RemoveAt(rubies.Count - 1);
+                if (element.Ruby != null)
+                {
+                    rubies.RemoveAt(rubies.Count - 1);
+                    AddSpans(element.Ruby, ruby, ref group);
+                }
                 if (element.RbStart >= 0) rubies[^1].Bases.Enqueue((element.RbStart, text.Length));
                 continue;
             }
@@ -223,7 +232,7 @@ public class EpubTextBlocks : IEpubTextBlocks
                     text.Append(DecodeAsBrowser(textNode));
                     break;
                 case { NodeType: HtmlNodeType.Element } rt when rubies.Count > 0 && IsTag(rt, "rt"):
-                    AddReading(rubies[^1], ReadingText(rt), text, ruby);
+                    AddReading(rubies[^1], ReadingText(rt), text);
                     break;
                 case { NodeType: HtmlNodeType.Element } child when !SkippedTags.Contains(child.Name):
                     if (IsTag(child, "ruby"))
@@ -247,11 +256,27 @@ public class EpubTextBlocks : IEpubTextBlocks
     private static bool IsTag(HtmlNode node, string name) => node.Name.Equals(name, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Adds the spans of a <c>ruby</c> element the walk is leaving. When it gave two or more, they all get the block's
+    /// next group number
+    /// </summary>
+    private static void AddSpans(OpenRuby openRuby, List<RubyDto> ruby, ref int group)
+    {
+        if (openRuby.Spans.Count < 2)
+        {
+            ruby.AddRange(openRuby.Spans);
+            return;
+        }
+
+        foreach (var span in openRuby.Spans) ruby.Add(span with { Group = group });
+        group++;
+    }
+
+    /// <summary>
     /// Pairs an <c>rt</c> with the oldest unread <c>rb</c> of its ruby, or with the text since the ruby's start or its
     /// last <c>rt</c>. Whitespace around the base or the reading isn't part of either, and a base or a reading that's
     /// empty without it gives no span
     /// </summary>
-    private static void AddReading(OpenRuby openRuby, string reading, StringBuilder text, List<RubyDto> ruby)
+    private static void AddReading(OpenRuby openRuby, string reading, StringBuilder text)
     {
         var (s, e) = openRuby.Bases.Count > 0 ? openRuby.Bases.Dequeue() : (openRuby.SegmentStart, text.Length);
         openRuby.SegmentStart = text.Length;
@@ -259,7 +284,7 @@ public class EpubTextBlocks : IEpubTextBlocks
         while (s < e && char.IsWhiteSpace(text[s])) s++;
         while (e > s && char.IsWhiteSpace(text[e - 1])) e--;
         reading = reading.Trim();
-        if (s < e && reading.Length > 0) ruby.Add(new RubyDto(s, e, reading));
+        if (s < e && reading.Length > 0) openRuby.Spans.Add(new RubyDto(s, e, reading));
     }
 
     /// <summary>

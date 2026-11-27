@@ -524,6 +524,40 @@
             null
           ]
         ]
+      },
+      {
+        "index": 14,
+        "length": 3,
+        "tokens": [
+          [
+            0,
+            2,
+            94,
+            "きょう",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ]
+        ],
+        "ruby": [
+          [
+            0,
+            1,
+            "こん",
+            0
+          ],
+          [
+            1,
+            2,
+            "にち",
+            0
+          ]
+        ]
       }
     ],
     "words": {
@@ -1494,7 +1528,8 @@
     "10": "瞬き星",
     "11": "翠苓は翠苓と",
     "12": "馬閃が",
-    "13": "そうだ、ちょ事"
+    "13": "そうだ、ちょ事",
+    "14": "今日だ"
   },
   "taps": [
     {
@@ -4362,6 +4397,96 @@
                   ],
                   "gloss": [
                     "affair"
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 14,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 94,
+          "surface": "今日",
+          "lemma": "今日",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "きょう",
+          "reading": "きょう",
+          "readings": [
+            "きょう",
+            "こんにち",
+            "こんち"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1579110:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "today"
+            ]
+          },
+          {
+            "key": "1579110:2",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "these days"
+            ],
+            "r": [
+              "こんにち"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "certain",
+          "source": "furigana",
+          "shown": "こんにち",
+          "pick": "こんにち",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1579110,
+              "readings": [
+                "こんにち"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1579110:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "today"
+                  ]
+                },
+                {
+                  "key": "1579110:2",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "these days"
+                  ],
+                  "r": [
+                    "こんにち"
                   ]
                 }
               ]

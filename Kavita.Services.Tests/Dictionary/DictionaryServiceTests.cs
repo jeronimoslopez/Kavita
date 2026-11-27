@@ -680,6 +680,10 @@ public class DictionaryServiceTests : AbstractDbTest
                 new TokenDto(0, 2, Sou.Id, "そう", null), new TokenDto(2, 3, null, null, null), new TokenDto(3, 4, null, null, null),
                 new TokenDto(4, 6, Cho.Id, "ちょ", null), new TokenDto(6, 7, Koto.Id, "こと", null),
             ]),
+            // 今日 marked one kanji at a time in one ruby element, so its spans carry a group
+            new StoredBlock(14, "今日だ",
+                [new TokenDto(0, 2, Kyou.Id, "きょう", null), new TokenDto(2, 3, null, null, null)])
+                { Ruby = [new RubyDto(0, 1, "こん", 0), new RubyDto(1, 2, "にち", 0)] },
         ]);
         _store.GetUnitAsync(file.Id, page, Arg.Any<CancellationToken>()).Returns(unit);
         GivenWords(Totemo, Karai, Nihongo, Nihon, Go, Kamisama, Kami, Ki, Suru, KiGaSuru, GaSuru, Shikaru, Tanaka,
@@ -758,6 +762,7 @@ public class DictionaryServiceTests : AbstractDbTest
         (13, 0, null, null), // a kana word whose entries all read そう, one group
         (13, 4, null, null), // a kana word whose first entry reads いっすん, one group read ちょ
         (13, 6, null, null), // a kanji word whose こと entries merge, two groups
+        (14, 0, null, null), // furigana from one ruby element's spans, read together
     ];
 
     /// <summary>

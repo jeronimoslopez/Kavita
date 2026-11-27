@@ -385,7 +385,7 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
             TokenizeService.LexiconVersion(sample.Version), Arg.Any<CancellationToken>());
 
         var (stored, version) = SavedUnit();
-        Assert.Equal(sample.Version, version);
+        Assert.Equal(sample.Version + ";kavita=" + TokenizeService.TextVersion, version);
         Assert.Equal([0, 1, 2, 3, 4, 5], stored.Select(b => b.Index));
         Assert.Equal(blocks.Select(b => b.Text), stored.Select(b => b.Text));
         Assert.Empty(stored[5].Tokens);
@@ -781,8 +781,8 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
         await service.PrioritizeChapterAsync(files.FirstChapter.Id);
 
         Assert.Equal($"{SidecarUrl}/health", Assert.Single(_httpTest.CallLog).Request.Url.ToString());
-        await _store.Received(1).RefreshUnitsAsync(files.Chapter1.Id, "lexicon=x;sidecar=2", ReadingPriority.OpenChapter,
-            Arg.Any<CancellationToken>());
+        await _store.Received(1).RefreshUnitsAsync(files.Chapter1.Id, TokenizeService.StoredVersion("lexicon=x;sidecar=2"),
+            ReadingPriority.OpenChapter, Arg.Any<CancellationToken>());
         await _store.DidNotReceive().RefreshUnitsAsync(files.Chapter2.Id, Arg.Any<string>(), Arg.Any<int>(),
             Arg.Any<CancellationToken>());
         _signal.Received().Wake();
@@ -852,6 +852,18 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
                      "freq=bccwj_yomitan_rank/Kuuuube/yomitan-dictionaries@654b0f71ae51d27e888cc621c069591846927100",
             TokenizeService.LexiconVersion(sample.Version));
         Assert.Equal(string.Empty, TokenizeService.LexiconVersion("sudachipy=1;sidecar=1"));
+    }
+
+    [Fact]
+    public void StoredVersion_AppendsTheTextVersionAndKeepsTheLexiconReadable()
+    {
+        var stored = TokenizeService.StoredVersion("sudachipy=1;lexicon=a=1;b=2;sidecar=3");
+
+        Assert.Equal($"sudachipy=1;lexicon=a=1;b=2;sidecar=3;kavita={TokenizeService.TextVersion}", stored);
+        Assert.Equal("a=1;b=2", TokenizeService.LexiconVersion(stored));
+        Assert.NotEqual("sudachipy=1;lexicon=a=1;b=2;sidecar=3", stored);
+        // A sidecar that gives no version stores none, which no refresh ever matches
+        Assert.Equal(string.Empty, TokenizeService.StoredVersion(string.Empty));
     }
 
     [Theory]

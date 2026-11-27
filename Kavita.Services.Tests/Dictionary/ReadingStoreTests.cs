@@ -1312,7 +1312,7 @@ public class ReadingStoreTests : IDisposable
         StoredBlock[] blocks =
         [
             Block(0, "高順は漢字", Token(0, 2, plain), Token(2, 3, null), Token(3, 5, plain))
-                with { Ruby = [new RubyDto(0, 2, "ガオシュン"), new RubyDto(3, 4, "かん"), new RubyDto(4, 5, "じ")] },
+                with { Ruby = [new RubyDto(0, 2, "ガオシュン"), new RubyDto(3, 4, "かん", 0), new RubyDto(4, 5, "じ", 0)] },
             Block(1, "猫", Token(0, 1, plain)),
         ];
 
@@ -1323,7 +1323,7 @@ public class ReadingStoreTests : IDisposable
         Assert.Empty(stored[1].Ruby);
         var json = await DecompressedBlocksAsync(unit.Id);
         using var document = JsonDocument.Parse(json);
-        Assert.Equal("""[[0,2,"ガオシュン"],[3,4,"かん"],[4,5,"じ"]]""",
+        Assert.Equal("""[[0,2,"ガオシュン"],[3,4,"かん",0],[4,5,"じ",0]]""",
             document.RootElement[0].GetProperty("ruby").GetRawText());
         Assert.False(document.RootElement[1].TryGetProperty("ruby", out _));
         // The format byte is the one blocks had before ruby, so nothing needs rewriting

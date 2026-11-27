@@ -48,6 +48,13 @@ public class TokenizeService : ITokenizeService
     public const int MaxUnitAttempts = 3;
 
     /// <summary>
+    /// The version of what Kavita itself reads from a page besides the sidecar's tokens, such as its furigana and the
+    /// book words found in it. A unit's stored version is the sidecar's with <c>;kavita=</c> and this appended, so
+    /// raising it queues stored pages again the way a new sidecar version does
+    /// </summary>
+    public const int TextVersion = 2;
+
+    /// <summary>
     /// The scanner, the worker, a queued Hangfire job and a reader opening a chapter can all start a check. Two checks
     /// of one file would open the EPUB twice and seed it twice
     /// </summary>
@@ -172,7 +179,7 @@ public class TokenizeService : ITokenizeService
 
                 var wordIds = await _readingStore.UpsertWordsAsync(response.Words.ToList(), LexiconVersion(response.Version), ct);
                 stored = ToStored(blocks, response, wordIds);
-                tokenizerVersion = response.Version;
+                tokenizerVersion = StoredVersion(response.Version);
             }
 
             var saved = await _readingStore.SaveTokenizedUnitAsync(unit.Id, unit.SourceStamp, tokenizerVersion, stored, ct);
@@ -238,8 +245,9 @@ public class TokenizeService : ITokenizeService
     }
 
     /// <summary>
-    /// Queues the open chapter's pages that an older sidecar tokenized, so a book is brought up to date when someone
-    /// reads it and never all at once. The next chapter waits until it's opened itself
+    /// Queues the open chapter's pages that an older sidecar or an older <see cref="TextVersion"/> tokenized, so a
+    /// book is brought up to date when someone reads it and never all at once. The next chapter waits until it's
+    /// opened itself
     /// </summary>
     private async Task RefreshOpenFilesAsync(IReadOnlyList<EpubFile> openFiles, CancellationToken ct)
     {
@@ -249,8 +257,9 @@ public class TokenizeService : ITokenizeService
         if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return;
 
         // An unknown version can't tell old pages from current ones, so they're left as they are
-        var version = await _sidecarClient.GetVersionAsync(settings.TextSidecarUrl, ct);
-        if (version == null) return;
+        var sidecarVersion = await _sidecarClient.GetVersionAsync(settings.TextSidecarUrl, ct);
+        if (sidecarVersion == null) return;
+        var version = StoredVersion(sidecarVersion);
 
         foreach (var file in openFiles)
         {
@@ -262,6 +271,15 @@ public class TokenizeService : ITokenizeService
             }
         }
     }
+
+    /// <summary>
+    /// The version a unit tokenized by a sidecar at <paramref name="sidecarVersion"/> is stored with
+    /// </summary>
+    /// <returns>The empty string when the sidecar gave no version, so the unit is never queued again by version</returns>
+    public static string StoredVersion(string sidecarVersion) =>
+        sidecarVersion.Length == 0
+            ? string.Empty
+            : string.Create(CultureInfo.InvariantCulture, $"{sidecarVersion};kavita={TextVersion}");
 
     /// <summary>
     /// The lexicon part of the sidecar's version string. The lexicon's own version has semicolons in it, so it runs

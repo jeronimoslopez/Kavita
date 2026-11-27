@@ -78,7 +78,9 @@ public sealed record ReadingUnitRef(long Id, ReadingUnitKind Kind, int MangaFile
 /// <summary>
 /// A unit with its stored blocks
 /// </summary>
-/// <param name="TokenizerVersion">The sidecar version the blocks came from, or null when the unit was never tokenized</param>
+/// <param name="TokenizerVersion">The sidecar version the blocks came from with Kavita's text version appended, as
+/// <c>TokenizeService.StoredVersion</c> builds it, or null when the unit was never tokenized. A unit stored before
+/// the text version existed has the sidecar's version alone</param>
 /// <param name="Blocks">Empty when the unit was never tokenized. A pending unit whose file changed still has its old blocks</param>
 public sealed record ReadingUnit(long Id, ReadingUnitKind Kind, int MangaFileId, int Page, ReadingUnitState State,
     string SourceStamp, string? TokenizerVersion, IReadOnlyList<StoredBlock> Blocks);
@@ -97,7 +99,7 @@ public sealed record StoredBlock(int Index, string Text, IReadOnlyList<TokenDto>
     public IReadOnlyList<PhraseDto> Phrases { get; init; } = [];
     /// <summary>
     /// The block's furigana in document order, with offsets into <see cref="Text"/>. Empty for a block stored before
-    /// furigana was kept
+    /// furigana was kept, and without groups for a block stored before they were kept
     /// </summary>
     public IReadOnlyList<RubyDto> Ruby { get; init; } = [];
     /// <summary>

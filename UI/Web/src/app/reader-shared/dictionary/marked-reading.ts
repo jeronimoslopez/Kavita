@@ -1,7 +1,7 @@
 /** A twin of Kavita.Services/Dictionary/MarkedReading.cs. marked-reading.spec.ts ports its tests case for case */
 
-/** One ruby span of a block, `[s, e, reading]`, as EpubPageBlock.ruby holds it */
-export type RubySpan = [s: number, e: number, reading: string];
+/** One ruby span of a block, `[s, e, reading]` or `[s, e, reading, group]`, as EpubPageBlock.ruby holds it */
+export type RubySpan = [s: number, e: number, reading: string, group?: number];
 
 /**
  * The reading a book's furigana gives one token. `printed` is the surface's reading as the book prints it, each covered
