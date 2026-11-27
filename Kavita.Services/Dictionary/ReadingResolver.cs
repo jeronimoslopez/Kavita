@@ -56,6 +56,7 @@ public static class ReadingResolver
         }
 
         string pick, source, level;
+        ReadingGroupDto? first = null;
         if (ReadingGroups.AnyHas(groups, inputs.Choice))
         {
             (pick, source, level) = (inputs.Choice!, ReadingSource.Choice, ReadingLevel.Likely);
@@ -66,14 +67,26 @@ public static class ReadingResolver
         }
         else if (ReadingGroups.AnyHas(groups, inputs.TokenReading))
         {
-            // A blind reading is no evidence, so a rare group holding it gives way to the first common group. A bound
-            // occurrence keeps it, since 二本 read ぽん or 山 read さん as a suffix is the reading JMdict files as rare
+            // A blind reading is no evidence. A group far more frequent than the rest goes first, and without one a
+            // rare group holding the reading gives way to the first common group. A bound occurrence keeps it, since
+            // 二本 read ぽん or 山 read さん as a suffix is the reading JMdict files as rare
+            var tokenGroup = groups.First(g => g.Readings.Contains(inputs.TokenReading!));
+            var frequent = inputs.Blind && !inputs.Bound ? FrequencyPick(groups) : null;
             var common = groups.FirstOrDefault(g => g.Common);
-            var blindRare = inputs.Blind && !inputs.Bound && common != null
-                && !groups.First(g => g.Readings.Contains(inputs.TokenReading!)).Common;
-            (pick, source, level) = blindRare
-                ? (common!.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess)
-                : (inputs.TokenReading!, ReadingSource.Tokenizer, inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
+            if (frequent != null && !ReferenceEquals(frequent, tokenGroup))
+            {
+                (pick, source, level) = (frequent.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess);
+                first = frequent;
+            }
+            else if (frequent == null && inputs.Blind && !inputs.Bound && common != null && !tokenGroup.Common)
+            {
+                (pick, source, level) = (common.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess);
+            }
+            else
+            {
+                (pick, source, level) = (inputs.TokenReading!, ReadingSource.Tokenizer,
+                    inputs.Blind ? ReadingLevel.Guess : ReadingLevel.Likely);
+            }
         }
         else if (inputs.Bound && inputs.TokenReading is { } voiced && UnvoiceFirst(voiced) is var plain
                  && plain != voiced && ReadingGroups.AnyHas(groups, plain))
@@ -84,12 +97,36 @@ public static class ReadingResolver
         }
         else
         {
-            (pick, source, level) = (groups[0].Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess);
+            first = FrequencyPick(groups) ?? groups[0];
+            (pick, source, level) = (first.Readings[0], ReadingSource.Dictionary, ReadingLevel.Guess);
         }
 
-        var first = groups.First(g => g.Readings.Contains(pick));
+        first ??= groups.First(g => g.Readings.Contains(pick));
         return new ReadingsDto(level, source, null, pick, false,
             groups.Where(g => !ReferenceEquals(g, first)).Prepend(first).ToList());
+    }
+
+    /// <summary>
+    /// How many times the second most frequent group's rank must be the first's for the first to be the
+    /// <see cref="FrequencyPick"/>
+    /// </summary>
+    public const int FrequencyFactor = 5;
+
+    /// <summary>
+    /// The group frequency clearly favours. Of the groups with a rank, taken by rank from the lowest, the first is the
+    /// pick when it's the only one or when the second's rank is at least <see cref="FrequencyFactor"/> times its own.
+    /// The reader's frequencyPick is the same rule
+    /// </summary>
+    /// <returns>Null when no group has a rank or the two lowest are too close</returns>
+    public static ReadingGroupDto? FrequencyPick(IReadOnlyList<ReadingGroupDto> groups)
+    {
+        var ranked = groups.Where(g => g.Rank != null).OrderBy(g => g.Rank!.Value).Take(2).ToList();
+        return ranked.Count switch
+        {
+            0 => null,
+            1 => ranked[0],
+            _ => (long) ranked[1].Rank!.Value >= (long) ranked[0].Rank!.Value * FrequencyFactor ? ranked[0] : null,
+        };
     }
 
     private const string VoicedKana = "がぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽ";

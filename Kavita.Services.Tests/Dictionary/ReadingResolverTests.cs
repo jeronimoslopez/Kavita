@@ -66,6 +66,40 @@ public class ReadingResolverTests
         ],
         [Sense("1:1"), Sense("2:1"), Sense("3:1"), Sense("4:1")]);
 
+    /// <summary>
+    /// 瞬く with its Jiten ranks: しばたたく 80172, the common またたく 8110, and めたたく unranked
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> RankedBlinkGroups => ReadingGroups.Of(
+        [BlinkEntries[0] with { Rank = 80172 }, BlinkEntries[1] with { Rank = 8110 }, BlinkEntries[2]], BlinkSenses);
+
+    /// <summary>
+    /// 潜る read もぐる, rare in JMdict and rank 5055, and くぐる, common and rank 83217
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> DiveGroups => ReadingGroups.Of(
+        [new WordEntryDto(1, false, ["もぐる"], 5055), new WordEntryDto(2, true, ["くぐる"], 83217)],
+        [Sense("1:1"), Sense("2:1")]);
+
+    /// <summary>
+    /// The same two groups with くぐる first, so the first group isn't the frequent one
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> DiveGroupsKuguruFirst => ReadingGroups.Of(
+        [new WordEntryDto(2, true, ["くぐる"], 83217), new WordEntryDto(1, false, ["もぐる"], 5055)],
+        [Sense("2:1"), Sense("1:1")]);
+
+    /// <summary>
+    /// 分 read ぶん in a common entry ranked 300 and ふん in one that isn't, ranked 900, too close for a pick
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> MinuteGroups => ReadingGroups.Of(
+        [new WordEntryDto(1, true, ["ぶん"], 300), new WordEntryDto(2, false, ["ふん"], 900)],
+        [Sense("1:1"), Sense("2:1")]);
+
+    /// <summary>
+    /// Two groups neither of which is common, the first ranked <paramref name="first"/> and the second 100
+    /// </summary>
+    private static IReadOnlyList<ReadingGroupDto> TwoRanked(int first) => ReadingGroups.Of(
+        [new WordEntryDto(1, false, ["とき"], first), new WordEntryDto(2, false, ["つき"], 100)],
+        [Sense("1:1"), Sense("2:1")]);
+
     private static ReadingInputs Inputs(IReadOnlyList<ReadingGroupDto>? groups, MarkedReadingResult? marked = null,
         string? choice = null, ReadingHintDto? hint = null, string? tokenReading = null, bool blind = false,
         bool bound = false) =>
@@ -207,6 +241,74 @@ public class ReadingResolverTests
         var result = ReadingResolver.Resolve(ReadingResolver.ForPhrase(word));
         Assert.Equal((ReadingLevel.Certain, ReadingSource.Dictionary, "ちょ"), (result.Level, result.Source, result.Pick));
         Assert.Empty(ReadingGroups.Of(word with { Entries = [] }));
+    }
+
+    [Fact]
+    public void Groups_CarryTheirEntrysRankAndNullWithoutOne()
+    {
+        Assert.Equal([80172, 8110, null], RankedBlinkGroups.Select(g => g.Rank));
+        Assert.All(BlinkGroups, g => Assert.Null(g.Rank));
+
+        // Both of 今日's groups come from its one entry, so both take its rank
+        var today = ReadingGroups.Of([TodayEntries[0] with { Rank = 120 }], TodaySenses);
+        Assert.Equal([120, 120], today.Select(g => g.Rank));
+    }
+
+    [Fact]
+    public void Groups_MergedOrReadAsAKanaLemmaTakeTheLowestRank()
+    {
+        WordEntryDto[] entries = [new(1, false, ["そう"]), new(2, true, ["そう"], 900), new(3, false, ["そう"], 40)];
+        SenseDto[] senses = [Sense("1:1"), Sense("2:1"), Sense("3:1")];
+
+        Assert.Equal(40, Assert.Single(ReadingGroups.Of(entries, senses)).Rank);
+        Assert.Equal(40, Assert.Single(ReadingGroups.Of(entries, senses, "そう")).Rank);
+        Assert.Null(Assert.Single(ReadingGroups.Of([new WordEntryDto(1, false, ["そう"])], [Sense("1:1")], "そう")).Rank);
+    }
+
+    #endregion
+
+    #region Frequency pick
+
+    [Fact]
+    public void FrequencyFactor_IsFive()
+    {
+        Assert.Equal(5, ReadingResolver.FrequencyFactor);
+    }
+
+    [Fact]
+    public void FrequencyPick_IsNullWithoutRanks()
+    {
+        Assert.Null(ReadingResolver.FrequencyPick(BlinkGroups));
+        Assert.Null(ReadingResolver.FrequencyPick([]));
+    }
+
+    [Fact]
+    public void FrequencyPick_IsTheOnlyRankedGroupAmongUnrankedOnes()
+    {
+        var groups = ReadingGroups.Of([BlinkEntries[0], BlinkEntries[1], BlinkEntries[2] with { Rank = 70000 }], BlinkSenses);
+
+        Assert.Same(groups[2], ReadingResolver.FrequencyPick(groups));
+    }
+
+    [Fact]
+    public void FrequencyPick_IsTheLowestRankWhenTheNextIsAtLeastFiveTimesIt()
+    {
+        var blink = RankedBlinkGroups;
+        Assert.Same(blink[1], ReadingResolver.FrequencyPick(blink));
+        var dive = DiveGroupsKuguruFirst;
+        Assert.Same(dive[1], ReadingResolver.FrequencyPick(dive));
+
+        var exactly = TwoRanked(500);
+        Assert.Same(exactly[1], ReadingResolver.FrequencyPick(exactly));
+    }
+
+    [Fact]
+    public void FrequencyPick_IsNullWhenTheTwoLowestAreWithinFiveTimes()
+    {
+        Assert.Null(ReadingResolver.FrequencyPick(TwoRanked(499)));
+        Assert.Null(ReadingResolver.FrequencyPick(MinuteGroups));
+        // Two groups of one entry share its rank
+        Assert.Null(ReadingResolver.FrequencyPick(ReadingGroups.Of([TodayEntries[0] with { Rank = 120 }], TodaySenses)));
     }
 
     #endregion
@@ -379,6 +481,99 @@ public class ReadingResolverTests
             []
         },
         {
+            "a blind しばたたく on ranked 瞬く opens on the far more frequent またたく, as a guess from the dictionary",
+            Inputs(RankedBlinkGroups, tokenReading: "しばたたく", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "またたく", false, []),
+            ["またたく", "しばたたく", "めたたく"]
+        },
+        {
+            "a blind もぐる keeps its rare group because frequency favours it, as a guess from the tokenizer",
+            Inputs(DiveGroups, tokenReading: "もぐる", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "もぐる", false, []),
+            ["もぐる", "くぐる"]
+        },
+        {
+            "a blind くぐる in the common group gives way to the far more frequent もぐる",
+            Inputs(DiveGroups, tokenReading: "くぐる", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "もぐる", false, []),
+            ["もぐる", "くぐる"]
+        },
+        {
+            "ranks within five times leave 分's blind rare ふん to the common group rule",
+            Inputs(MinuteGroups, tokenReading: "ふん", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "ぶん", false, []),
+            ["ぶん", "ふん"]
+        },
+        {
+            "ranks within five times keep 分's blind common ぶん from the tokenizer",
+            Inputs(MinuteGroups, tokenReading: "ぶん", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "ぶん", false, []),
+            ["ぶん", "ふん"]
+        },
+        {
+            "a rank exactly five times the lowest is a pick",
+            Inputs(TwoRanked(500), tokenReading: "とき", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "つき", false, []),
+            ["つき", "とき"]
+        },
+        {
+            "a rank just under five times the lowest is no pick, so the tokenizer's group stays first",
+            Inputs(TwoRanked(499), tokenReading: "とき", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "とき", false, []),
+            ["とき", "つき"]
+        },
+        {
+            "one ranked group among unranked ones is a pick",
+            Inputs(ReadingGroups.Of([new WordEntryDto(1, false, ["とき"]), new WordEntryDto(2, false, ["つき"], 70000)],
+                [Sense("1:1"), Sense("2:1")]), tokenReading: "とき", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "つき", false, []),
+            ["つき", "とき"]
+        },
+        {
+            "a token the sentence chose ignores frequency",
+            Inputs(RankedBlinkGroups, tokenReading: "しばたたく"),
+            new ReadingsDto(ReadingLevel.Likely, ReadingSource.Tokenizer, null, "しばたたく", false, []),
+            ["しばたたく", "またたく", "めたたく"]
+        },
+        {
+            "a bound blind token ignores frequency",
+            Inputs(RankedBlinkGroups, tokenReading: "しばたたく", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "しばたたく", false, []),
+            ["しばたたく", "またたく", "めたたく"]
+        },
+        {
+            "a saved choice beats frequency",
+            Inputs(RankedBlinkGroups, choice: "めたたく", tokenReading: "しばたたく", blind: true),
+            new ReadingsDto(ReadingLevel.Likely, ReadingSource.Choice, null, "めたたく", false, []),
+            ["めたたく", "しばたたく", "またたく"]
+        },
+        {
+            "a token reading no group has opens on the frequency pick",
+            Inputs(DiveGroupsKuguruFirst, tokenReading: "なにか"),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "もぐる", false, []),
+            ["もぐる", "くぐる"]
+        },
+        {
+            "the same groups without ranks open on the first group",
+            Inputs(ReadingGroups.Of([new WordEntryDto(2, true, ["くぐる"]), new WordEntryDto(1, false, ["もぐる"])],
+                [Sense("2:1"), Sense("1:1")]), tokenReading: "なにか"),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "くぐる", false, []),
+            ["くぐる", "もぐる"]
+        },
+        {
+            "a token reading no group has opens on the first group when ranks are too close",
+            Inputs(MinuteGroups, tokenReading: "なにか", blind: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Dictionary, null, "ぶん", false, []),
+            ["ぶん", "ふん"]
+        },
+        {
+            "a bound voiced counter still opens on its plain reading's group ahead of frequency",
+            Inputs(ReadingGroups.Of([new WordEntryDto(1, true, ["さかずき"], 50), new WordEntryDto(2, false, ["はい"], 90000)],
+                [Sense("1:1"), Sense("2:1")]), tokenReading: "ばい", blind: true, bound: true),
+            new ReadingsDto(ReadingLevel.Guess, ReadingSource.Tokenizer, null, "はい", false, []),
+            ["はい", "さかずき"]
+        },
+        {
             "a word stored without entries gets the fixed answer whatever its furigana or hint",
             Inputs(null, Marked("ガオシュン", "がおしゅん"), hint: new ReadingHintDto("がおしゅん", "ガオシュン", ReadingSource.Book)),
             ReadingsDto.None,
@@ -418,6 +613,22 @@ public class ReadingResolverTests
         Assert.Equal(["こんにち"], result.Groups[0].Readings);
         Assert.Equal(2, result.Groups[0].Senses.Count);
         Assert.Equal(["きょう", "こんち", "こんじつ"], result.Groups[1].Readings);
+    }
+
+    [Fact]
+    public void Resolve_OpensOnTheFrequencyPickEvenWhenAnEarlierGroupSharesItsFirstReading()
+    {
+        // 羅's [ら, うすもの] comes first and also holds ら, the first reading of the far more frequent [ら]
+        var groups = ReadingGroups.Of([new WordEntryDto(1, false, ["ら", "うすもの"], 90000), new WordEntryDto(2, false, ["ら"], 10)],
+            [Sense("1:1"), Sense("2:1")]);
+
+        var fallback = ReadingResolver.Resolve(Inputs(groups, tokenReading: "なにか"));
+        var blind = ReadingResolver.Resolve(Inputs(groups, tokenReading: "うすもの", blind: true));
+
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Dictionary, "ら"), (fallback.Level, fallback.Source, fallback.Pick));
+        Assert.Equal([2L, 1L], fallback.Groups.Select(g => g.Seq));
+        Assert.Equal((ReadingLevel.Guess, ReadingSource.Dictionary, "ら"), (blind.Level, blind.Source, blind.Pick));
+        Assert.Equal([2L, 1L], blind.Groups.Select(g => g.Seq));
     }
 
     [Fact]

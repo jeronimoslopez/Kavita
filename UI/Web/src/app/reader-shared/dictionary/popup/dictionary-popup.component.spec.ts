@@ -298,10 +298,10 @@ describe('DictionaryPopupComponent', () => {
     const spicy: ReadingGroup = {seq: 100, readings: ['からい'], common: true, senses: [
       {key: '100:1', pos: ['adj-i'], gloss: ['spicy', 'hot']},
       {key: '100:3', pos: [], gloss: ['salty']},
-    ]};
+    ], rank: null};
     const painful: ReadingGroup = {seq: 200, readings: ['つらい', 'づらい'], common: true, senses: [
       {key: '200:1', pos: ['adj-i'], gloss: ['painful', 'hard']},
-    ]};
+    ], rank: null};
 
     function readings(overrides: Partial<LookupReadings> = {}): LookupReadings {
       return {

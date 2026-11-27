@@ -13,9 +13,9 @@ public static class ReadingGroups
     /// For each entry in order, its readings fall into classes, two readings sharing a class when exactly the same
     /// senses of the entry apply to both. A sense applies to a reading when it has no <see cref="SenseDto.R"/> or its
     /// <see cref="SenseDto.R"/> holds the reading. Classes keep the order of their first reading, and each class that
-    /// some sense applies to is a group. Groups with equal readings lists then merge into the first of them, since
-    /// their tabs would offer no choice of reading. A word whose lemma has no kanji has one group, read as the lemma
-    /// in hiragana, because its reading is what the book prints
+    /// some sense applies to is a group, with its entry's rank. Groups with equal readings lists then merge into the
+    /// first of them, since their tabs would offer no choice of reading. A word whose lemma has no kanji has one group,
+    /// read as the lemma in hiragana, because its reading is what the book prints, with the lowest rank of its entries
     /// </summary>
     /// <param name="entries">The word's entries, in the order their senses appear</param>
     /// <param name="senses">The word's senses. A sense belongs to the entry whose seq its key starts with</param>
@@ -28,7 +28,7 @@ public static class ReadingGroups
         if (lemma != null && !HasKanji(lemma))
         {
             return [new ReadingGroupDto(entries[0].Seq, [MarkedReading.ToHiragana(lemma)], entries.Any(e => e.Common),
-                senses.ToList())];
+                senses.ToList(), entries.Min(e => e.Rank))];
         }
 
         var groups = new List<ReadingGroupDto>();
@@ -51,7 +51,7 @@ public static class ReadingGroups
             groups.AddRange(classes
                 .Where(c => c.Applies.Count > 0)
                 .Select(c => new ReadingGroupDto(entry.Seq, c.Readings, entry.Common,
-                    c.Applies.Select(i => entrySenses[i]).ToList())));
+                    c.Applies.Select(i => entrySenses[i]).ToList(), entry.Rank)));
         }
         return MergeEqualReadings(groups);
     }
@@ -65,7 +65,8 @@ public static class ReadingGroups
 
     /// <summary>
     /// Folds each group into the first group whose readings are the same in the same order. The merged group sits
-    /// where that first group sat, keeps its seq, holds the senses of all of them in order, and is common when any is
+    /// where that first group sat, keeps its seq, holds the senses of all of them in order, is common when any is, and
+    /// takes the lowest rank any of them has
     /// </summary>
     private static List<ReadingGroupDto> MergeEqualReadings(List<ReadingGroupDto> groups)
     {
@@ -83,10 +84,14 @@ public static class ReadingGroups
             {
                 Common = first.Common || group.Common,
                 Senses = first.Senses.Concat(group.Senses).ToList(),
+                Rank = LowerRank(first.Rank, group.Rank),
             };
         }
         return merged;
     }
+
+    /// <returns>The lower of two ranks, either when the other is null, and null when both are</returns>
+    private static int? LowerRank(int? a, int? b) => a == null ? b : b == null ? a : System.Math.Min(a.Value, b.Value);
 
     private static bool HasKanji(string text)
     {

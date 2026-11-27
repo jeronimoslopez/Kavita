@@ -657,6 +657,73 @@
         "blind": [
           1
         ]
+      },
+      {
+        "index": 18,
+        "length": 5,
+        "tokens": [
+          [
+            0,
+            2,
+            107,
+            "もぐる",
+            null
+          ],
+          [
+            2,
+            3,
+            null,
+            null,
+            null
+          ],
+          [
+            3,
+            5,
+            107,
+            "くぐる",
+            null
+          ]
+        ],
+        "blind": [
+          0,
+          3
+        ]
+      },
+      {
+        "index": 19,
+        "length": 2,
+        "tokens": [
+          [
+            0,
+            2,
+            108,
+            "せんる",
+            null
+          ]
+        ]
+      },
+      {
+        "index": 20,
+        "length": 2,
+        "tokens": [
+          [
+            0,
+            1,
+            109,
+            "ふん",
+            null
+          ],
+          [
+            1,
+            2,
+            null,
+            null,
+            null
+          ]
+        ],
+        "blind": [
+          0
+        ]
       }
     ],
     "words": {
@@ -1000,7 +1067,8 @@
             "readings": [
               "しばたたく",
               "しばたく"
-            ]
+            ],
+            "rank": 80172
           },
           {
             "seq": 1341200,
@@ -1008,7 +1076,8 @@
             "readings": [
               "またたく",
               "まばたく"
-            ]
+            ],
+            "rank": 8110
           },
           {
             "seq": 2831001,
@@ -1773,6 +1842,150 @@
             ]
           }
         ]
+      },
+      "107": {
+        "lemma": "潜る",
+        "reading": "もぐる",
+        "jlpt": null,
+        "pos": "動詞",
+        "readings": [
+          "もぐる",
+          "くぐる"
+        ],
+        "senses": [
+          {
+            "key": "1385260:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to dive"
+            ]
+          },
+          {
+            "key": "1385270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to pass under"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1385260,
+            "common": false,
+            "readings": [
+              "もぐる"
+            ],
+            "rank": 5055
+          },
+          {
+            "seq": 1385270,
+            "common": true,
+            "readings": [
+              "くぐる"
+            ],
+            "rank": 83217
+          }
+        ]
+      },
+      "108": {
+        "lemma": "潜る",
+        "reading": "くぐる",
+        "jlpt": null,
+        "pos": "名詞",
+        "readings": [
+          "くぐる",
+          "もぐる"
+        ],
+        "senses": [
+          {
+            "key": "1385270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to pass under"
+            ]
+          },
+          {
+            "key": "1385260:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to dive"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1385270,
+            "common": true,
+            "readings": [
+              "くぐる"
+            ],
+            "rank": 83217
+          },
+          {
+            "seq": 1385260,
+            "common": false,
+            "readings": [
+              "もぐる"
+            ],
+            "rank": 5055
+          }
+        ]
+      },
+      "109": {
+        "lemma": "分",
+        "reading": "ぶん",
+        "jlpt": 5,
+        "pos": "名詞",
+        "readings": [
+          "ぶん",
+          "ふん"
+        ],
+        "senses": [
+          {
+            "key": "1502840:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "part"
+            ]
+          },
+          {
+            "key": "1502850:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "minute"
+            ]
+          }
+        ],
+        "entries": [
+          {
+            "seq": 1502840,
+            "common": true,
+            "readings": [
+              "ぶん"
+            ],
+            "rank": 300
+          },
+          {
+            "seq": 1502850,
+            "common": false,
+            "readings": [
+              "ふん"
+            ],
+            "rank": 900
+          }
+        ]
       }
     },
     "analysis": [
@@ -1817,7 +2030,10 @@
     "14": "今日だ",
     "15": "今日の鴇",
     "16": "二本と富士山",
-    "17": "二杯"
+    "17": "二杯",
+    "18": "潜ると潜る",
+    "19": "潜る",
+    "20": "分だ"
   },
   "taps": [
     {
@@ -2968,7 +3184,8 @@
                     "star (counter)"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1376310,
@@ -2986,7 +3203,8 @@
                     "star"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3074,7 +3292,8 @@
                     "to twinkle"
                   ]
                 }
-              ]
+              ],
+              "rank": 8110
             },
             {
               "seq": 2831002,
@@ -3093,7 +3312,8 @@
                     "to blink"
                   ]
                 }
-              ]
+              ],
+              "rank": 80172
             },
             {
               "seq": 2831001,
@@ -3112,7 +3332,8 @@
                     "to wink"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3186,7 +3407,8 @@
                     "to be open"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1202440,
@@ -3204,7 +3426,8 @@
                     "to open (a door)"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3315,7 +3538,8 @@
                     "うわて"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1353320,
@@ -3333,7 +3557,8 @@
                     "skilful"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1580400,
@@ -3363,7 +3588,8 @@
                     "かみて"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3429,7 +3655,8 @@
                     "to say"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3508,7 +3735,8 @@
                     "today"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1579110,
@@ -3538,7 +3766,8 @@
                     "こんにち"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3628,7 +3857,8 @@
                     "こんにち"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -3858,7 +4088,8 @@
                     "to twinkle"
                   ]
                 }
-              ]
+              ],
+              "rank": 8110
             },
             {
               "seq": 2831002,
@@ -3877,7 +4108,8 @@
                     "to blink"
                   ]
                 }
-              ]
+              ],
+              "rank": 80172
             },
             {
               "seq": 2831001,
@@ -3896,7 +4128,8 @@
                     "to wink"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4034,7 +4267,8 @@
                     "star"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 2100980,
@@ -4052,7 +4286,8 @@
                     "star (counter)"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4263,7 +4498,8 @@
                     "green"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4493,7 +4729,8 @@
                     "appearing"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4577,7 +4814,8 @@
                     "a little"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4669,7 +4907,8 @@
                     "fact"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1313590,
@@ -4687,7 +4926,8 @@
                     "affair"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4777,7 +5017,8 @@
                     "こんにち"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4867,7 +5108,8 @@
                     "こんにち"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1579110,
@@ -4886,7 +5128,8 @@
                     "today"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -4960,7 +5203,8 @@
                     "ibis (rare)"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 9400,
@@ -4978,7 +5222,8 @@
                     "crested ibis"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -5052,7 +5297,8 @@
                     "counter for long objects"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1522150,
@@ -5070,7 +5316,8 @@
                     "book"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -5144,7 +5391,8 @@
                     "Mt."
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1586120,
@@ -5162,7 +5410,8 @@
                     "mountain"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             }
           ]
         }
@@ -5237,7 +5486,8 @@
                     "counter for cupfuls"
                   ]
                 }
-              ]
+              ],
+              "rank": null
             },
             {
               "seq": 1325220,
@@ -5256,7 +5506,384 @@
                     "sake cup"
                   ]
                 }
-              ]
+              ],
+              "rank": null
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 18,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 107,
+          "surface": "潜る",
+          "lemma": "潜る",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "もぐる",
+          "reading": "もぐる",
+          "readings": [
+            "もぐる",
+            "くぐる"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "1385260:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to dive"
+            ]
+          },
+          {
+            "key": "1385270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to pass under"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "tokenizer",
+          "shown": null,
+          "pick": "もぐる",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1385260,
+              "readings": [
+                "もぐる"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1385260:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to dive"
+                  ]
+                }
+              ],
+              "rank": 5055
+            },
+            {
+              "seq": 1385270,
+              "readings": [
+                "くぐる"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1385270:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to pass under"
+                  ]
+                }
+              ],
+              "rank": 83217
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 18,
+        "s": 3,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 107,
+          "surface": "潜る",
+          "lemma": "潜る",
+          "pos": "動詞",
+          "isProper": false,
+          "occurrenceReading": "くぐる",
+          "reading": "もぐる",
+          "readings": [
+            "もぐる",
+            "くぐる"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "1385260:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to dive"
+            ]
+          },
+          {
+            "key": "1385270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to pass under"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "もぐる",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1385260,
+              "readings": [
+                "もぐる"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1385260:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to dive"
+                  ]
+                }
+              ],
+              "rank": 5055
+            },
+            {
+              "seq": 1385270,
+              "readings": [
+                "くぐる"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1385270:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to pass under"
+                  ]
+                }
+              ],
+              "rank": 83217
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 19,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 108,
+          "surface": "潜る",
+          "lemma": "潜る",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "せんる",
+          "reading": "くぐる",
+          "readings": [
+            "くぐる",
+            "もぐる"
+          ],
+          "jlpt": null
+        },
+        "senses": [
+          {
+            "key": "1385270:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to pass under"
+            ]
+          },
+          {
+            "key": "1385260:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "to dive"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "もぐる",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1385260,
+              "readings": [
+                "もぐる"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1385260:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to dive"
+                  ]
+                }
+              ],
+              "rank": 5055
+            },
+            {
+              "seq": 1385270,
+              "readings": [
+                "くぐる"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1385270:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "to pass under"
+                  ]
+                }
+              ],
+              "rank": 83217
+            }
+          ]
+        }
+      }
+    },
+    {
+      "request": {
+        "block": 20,
+        "s": 0,
+        "sub": null,
+        "phrase": null
+      },
+      "result": {
+        "word": {
+          "id": 109,
+          "surface": "分",
+          "lemma": "分",
+          "pos": "名詞",
+          "isProper": false,
+          "occurrenceReading": "ふん",
+          "reading": "ぶん",
+          "readings": [
+            "ぶん",
+            "ふん"
+          ],
+          "jlpt": 5
+        },
+        "senses": [
+          {
+            "key": "1502840:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "part"
+            ]
+          },
+          {
+            "key": "1502850:1",
+            "pos": [
+              "n"
+            ],
+            "gloss": [
+              "minute"
+            ]
+          }
+        ],
+        "analysis": null,
+        "parts": [],
+        "partOf": [],
+        "readings": {
+          "level": "guess",
+          "source": "dictionary",
+          "shown": null,
+          "pick": "ぶん",
+          "bookOnly": false,
+          "groups": [
+            {
+              "seq": 1502840,
+              "readings": [
+                "ぶん"
+              ],
+              "common": true,
+              "senses": [
+                {
+                  "key": "1502840:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "part"
+                  ]
+                }
+              ],
+              "rank": 300
+            },
+            {
+              "seq": 1502850,
+              "readings": [
+                "ふん"
+              ],
+              "common": false,
+              "senses": [
+                {
+                  "key": "1502850:1",
+                  "pos": [
+                    "n"
+                  ],
+                  "gloss": [
+                    "minute"
+                  ]
+                }
+              ],
+              "rank": 900
             }
           ]
         }
