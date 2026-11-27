@@ -106,6 +106,63 @@ public class TokenizeWorkerHostedServiceTests
     }
 
     [Fact]
+    public async Task RunPass_RefreshesTheLibraryOncePerVersion()
+    {
+        _tokenizeService.RefreshLibraryAsync("http://text:8000", null, Arg.Any<CancellationToken>())
+            .Returns(new LibraryRefresh("v1", 40));
+        _tokenizeService.RefreshLibraryAsync("http://text:8000", "v1", Arg.Any<CancellationToken>())
+            .Returns(new LibraryRefresh("v1", 0), new LibraryRefresh("v2", 3));
+
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.RunPassAsync(CancellationToken.None);
+
+        // Each pass passes on the version the last refresh used, so the store is only asked again after a change
+        Received.InOrder(() =>
+        {
+            _tokenizeService.RefreshLibraryAsync("http://text:8000", null, Arg.Any<CancellationToken>());
+            _tokenizeService.RefreshLibraryAsync("http://text:8000", "v1", Arg.Any<CancellationToken>());
+            _tokenizeService.RefreshLibraryAsync("http://text:8000", "v1", Arg.Any<CancellationToken>());
+            _tokenizeService.RefreshLibraryAsync("http://text:8000", "v2", Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
+    public async Task RunPass_SidecarWithoutAVersion_KeepsAskingWithTheLastVersion()
+    {
+        _tokenizeService.RefreshLibraryAsync("http://text:8000", null, Arg.Any<CancellationToken>())
+            .Returns((LibraryRefresh?) null, new LibraryRefresh("v1", 2));
+
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.RunPassAsync(CancellationToken.None);
+
+        await _tokenizeService.Received(2).RefreshLibraryAsync("http://text:8000", null, Arg.Any<CancellationToken>());
+        await _tokenizeService.Received(1).RefreshLibraryAsync("http://text:8000", "v1", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RunPass_PagesTheLibraryRefreshQueued_TellNoReader()
+    {
+        _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(
+            Unit(0) with { Priority = ReadingPriority.Background },
+            Unit(1) with { Priority = ReadingPriority.OpenChapter },
+            null);
+        _tokenizeService.ProcessUnitAsync(Arg.Any<ReadingUnitRef>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new TokenizeUnitResult(TokenizeUnitOutcome.UnitDone, 1, 2, call.Arg<ReadingUnitRef>().Page));
+
+        await _worker.RunPassAsync(CancellationToken.None);
+        await _worker.FlushReadyPagesAsync(force: true, CancellationToken.None);
+
+        await _tokenizeService.ReceivedWithAnyArgs(2).ProcessUnitAsync(default!, default!);
+        await _eventHub.Received(1).SendMessageAsync(MessageFactory.DictionaryPagesReady,
+            Arg.Is<SignalRMessageDto>(m => ((DictionaryPagesReadyEventBodyDto) m.Body!).Pages.SequenceEqual(new[] { 1 })),
+            false, Arg.Any<CancellationToken>());
+        await _eventHub.ReceivedWithAnyArgs(1).SendMessageAsync(default!, default!, default, default);
+    }
+
+    [Fact]
     public async Task RunPass_SidecarUnavailable_StopsThePass()
     {
         _tokenizeService.GetNextUnitAsync(Arg.Any<CancellationToken>()).Returns(Unit(0));

@@ -42,7 +42,22 @@ public interface ITokenizeService
     /// </summary>
     /// <returns>The files it raised, so the caller can queue their analysis at the same priorities</returns>
     Task<PrioritizedFiles> PrioritizeChapterAsync(int chapterId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Queues every done page of the library that an older sidecar or text version tokenized, at
+    /// <see cref="ReadingPriority.Background"/>, judged by the version the sidecar's health check reports. Pages keep
+    /// serving their old tokens until the new ones are saved
+    /// </summary>
+    /// <param name="sidecarUrl">The current <c>TextSidecarUrl</c>, never empty</param>
+    /// <param name="refreshedVersion">The version of the last refresh this caller ran, or null for none. When the
+    /// current version is the same, nothing is queued</param>
+    /// <returns>Null, with nothing queued, when the sidecar reports no version</returns>
+    Task<LibraryRefresh?> RefreshLibraryAsync(string sidecarUrl, string? refreshedVersion, CancellationToken ct = default);
 }
+
+/// <param name="Version">The version stored pages are compared with, the sidecar's with Kavita's text version</param>
+/// <param name="Queued">How many pages were queued</param>
+public sealed record LibraryRefresh(string Version, int Queued);
 
 public enum TokenizeUnitOutcome
 {

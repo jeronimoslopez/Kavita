@@ -609,6 +609,14 @@ public class ReadingDatabaseTests : IDisposable
         Assert.DoesNotContain(plan, step => step.StartsWith("SCAN"));
     }
 
+    [Fact]
+    public async Task RefreshAllUnits_ReadsOnlyTheDoneRangeOfTheQueueIndex()
+    {
+        var plan = await PlanAsync(ReadingStore.RefreshAllUnitsSql);
+
+        Assert.Equal(["SEARCH unit USING INDEX ix_unit_queue (state=?)"], plan);
+    }
+
     public static TheoryData<string> UseTotals => new()
     {
         // One file, as the one-file overload asks, and several

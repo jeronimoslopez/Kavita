@@ -232,6 +232,47 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
     }
 
     [Fact]
+    public async Task WorkerPass_AfterAVersionChange_RetokenizesTheLibraryWithoutTellingReadersAndThenStops()
+    {
+        var (unitOfWork, service, files) = await Setup([FirstPage], [SecondPage]);
+        await service.DetectNewFilesAsync();
+        // Both books as a Kavita before the text version stored them, with the sidecar's version alone
+        foreach (var file in files)
+        {
+            var unit = (await service.GetNextUnitAsync())!;
+            Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, unit.SourceStamp, Version(1),
+                [new StoredBlock(0, "old", [])]));
+        }
+
+        _httpTest.RespondWithJson(new { version = Version(1) });
+        _httpTest.RespondWith(await SidecarAnswerAsync(files[0].FilePath, 0));
+        _httpTest.RespondWith(await SidecarAnswerAsync(files[1].FilePath, 0));
+        var eventHub = Substitute.For<IEventHub>();
+        var services = new ServiceCollection();
+        services.AddSingleton(unitOfWork);
+        services.AddSingleton<ITokenizeService>(service);
+        services.AddSingleton(eventHub);
+        var worker = new TokenizeWorkerHostedService(services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
+            Substitute.For<ILogger<TokenizeWorkerHostedService>>());
+
+        Assert.False(await worker.RunPassAsync(CancellationToken.None));
+        await worker.FlushReadyPagesAsync(force: true, CancellationToken.None);
+
+        foreach (var file in files)
+        {
+            var saved = (await _store.GetUnitAsync(file.Id, 0))!;
+            Assert.Equal(ReadingUnitState.Done, saved.State);
+            Assert.Equal(TokenizeService.StoredVersion(Version(1)), saved.TokenizerVersion);
+        }
+        await eventHub.DidNotReceiveWithAnyArgs().SendMessageAsync(default!, default!, default, default);
+
+        // Nothing is stored at an old version now, so the next pass tokenizes nothing
+        Assert.False(await worker.RunPassAsync(CancellationToken.None));
+        Assert.Equal(2, _httpTest.CallLog.Count(c => c.Request.Url.Path.EndsWith("/tokenize")));
+        Assert.Equal(0, await _store.RefreshAllUnitsAsync(TokenizeService.StoredVersion(Version(1))));
+    }
+
+    [Fact]
     public async Task WorkerPass_MissingFile_TokenizesTheUnitsBehindIt()
     {
         var (unitOfWork, service, files) = await Setup([FirstPage], [SecondPage], [FirstPage]);
@@ -240,6 +281,8 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
         Assert.Equal(files[0].Id, missing.MangaFileId);
         File.Delete(files[0].FilePath);
 
+        // The worker asks for the version first, to refresh pages stored at an older one
+        _httpTest.RespondWithJson(new { version = Version(1) });
         _httpTest.RespondWith(await SidecarAnswerAsync(files[1].FilePath, 0));
         _httpTest.RespondWith(await SidecarAnswerAsync(files[2].FilePath, 0));
 
@@ -257,7 +300,7 @@ public class TokenizePipelineTests(ITestOutputHelper outputHelper) : AbstractDbT
         var waiting = (await _store.GetNextPendingUnitAsync())!;
         Assert.Equal(missing.Id, waiting.Id);
         Assert.Equal(0, waiting.Attempts);
-        Assert.Equal(2, _httpTest.CallLog.Count);
+        Assert.Equal(2, _httpTest.CallLog.Count(c => c.Request.Url.Path.EndsWith("/tokenize")));
     }
 
     [Fact]

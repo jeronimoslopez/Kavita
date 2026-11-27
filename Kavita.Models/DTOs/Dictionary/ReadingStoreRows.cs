@@ -73,7 +73,9 @@ public enum AnalysisRejectReason
 /// <param name="Page">0-based page, as the book reader counts them</param>
 /// <param name="SourceStamp">The stamp the unit was seeded with, which <c>SaveTokenizedUnitAsync</c> expects back</param>
 /// <param name="Attempts">Failed attempts so far</param>
-public sealed record ReadingUnitRef(long Id, ReadingUnitKind Kind, int MangaFileId, int Page, string SourceStamp, int Attempts);
+/// <param name="Priority">The unit's queue priority when it was picked</param>
+public sealed record ReadingUnitRef(long Id, ReadingUnitKind Kind, int MangaFileId, int Page, string SourceStamp, int Attempts,
+    int Priority = 0);
 
 /// <summary>
 /// A unit with its stored blocks
