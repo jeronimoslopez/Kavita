@@ -803,6 +803,35 @@ public class TokenizeServiceTests(ITestOutputHelper outputHelper) : AbstractDbTe
     }
 
     [Fact]
+    public async Task RefreshLibrary_QueuesEveryOldPageAgainstTheStoredVersion()
+    {
+        var (_, service, _) = await Setup();
+        _httpTest.RespondWithJson(new { version = "lexicon=x;sidecar=2" });
+        var version = TokenizeService.StoredVersion("lexicon=x;sidecar=2");
+        _store.RefreshAllUnitsAsync(version, Arg.Any<CancellationToken>()).Returns(7);
+
+        Assert.Equal(new LibraryRefresh(version, 7), await service.RefreshLibraryAsync(SidecarUrl, null));
+        // The health check is cached, and a caller that already refreshed at this version queues nothing
+        Assert.Equal(new LibraryRefresh(version, 0), await service.RefreshLibraryAsync(SidecarUrl, version));
+
+        await _store.Received(1).RefreshAllUnitsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _store.DidNotReceiveWithAnyArgs().RefreshUnitsAsync(default, default!, default);
+    }
+
+    [Theory]
+    [InlineData(503)]
+    [InlineData(404)]
+    public async Task RefreshLibrary_HealthCheckFails_QueuesNothing(int status)
+    {
+        var (_, service, _) = await Setup();
+        _httpTest.RespondWith("down", status);
+
+        Assert.Null(await service.RefreshLibraryAsync(SidecarUrl, null));
+
+        await _store.DidNotReceiveWithAnyArgs().RefreshAllUnitsAsync(default!);
+    }
+
+    [Fact]
     public async Task PrioritizeChapter_WithoutASidecarUrl_DoesNotAskForItsVersion()
     {
         var (_, service, files) = await Setup(sidecarUrl: false);

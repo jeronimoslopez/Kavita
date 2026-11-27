@@ -61,6 +61,12 @@ public interface IReadingStore
     /// <returns>How many units were queued</returns>
     Task<int> RefreshUnitsAsync(int mangaFileId, string tokenizerVersion, int priority, CancellationToken ct = default);
     /// <summary>
+    /// Does what <see cref="RefreshUnitsAsync"/> does for every file, at <see cref="ReadingPriority.Background"/>. A
+    /// queued unit's priority is set to it, whatever the unit had when it was last tokenized
+    /// </summary>
+    /// <returns>How many units were queued</returns>
+    Task<int> RefreshAllUnitsAsync(string tokenizerVersion, CancellationToken ct = default);
+    /// <summary>
     /// Stores a tokenized unit and marks it done, whether it was pending or waiting for a refresh, and replaces its analysis rows, in one transaction. When the file
     /// has no analysis request the unit is left with no rows. When it has one, the unit's spans are its top-level
     /// tokens whose word is ambiguous, which is the rule <see cref="SidecarWordDto.IsAmbiguous"/> applies to the
@@ -202,4 +208,9 @@ public static class ReadingPriority
     /// A whole-book request, and every unit the scanner seeds
     /// </summary>
     public const int WholeBook = 0;
+    /// <summary>
+    /// A page stored at an older version, queued again with the rest of the library after the version changes. Only
+    /// units use it, and it sits below every other priority so the rescan only takes the worker's idle time
+    /// </summary>
+    public const int Background = -10;
 }

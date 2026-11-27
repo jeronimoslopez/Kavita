@@ -245,9 +245,10 @@ public class TokenizeService : ITokenizeService
     }
 
     /// <summary>
-    /// Queues the open chapter's pages that an older sidecar or an older <see cref="TextVersion"/> tokenized, so a
-    /// book is brought up to date when someone reads it and never all at once. The next chapter waits until it's
-    /// opened itself
+    /// Queues the open chapter's pages that an older sidecar or an older <see cref="TextVersion"/> tokenized, ahead
+    /// of the library-wide refresh <see cref="RefreshLibraryAsync"/> queues. The library-wide refresh has usually
+    /// queued them already, and raising the file's units moved them up. The next chapter's pages are raised the same
+    /// way and never queued here
     /// </summary>
     private async Task RefreshOpenFilesAsync(IReadOnlyList<EpubFile> openFiles, CancellationToken ct)
     {
@@ -270,6 +271,18 @@ public class TokenizeService : ITokenizeService
                     queued, file.FilePath, version);
             }
         }
+    }
+
+    public async Task<LibraryRefresh?> RefreshLibraryAsync(string sidecarUrl, string? refreshedVersion,
+        CancellationToken ct = default)
+    {
+        // An unknown version can't tell old pages from current ones, so they're left as they are
+        var sidecarVersion = await _sidecarClient.GetVersionAsync(sidecarUrl, ct);
+        if (sidecarVersion == null) return null;
+
+        var version = StoredVersion(sidecarVersion);
+        if (version == refreshedVersion) return new LibraryRefresh(version, 0);
+        return new LibraryRefresh(version, await _readingStore.RefreshAllUnitsAsync(version, ct));
     }
 
     /// <summary>

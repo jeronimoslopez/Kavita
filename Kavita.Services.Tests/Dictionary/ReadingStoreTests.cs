@@ -782,6 +782,68 @@ public class ReadingStoreTests : IDisposable
         Assert.Equal(ReadingUnitState.Pending, (await _store.GetUnitAsync(1, 0))!.State);
     }
 
+    [Fact]
+    public async Task RefreshAllUnits_QueuesEveryFilesOldUnitsAtTheBackgroundPriorityOnce()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        // File 1 was tokenized while its chapter was open, so its units still carry that priority
+        await _store.SeedFileAsync(1, 2, Stamp, ReadingPriority.OpenChapter);
+        for (var page = 0; page < 2; page++)
+        {
+            var unit = (await _store.GetUnitAsync(1, page))!;
+            Assert.True(await _store.SaveTokenizedUnitAsync(unit.Id, Stamp, Tokenizer, [Block(0, "old", Token(0, 3, plain))]));
+        }
+        await TokenizeFileAsync(2, 2, plain);
+        // File 2's second page had no text, and file 3 is at the current version already
+        var empty = (await _store.GetUnitAsync(2, 1))!;
+        Assert.True(await _store.SaveTokenizedUnitAsync(empty.Id, Stamp, string.Empty, []));
+        await _store.SeedFileAsync(3, 1, Stamp, ReadingPriority.WholeBook);
+        var current = await NextAsync();
+        Assert.True(await _store.SaveTokenizedUnitAsync(current.Id, Stamp, NewTokenizer, [Block(0, "new", Token(0, 3, plain))]));
+        // File 4 was never tokenized, and file 5's only page failed
+        await _store.SeedFileAsync(4, 1, Stamp, ReadingPriority.WholeBook);
+        await _store.SeedFileAsync(5, 1, Stamp, ReadingPriority.WholeBook);
+        var failing = (await _store.GetUnitAsync(5, 0))!;
+        Assert.Equal(ReadingUnitState.Failed, await _store.RecordFailedAttemptAsync(failing.Id, 1));
+
+        Assert.Equal(3, await _store.RefreshAllUnitsAsync(NewTokenizer));
+        Assert.Equal(0, await _store.RefreshAllUnitsAsync(NewTokenizer));
+
+        Assert.Equal(3, await ScalarAsync(
+            $"SELECT COUNT(*) FROM unit WHERE state = 'refresh' AND priority = {ReadingPriority.Background} AND attempts = 0"));
+        Assert.Equal(ReadingUnitState.Done, (await _store.GetUnitAsync(2, 1))!.State);
+        Assert.Equal(ReadingUnitState.Done, (await _store.GetUnitAsync(3, 0))!.State);
+        Assert.Equal(ReadingUnitState.Pending, (await _store.GetUnitAsync(4, 0))!.State);
+        Assert.Equal(ReadingUnitState.Failed, (await _store.GetUnitAsync(5, 0))!.State);
+        // The old blocks are still served
+        Assert.Equal("old", (await _store.GetUnitAsync(1, 0))!.Blocks[0].Text);
+    }
+
+    [Fact]
+    public async Task RefreshAllUnits_ComesAfterPendingPagesAndBehindAnOpenChapter()
+    {
+        var (_, _, plain) = await SeedWordsAsync();
+        await TokenizeFileAsync(1, 1, plain);
+        await TokenizeFileAsync(2, 1, plain);
+        _time.Advance();
+        Assert.Equal(2, await _store.RefreshAllUnitsAsync(NewTokenizer));
+        _time.Advance();
+        // A new book comes in after the refresh was queued, and then file 2's chapter is opened
+        await _store.SeedFileAsync(3, 1, Stamp, ReadingPriority.WholeBook);
+        _time.Advance();
+        await _store.RaiseUnitPriorityAsync(2, null, ReadingPriority.OpenChapter);
+
+        var order = new List<(int File, int Priority)>();
+        while (await _store.GetNextPendingUnitAsync() is { } next)
+        {
+            order.Add((next.MangaFileId, next.Priority));
+            Assert.True(await _store.SaveTokenizedUnitAsync(next.Id, next.SourceStamp, NewTokenizer, []));
+        }
+
+        Assert.Equal([(2, ReadingPriority.OpenChapter), (3, ReadingPriority.WholeBook), (1, ReadingPriority.Background)], order);
+        Assert.Equal(0, await _store.RefreshAllUnitsAsync(NewTokenizer));
+    }
+
     #endregion
 
     [Fact]

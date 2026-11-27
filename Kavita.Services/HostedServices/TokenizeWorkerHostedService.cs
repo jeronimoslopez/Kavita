@@ -41,6 +41,14 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
     private readonly Dictionary<(int SeriesId, int ChapterId), List<int>> _readyPages = new();
     private DateTimeOffset _lastReadyEvent = DateTimeOffset.MinValue;
     private DateTimeOffset? _lastDetection;
+    /// <summary>
+    /// The version the last library-wide refresh compared pages with, or null before the first one
+    /// </summary>
+    private string? _refreshedVersion;
+    /// <summary>
+    /// Set while pages a library-wide refresh queued may still be waiting
+    /// </summary>
+    private bool _refreshQueued;
 
     public TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILogger<TokenizeWorkerHostedService> logger)
         : this(scopeFactory, logger, TimeProvider.System)
@@ -133,6 +141,8 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
             _lastDetection = now;
         }
 
+        await RefreshLibraryAsync(ct);
+
         // Units whose file wasn't on disk this pass. When one is picked again, nothing ahead of it is left to tokenize
         var deferred = new HashSet<long>();
         while (!ct.IsCancellationRequested)
@@ -144,6 +154,11 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
             var tokenizeService = scope.ServiceProvider.GetRequiredService<ITokenizeService>();
             // Picked again before every page, so a chapter someone just opened jumps ahead of the book in progress
             var unit = await tokenizeService.GetNextUnitAsync(ct);
+            if (unit == null && _refreshQueued)
+            {
+                _refreshQueued = false;
+                logger.LogInformation("[TokenizeWorker] Finished tokenizing the library again with {Version}", _refreshedVersion);
+            }
             if (unit == null || deferred.Contains(unit.Id)) return false;
 
             var result = await tokenizeService.ProcessUnitAsync(unit, settings.TextSidecarUrl, ct);
@@ -154,7 +169,9 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
                 case TokenizeUnitOutcome.FileUnavailable:
                     deferred.Add(unit.Id);
                     break;
-                case TokenizeUnitOutcome.UnitDone:
+                // A page the library-wide refresh queued belongs to a book nobody has open, because opening a chapter
+                // raises its pages, so readers aren't told about it
+                case TokenizeUnitOutcome.UnitDone when unit.Priority > ReadingPriority.Background:
                     AddReadyPage(result);
                     await FlushReadyPagesAsync(force: false, ct);
                     break;
@@ -162,6 +179,28 @@ public class TokenizeWorkerHostedService(IServiceScopeFactory scopeFactory, ILog
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Queues the library's pages stored at an older version once per version the sidecar reports, the first time at
+    /// startup. A page whose refresh fails goes back to done at its old version, and waits for the next version change
+    /// or restart
+    /// </summary>
+    private async Task RefreshLibraryAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var settings = await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SettingsRepository.GetSettingsDtoAsync(ct);
+        if (string.IsNullOrWhiteSpace(settings.TextSidecarUrl)) return;
+
+        var refresh = await scope.ServiceProvider.GetRequiredService<ITokenizeService>()
+            .RefreshLibraryAsync(settings.TextSidecarUrl, _refreshedVersion, ct);
+        if (refresh == null) return;
+
+        _refreshedVersion = refresh.Version;
+        if (refresh.Queued == 0) return;
+        _refreshQueued = true;
+        logger.LogInformation("[TokenizeWorker] Queued {Pages} pages of the library to tokenize again with {Version}",
+            refresh.Queued, refresh.Version);
     }
 
     private void AddReadyPage(TokenizeUnitResult result)

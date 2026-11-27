@@ -68,6 +68,17 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         """;
 
     /// <summary>
+    /// Queues every file's done units whose blocks came from another version, as <see cref="RefreshUnitsSql"/> does
+    /// for one file. It reads the done range of ix_unit_queue, which holds every tokenized page, and runs once per
+    /// version change. Public so the tests can check the plan
+    /// </summary>
+    public const string RefreshAllUnitsSql = """
+        UPDATE unit SET state = 'refresh', attempts = 0, priority = $priority, requested_utc = $now
+        WHERE state = 'done' AND kind = $kind
+          AND tokenizer_version IS NOT NULL AND tokenizer_version <> '' AND tokenizer_version <> $version
+        """;
+
+    /// <summary>
     /// Raises the pending analysis rows of one page, one block or one file. The unary plus keeps the planner off
     /// ix_analysis_queue for the same reason as <see cref="RaiseUnitPrioritySql"/>, so rows are found by unit_id.
     /// Public so the tests can check the plan
@@ -354,7 +365,7 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
             if (!await reader.ReadAsync(ct)) continue;
 
             var unit = new ReadingUnitRef(reader.GetInt64(0), ParseKind(reader.GetString(1)), reader.GetInt32(2),
-                reader.GetInt32(3), reader.GetString(4), reader.GetInt32(5));
+                reader.GetInt32(3), reader.GetString(4), reader.GetInt32(5), reader.GetInt32(6));
             var candidate = (unit, reader.GetInt32(6), reader.GetInt64(7));
             if (best == null || QueueOrder(candidate, best.Value) < 0) best = candidate;
         }
@@ -380,6 +391,18 @@ public class ReadingStore(ReadingDatabase database, TimeProvider? timeProvider =
         command.Parameters.AddWithValue("$file", mangaFileId);
         command.Parameters.AddWithValue("$version", tokenizerVersion);
         command.Parameters.AddWithValue("$priority", priority);
+        command.Parameters.AddWithValue("$now", Now());
+        return await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<int> RefreshAllUnitsAsync(string tokenizerVersion, CancellationToken ct = default)
+    {
+        await using var connection = await database.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = RefreshAllUnitsSql;
+        command.Parameters.AddWithValue("$kind", Epub);
+        command.Parameters.AddWithValue("$version", tokenizerVersion);
+        command.Parameters.AddWithValue("$priority", ReadingPriority.Background);
         command.Parameters.AddWithValue("$now", Now());
         return await command.ExecuteNonQueryAsync(ct);
     }
